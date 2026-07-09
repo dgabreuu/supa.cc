@@ -1,0 +1,54 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "supa.cc"
+version = "0.1.0"
+description = "Local Supabase account switcher for macOS Keychain"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.9"
+keywords = [
+    "supabase",
+    "cli",
+    "macos",
+    "keychain",
+    "account-management",
+    "developer-tools",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Portuguese",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "questionary>=2.0.0",
+    "keyring>=24.0.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dgabreuu/supa.cc"
+Repository = "https://github.com/dgabreuu/supa.cc.git"
+Issues = "https://github.com/dgabreuu/supa.cc/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "tomli>=2.0.0; python_version < \"3.11\"",
+]
+
+[project.scripts]
+"supa.cc" = "supa_cc.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["supa_cc"]
