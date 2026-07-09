@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import keyring
+from keyring.errors import PasswordDeleteError
 from typing import List, Optional
 from .models import Account
 
@@ -12,6 +13,12 @@ LEGACY_KEYCHAIN_SERVICE = "sbc.supabase.accounts"
 DEFAULT_INDEX_PATH = Path.home() / ".config" / "supa.cc" / "accounts.json"
 LEGACY_SUPAKILLER_INDEX_PATH = Path.home() / ".config" / "supakiller" / "accounts.json"
 LEGACY_INDEX_PATH = Path.home() / ".config" / "sbc" / "accounts.json"
+_MACOS_KEYCHAIN_ITEM_NOT_FOUND = "-25300"
+
+
+def _is_missing_keychain_item(error: PasswordDeleteError) -> bool:
+    message = str(error).lower()
+    return _MACOS_KEYCHAIN_ITEM_NOT_FOUND in message or "item not found" in message
 
 
 def safe_load_json_index(path: Path) -> Optional[List[str]]:
@@ -116,7 +123,12 @@ class KeychainManager:
     def delete_account(self, name: str) -> None:
         """Remove conta do Keychain."""
         self._ensure_initialized()
-        keyring.delete_password(KEYCHAIN_SERVICE, name)
+        try:
+            keyring.delete_password(KEYCHAIN_SERVICE, name)
+        except PasswordDeleteError as exc:
+            if _is_missing_keychain_item(exc):
+                return
+            raise
 
     def update_index(self, names: List[str]) -> None:
         """Atualiza índice de contas com permissões atômicas."""

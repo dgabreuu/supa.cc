@@ -1,6 +1,9 @@
 import json
 from unittest.mock import patch
 
+import pytest
+from keyring.errors import PasswordDeleteError
+
 from supa_cc.keychain import (
     KEYCHAIN_SERVICE,
     LEGACY_KEYCHAIN_SERVICE,
@@ -47,6 +50,25 @@ class TestKeychainManager:
         with patch("supa_cc.keychain.keyring.delete_password") as mock_delete:
             manager.delete_account("test")
             mock_delete.assert_called_once_with(KEYCHAIN_SERVICE, "test")
+
+    def test_delete_account_ignores_missing_keychain_item(self, tmp_path):
+        manager = KeychainManager(index_path=tmp_path / "accounts.json")
+        manager.update_index([])
+        error = PasswordDeleteError("Can't delete password in keychain: (-25300, 'Item not found')")
+
+        with patch("supa_cc.keychain.keyring.delete_password", side_effect=error) as mock_delete:
+            manager.delete_account("test")
+
+        mock_delete.assert_called_once_with(KEYCHAIN_SERVICE, "test")
+
+    def test_delete_account_reraises_unexpected_delete_error(self, tmp_path):
+        manager = KeychainManager(index_path=tmp_path / "accounts.json")
+        manager.update_index([])
+        error = PasswordDeleteError("Can't delete password in keychain: permission denied")
+
+        with patch("supa_cc.keychain.keyring.delete_password", side_effect=error):
+            with pytest.raises(PasswordDeleteError, match="permission denied"):
+                manager.delete_account("test")
 
     def test_list_accounts_with_accounts(self, tmp_path):
         index_path = tmp_path / "accounts.json"
