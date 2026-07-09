@@ -37,7 +37,7 @@ class SupaCc < Formula
     sha256 "fe01bd85eb3f8fb3dd0405defdeac9a5b4f6f0439edbb3149577f244a2e8245b"
   end
 
-  resource "markdown-it" do
+  resource "markdown-it-py" do
     url "https://files.pythonhosted.org/packages/06/ff/7841249c247aa650a76b9ee4bbaeae59370dc8bfd2f6c01f3630c35eb134/markdown_it_py-4.2.0.tar.gz"
     sha256 "04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49"
   end
@@ -47,7 +47,7 @@ class SupaCc < Formula
     sha256 "bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba"
   end
 
-  resource "more" do
+  resource "more-itertools" do
     url "https://files.pythonhosted.org/packages/de/1d/f4da6f02cdffe04d6362210b807146a26044c88d839208aec273bb0d9184/more_itertools-11.1.0.tar.gz"
     sha256 "48e8f4d9e7e5878571ecf6f2b4e57634f93cd474cc8cfbd2376f2d11b396e30d"
   end
