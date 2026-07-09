@@ -27,6 +27,11 @@ def test_homebrew_formula_is_present_with_public_metadata():
     assert 'depends_on "supabase"' in formula
     assert 'depends_on "supabase/tap/supabase"' not in formula
     assert 'resource "click" do' in formula
+    assert 'resource "jaraco-classes" do' in formula
+    assert 'resource "jaraco-context" do' in formula
+    assert 'resource "jaraco-functools" do' in formula
+    assert 'resource "markdown-it" do' in formula
+    assert 'resource "more" do' in formula
     assert 'resource "questionary" do' in formula
     assert 'resource "rich" do' in formula
     assert 'shell_output("#{bin}/supa.cc --version")' in formula
