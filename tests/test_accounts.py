@@ -1,6 +1,8 @@
 import json
 import pytest
 from unittest.mock import patch
+from keyring.errors import PasswordDeleteError
+
 from supa_cc.accounts import AccountManager
 from supa_cc.keychain import KEYCHAIN_SERVICE, LEGACY_SUPAKILLER_KEYCHAIN_SERVICE
 from supa_cc.models import Account
@@ -56,6 +58,17 @@ class TestAccountManager:
             manager.remove("test")
             mock_delete.assert_called_once_with("test")
             mock_index.assert_called_once()
+
+    def test_remove_account_updates_index_when_keychain_item_is_missing(self, tmp_path):
+        manager = AccountManager()
+        manager.keychain.index_path = tmp_path / "accounts.json"
+        manager.keychain.update_index(["pilon", "work"])
+        error = PasswordDeleteError("Can't delete password in keychain: (-25300, 'Item not found')")
+
+        with patch("supa_cc.keychain.keyring.delete_password", side_effect=error):
+            manager.remove("pilon")
+
+        assert [account.name for account in manager.list()] == ["work"]
 
     def test_set_active_success(self):
         manager = AccountManager()
