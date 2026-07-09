@@ -30,8 +30,8 @@ def test_homebrew_formula_is_present_with_public_metadata():
     assert 'resource "jaraco-classes" do' in formula
     assert 'resource "jaraco-context" do' in formula
     assert 'resource "jaraco-functools" do' in formula
-    assert 'resource "markdown-it" do' in formula
-    assert 'resource "more" do' in formula
+    assert 'resource "markdown-it-py" do' in formula
+    assert 'resource "more-itertools" do' in formula
     assert 'resource "questionary" do' in formula
     assert 'resource "rich" do' in formula
     assert 'shell_output("#{bin}/supa.cc --version")' in formula
