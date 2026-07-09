@@ -10,7 +10,7 @@ class SupaCc < Formula
 
   depends_on :macos
   depends_on "python@3.13"
-  depends_on "supabase/tap/supabase"
+  depends_on "supabase"
 
   resource "click" do
     url "https://files.pythonhosted.org/packages/source/c/click/click-8.4.2.tar.gz"

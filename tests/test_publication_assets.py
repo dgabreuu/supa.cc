@@ -24,7 +24,8 @@ def test_homebrew_formula_is_present_with_public_metadata():
     assert f'head "{REPO_URL}", branch: "main"' in formula
     assert "depends_on :macos" in formula
     assert 'depends_on "python@3.13"' in formula
-    assert 'depends_on "supabase/tap/supabase"' in formula
+    assert 'depends_on "supabase"' in formula
+    assert 'depends_on "supabase/tap/supabase"' not in formula
     assert 'resource "click" do' in formula
     assert 'resource "questionary" do' in formula
     assert 'resource "rich" do' in formula
