@@ -53,7 +53,7 @@ The repository is not named with the `homebrew-` prefix. Tap it with an explicit
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
 ```
 
-After the tag exists, update `Formula/supa-cc.rb` with the stable tarball URL and SHA256, then generate Python resources from a tapped checkout:
+After the tag exists, update `Formula/supa-cc.rb` with the stable tarball URL and SHA256, then verify Python resources from a tapped checkout:
 
 ```bash
 cd "$(brew --repo dgabreuu/supa-cc)"

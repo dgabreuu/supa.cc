@@ -6,13 +6,13 @@ Supa.cc is a macOS CLI. It stores tokens in the macOS Keychain and expects the S
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
-brew install --HEAD supa-cc
+brew install supa-cc
 ```
 
-`--HEAD` instala a versão atual do branch `main`. Depois da primeira release estável, a fórmula poderá ser instalada sem `--HEAD`:
+Para instalar a versão atual do branch `main` durante desenvolvimento:
 
 ```bash
-brew install supa-cc
+brew install --HEAD supa-cc
 ```
 
 The installed command is:
@@ -25,7 +25,7 @@ Upgrade and uninstall:
 
 ```bash
 brew update
-brew upgrade --fetch-HEAD supa-cc
+brew upgrade supa-cc
 brew uninstall supa-cc
 ```
 

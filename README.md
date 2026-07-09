@@ -30,10 +30,14 @@ A instalação recomendada para uso local é via Homebrew:
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
-brew install --HEAD supa-cc
+brew install supa-cc
 ```
 
-Depois da primeira release estável com `url`, `sha256` e recursos Python gerados na fórmula, a instalação passa a ser `brew install supa-cc`.
+Para instalar diretamente do branch `main` durante desenvolvimento:
+
+```bash
+brew install --HEAD supa-cc
+```
 
 Depois da instalação, o comando fica disponível como:
 
