@@ -2,8 +2,8 @@ from pathlib import Path
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.1.1.tar.gz"
-TARBALL_SHA256 = "a4204159444e34612247c664acb5707536464724b20fe582a6bc4933c9bffe42"
+TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.2.0.tar.gz"
+TARBALL_SHA256 = "61ffeb04b5c157f71a5e14fdd7a740757d9ac77655c39476feb04ea02ceaf054"
 
 
 def test_readme_uses_public_repository_url():
