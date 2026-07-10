@@ -1,360 +1,194 @@
 ---
 name: supa-cc-cli
-description: Use when working with the Supa.cc CLI tool for Supabase account management, token storage, keychain operations, or TUI interface interactions
+description: Use ao operar ou manter fluxos de conta, Keychain, autenticação, diagnóstico ou execução do Supabase CLI no Supa.cc
 ---
 
 # Supa.cc CLI
 
-## Overview
+## Propósito e limite
 
-Supa.cc is a local CLI tool for managing multiple Supabase accounts with secure token storage in the macOS Keychain. It provides both an interactive TUI (Text User Interface) and non-interactive commands for account lifecycle management.
+Supa.cc gerencia PATs do Supabase localmente no macOS. Os tokens são armazenados pelo Python `keyring` no Keychain do macOS; os arquivos contêm apenas nomes de contas. Ele não possui nem altera a sessão oficial do Supabase CLI.
 
-## When to Use
+Use-o para seleção interativa local de contas. Não o use como gerenciador de segredos de CI, em sistemas que não sejam macOS, nem para credenciais que não sejam do Supabase.
 
-- Managing multiple Supabase personal access tokens (PATs) locally
-- Switching between Supabase accounts securely
-- Storing tokens outside of plain-text files or environment variables
-- Integrating Supabase CLI authentication workflows with local account management
+## Fluxo canônico de dados
 
-When NOT to use:
-
-- For server-side or CI/CD token management (use environment variables instead)
-- On non-macOS systems (Keychain dependency)
-- For storing non-Supabase tokens
-
-## Architecture & Data Flow
-
-```
-User Input
-    |
-    v
-CLI Parser (Click) / TUI (Questionary + Rich)
-    |
-    v
-AccountManager (accounts.py)
-    |-- add(name, token) -> validates -> stores
-    |-- list() -> reads index (no tokens)
-    |-- switch(name) -> activates via Supabase CLI
-    |-- remove(name) -> deletes from Keychain
-    |
-    v
-KeychainManager (keychain.py)
-    |-- Tokens: macOS Keychain (service: "supa.cc.supabase.accounts")
-    |-- Index: ~/.config/supa.cc/accounts.json (names only)
-    |
-    v
-SupabaseConfig (config.py)
-    |-- Calls: SUPABASE_ACCESS_TOKEN=<token> supabase login --name <name>
-```
-
-**Security Invariant:** Tokens NEVER touch disk in plaintext. Only account names are stored in `accounts.json`. Token retrieval from Keychain happens only when activating an account.
-
-## Commands Reference
-
-### TUI Mode (Interactive)
-
-Launch without arguments to enter interactive mode:
-
-```bash
-supa.cc
-```
-
-**Behavior:**
-
-- Displays menu with Rich-rendered UI
-- Navigation via Questionary prompts (arrow keys or number selection)
-- Actions: Add, List, Switch, Remove, Exit
-- Cancel any prompt with Esc or Ctrl+C to return/exit gracefully
-- Select "Sair" to exit
-
-### version
-
-Show current version and check for updates.
-
-```bash
-supa.cc version
-```
-
-**Output:**
-
-```
-Supa.cc v0.1.0
-Você está na versão mais recente.
-```
-
-**Update Check Behavior:**
-
-- If run from a git repository, compares local HEAD with origin HEAD
-- If not in a git repo or git is unavailable, suggests `brew upgrade supa-cc`, `brew upgrade --fetch-HEAD supa-cc`, or `pipx upgrade supa.cc`
-- Network timeout: 5 seconds per git command
-
-### add
-
-Add a new Supabase account.
-
-```bash
+```text
 supa.cc add <name>
+    hidden PAT prompt
+      -> validate format
+      -> Keychain service supa.cc.supabase.accounts.v2
+      -> accounts.json stores name only
+
+supa.cc switch <name>
+    Keychain read
+      -> read-only projects list with PAT in child environment
+      -> active-account stores name only
+
+supa.cc run -- <supabase arguments>
+    active-account name
+      -> Keychain read
+      -> resolved real Supabase CLI executable
+      -> PAT in child SUPABASE_ACCESS_TOKEN only
+      -> sanitized streaming output and child exit code
 ```
 
-For non-interactive automation only:
+`switch` nunca faz login no Supabase CLI nativo, não cria perfil e não altera a credencial dele. Por isso, um comando `supabase ...` executado depois continua usando a sessão própria do CLI oficial. Use `supa.cc run -- ...` quando a conta selecionada no Supa.cc deve ser usada.
+
+## Comandos
+
+### Adicionar uma conta
 
 ```bash
-supa.cc add <name> --token <token>
+supa.cc add work
 ```
 
-**Parameters:**
+O PAT é sempre lido de um prompt oculto. Não construa um comando que contenha um PAT. Nomes de conta têm de 1 a 50 letras ASCII, dígitos, underscores ou hífens. O formato oficial aceito é `^(?:sbp_|sbp_oauth_)[0-9a-f]{40}$`: qualquer um dos prefixos seguido de exatamente 40 caracteres hexadecimais minúsculos.
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `name` | Yes | Unique account identifier. Rules: 1-50 chars, only `a-z`, `A-Z`, `0-9`, `_`, `-` |
-| `--token` | No | Supabase personal access token. If omitted, Click prompts with hidden input. Prefer the hidden prompt for normal interactive use. |
-
-**Security Note:** Passing a token with `--token` can expose it in shell history, process arguments, logs, or agent transcripts. Do not generate commands containing real tokens unless the user explicitly chooses non-interactive automation and accepts that risk.
-
-**Token Validation:**
-
-- Must start with `sbp_`
-- Length must be > 10 characters
-- Validation happens before Keychain storage
-
-**Account Name Validation:**
-
-- Minimum 1 character, maximum 50 characters
-- Allowed characters: letters, numbers, underscore (`_`), hyphen (`-`)
-- Unicode characters (e.g., `café`, `日本語`, emoji) are rejected
-
-**Behavior:**
-
-- If `--token` is omitted, prompts for token with hidden input
-- Stores token in macOS Keychain under service `supa.cc.supabase.accounts`
-- Updates `accounts.json` index
-- Duplicate names overwrite the existing token silently
-- Returns: `"Conta '{name}' adicionada."`
-
-**Error Cases:**
-
-- Invalid token format -> `"Erro: Token inválido. Deve começar com 'sbp_'"` OR `"Erro: Erro de validação. Verifique os dados fornecidos."` if the error message contains `sbp_` (sanitization to prevent token leakage)
-- Invalid account name -> `"Erro: Nome da conta deve ter entre 1 e 50 caracteres."` or `"Erro: Nome da conta contém caracteres inválidos. Use apenas letras, números, hífens e underscores."`
-
-### list
-
-List all registered accounts.
+### Listar contas
 
 ```bash
 supa.cc list
 ```
 
-**Output Format (CLI):**
+Lê apenas `accounts.json`. Não deve abrir o Keychain.
 
-```
-  account_one
-  account_two
-```
-
-**Output Format (TUI):**
-
-- Rich table with account names only
-- No active/inactive status is tracked or displayed
-
-**Behavior:**
-
-- Reads from `accounts.json` index (not Keychain)
-- Does NOT retrieve tokens from Keychain
-- Returns: `"Nenhuma conta cadastrada."` if empty
-
-**Important:** The active account concept is not implemented. The Supabase CLI tracks its own active session independently.
-
-### switch
-
-Activate an account for Supabase CLI usage.
+### Selecionar uma conta
 
 ```bash
-supa.cc switch <name>
+supa.cc switch work
 ```
 
-**Parameters:**
+A operação lê o item v2 do Keychain, verifica o formato do token, valida online com um `projects list` read-only e grava atomicamente `work` em `active-account`. Sucesso significa que a seleção do Supa.cc está pronta para `run`; não afirma que a sessão nativa do Supabase mudou.
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `name` | Yes | Account name to activate |
-
-**Behavior:**
-
-- Retrieves token from Keychain
-- Sets environment variable `SUPABASE_ACCESS_TOKEN=<token>`
-- Executes: `supabase login --name <name>`
-- Returns: `"Conta '{name}' ativada."` or `"Falha ao ativar conta '{name}'."`
-
-**Security Note:** The token is intentionally NOT passed via `--token` command-line flag. It is injected via the `SUPABASE_ACCESS_TOKEN` environment variable to avoid exposure in process lists (`ps`), shell history, and process logs.
-
-**Requirements:**
-
-- Supabase CLI must be installed and in PATH
-- Account must exist in Keychain (not just in `accounts.json`)
-- If Supabase CLI is missing, returns `"Falha ao ativar conta '{name}'."`
-
-### remove
-
-Remove an account.
+### Executar o CLI oficial com a conta selecionada
 
 ```bash
-supa.cc remove <name>
+supa.cc run -- projects list
+supa.cc run -- functions list
 ```
+
+Argumentos após `--` são encaminhados sem adicionar argumento de token. O PAT é colocado somente no `SUPABASE_ACCESS_TOKEN` do processo filho. A saída sanitizada é transmitida em streaming e o código de saída do filho é propagado.
+
+### Diagnosticar
 
 ```bash
-supa.cc remove <name> --yes    # skip confirmation
+supa.cc doctor
+supa.cc doctor --json
+supa.cc doctor --account work --live
 ```
 
-**Parameters:**
+O modo padrão é totalmente read-only e não abre token. Os modos humano e JSON reportam apenas metadados não secretos:
 
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `name` | Yes | Account name to remove |
-| `--yes` | No | Skip confirmation prompt (useful for automation) |
+- launcher do Supa.cc e runtime Python;
+- caminhos invocado → real resolvido do Supabase CLI, versão, proveniência e metadados de assinatura disponíveis;
+- backend do Keychain e nome canônico do serviço;
+- saúde/contagem do índice e estado do nome ativo;
+- apenas presença de configurações de autenticação/telemetria no ambiente;
+- diagnósticos tipados de ambiente, CLI e permissões.
 
-**Behavior:**
+O modo live exige uma conta. Ele lê esse item do Keychain uma vez e realiza a mesma validação read-only da Management API usada por `switch`.
 
-- Confirmation prompt: `"Remover conta?"` (CLI) or `"Remover conta '{name}'?"` (TUI)
-- Deletes token from Keychain
-- Removes name from `accounts.json` index
-- Returns: `"Conta '{name}' removida."`
+### Remover uma conta
 
-**Caveat:** If the account does not exist, the command still prints `"Conta '{name}' removida."`. Verify existence with `list` before removing if this matters.
-
-## Data Models
-
-### Account
-
-```python
-@dataclass
-class Account:
-    name: str
-    token: str
+```bash
+supa.cc remove work
+supa.cc remove work --yes
 ```
 
-**Validation:** `validate_token()` checks prefix `sbp_` and minimum length > 10.
+A remoção afeta o item v2 nomeado do Keychain do Supa.cc e o índice de nomes. Não deve remover uma credencial global ou nativa do Supabase CLI.
 
-**Note:** There is no `is_active` field or `created_at` timestamp in the current implementation. Active state is managed externally by the Supabase CLI, not by Supa.cc.
+### TUI e versão
 
-## File Locations
-
-| File | Path | Contents | Permissions |
-|------|------|----------|-------------|
-| Account Index | `~/.config/supa.cc/accounts.json` | Account names list | 0o600 |
-| Config Directory | `~/.config/supa.cc/` | Parent directory | 0o700 |
-| Legacy Supa.cc predecessor index | `~/.config/supakiller/accounts.json` | Auto-migrated on first run | - |
-| Legacy `sbc` Index | `~/.config/sbc/accounts.json` | Auto-migrated on first run | - |
-
-**Index JSON Format:**
-
-```json
-{
-  "accounts": ["personal", "work", "staging"]
-}
+```bash
+supa.cc
+supa.cc version
+supa.cc --version
 ```
 
-**Index Recovery:** If `accounts.json` is corrupted or contains invalid JSON, Supa.cc automatically recreates it as an empty index on the next read.
+A TUI expõe add, list, switch e remove com a mesma validação e resultados tipados do CLI direto.
 
-## Keychain Integration
+### Navegação e cancelamento na TUI
 
-- **Service Name:** `supa.cc.supabase.accounts`
-- **Legacy Supa.cc predecessor service:** `supakiller.supabase.accounts` (auto-migrated)
-- **Legacy `sbc` Service:** `sbc.supabase.accounts` (auto-migrated)
-- **Storage:** Each account name maps to one Keychain password entry
-- **Access:** Python `keyring` library with macOS backend
-
-## Security Model
-
-1. **Token Isolation:** Tokens only in Keychain, never in files
-2. **Index Minimalism:** `accounts.json` contains names only
-3. **File Permissions:** 0o600 for index file, 0o700 for directory
-4. **Input Hiding:** Token prompts use `hide_input=True` (CLI) or `password()` prompt (TUI)
-5. **No Supabase CLI Command-Line Tokens:** During account activation, the token is passed to the Supabase CLI via `SUPABASE_ACCESS_TOKEN`, never through a Supabase CLI command-line flag. For `supa.cc add`, prefer the hidden prompt; `--token` is only for explicit non-interactive automation with exposure risks.
-6. **No Logging:** Tokens never logged to stdout/stderr
-7. **Error Sanitization:** If an error message contains `sbp_`, it is replaced with a generic validation message to prevent accidental token leakage
-
-## Dependencies
-
-- **Python:** >= 3.9
-- **OS:** macOS (Keychain dependency)
-- **CLI Tool:** Supabase CLI installed and in PATH
-- **Python Packages:** click, questionary, keyring, rich
-
-## Error Handling
-
-| Scenario | Behavior | Output |
-|----------|----------|--------|
-| Invalid token format | ValidationError before storage | `"Erro: Token inválido. Deve começar com 'sbp_'"` OR `"Erro: Erro de validação. Verifique os dados fornecidos."` |
-| Invalid account name | ValidationError before storage | `"Erro: Nome da conta deve ter entre 1 e 50 caracteres."` / `"Erro: Nome da conta contém caracteres inválidos..."` |
-| Account not found (switch) | Graceful failure | `"Falha ao ativar conta '{name}'."` |
-| Account not found (remove) | Silent/no-op | `"Conta '{name}' removida."` |
-| Supabase CLI missing | Activation fails gracefully | `"Falha ao ativar conta '{name}'."` |
-| Empty account list (list) | Early return | `"Nenhuma conta cadastrada."` |
-| Empty account list (TUI switch/remove) | Early return | `"Nenhuma conta para alternar."` / `"Nenhuma conta para remover."` |
-| Keychain access denied | Exception propagated | Python exception |
-| Corrupted index JSON | Auto-recovery | Recreates empty index |
-
-## Common Mistakes
-
-- **Reading tokens from `accounts.json`:** File contains only names, never tokens
-- **Forgetting to switch:** `supabase` CLI commands use the last activated account
-- **Invalid tokens:** Must use Supabase personal access tokens (prefix `sbp_`), not API keys
-- **Legacy migration:** Old predecessor and `sbc` tool data auto-migrate on first Supa.cc run
-- **Assuming active tracking:** Supa.cc does not track which account is active. Use `supabase status` or similar to verify
-
-## Configuration & Environment
-
-No environment variables required. Configuration is implicit through:
-
-- Keychain service name (hardcoded: `supa.cc.supabase.accounts`)
-- Index file path (hardcoded: `~/.config/supa.cc/accounts.json`)
-- Supabase CLI binary name (hardcoded: `supabase`)
-
-## Migration from Legacy Namespaces
-
-On first run (specifically when reading the index and the new index does not exist), Supa.cc automatically:
-
-1. Checks for `~/.config/supakiller/accounts.json`, then `~/.config/sbc/accounts.json`
-2. Migrates account names to the new path
-3. Transfers tokens from `supakiller.supabase.accounts` or `sbc.supabase.accounts` Keychain services
-4. Uses `supa.cc.supabase.accounts` for all future operations
-
-If the new index already exists, migration is skipped.
-
-## TUI Navigation
-
-```
-Supa.cc
-├── Adicionar conta
-├── Listar contas
-├── Alternar conta ativa
-├── Remover conta
+```text
+Home (tela principal)
+├── Adicionar conta      → sub-página (formulário → Home)
+├── Listar contas        → sub-página lista + Voltar
+├── Alternar conta ativa → sub-página lista + Voltar
+├── Remover conta        → sub-página lista + Voltar
 └── Sair
 ```
 
-**Navigation:** Arrow keys or number selection
-**Input:** Questionary prompts with validation
-**Exit:** Select "Sair" or press Esc/Ctrl+C at the main menu
+O frame estável (header + body) permanece montado enquanto a Home atua como hub de navegação. A seleção por setas sempre começa na primeira opção. `Voltar` mostra o ponteiro `←`, as demais opções mostram `»`, e as sub-páginas mantêm duas linhas em branco abaixo do seletor.
 
-### Cancellation Behavior
+| Contexto | Ação | Resultado |
+| --- | --- | --- |
+| Menu Home | Ctrl+C ou `Sair` | Sair com mensagem de despedida |
+| Qualquer sub-página | `Voltar` ou Ctrl+C | Voltar à Home sem sair |
+| Nome/token em add | Ctrl+C | Voltar à Home |
+| Seleção em switch/remove | `Voltar` ou Ctrl+C | Voltar à Home |
+| Confirmação de remoção | Não ou Ctrl+C | Voltar à Home |
+| Sucesso de add/switch/remove | — | Voltar à Home com feedback |
+| Lista de contas | conta, `Voltar` ou Ctrl+C | Voltar à Home |
 
-| Prompt | Cancel Action | Result |
-|--------|--------------|--------|
-| Main menu | Esc / Ctrl+C | Exit with goodbye message |
-| Add name | Esc / Ctrl+C | Warning: `"Nome da conta é obrigatório."` |
-| Add token | Esc / Ctrl+C | Warning: `"Token de acesso é obrigatório."` |
-| Switch selection | Esc / Ctrl+C | Warning: `"Alternância de conta cancelada."` |
-| Remove selection | Esc / Ctrl+C | Warning: `"Remoção de conta cancelada."` |
-| Remove confirmation | No / Esc | Warning: `"Remoção de conta cancelada."` |
+## Contrato de armazenamento
 
-## LLM Usage Guidelines
+| Dado | Local | Conteúdo |
+| --- | --- | --- |
+| PATs | serviço do Keychain do macOS `supa.cc.supabase.accounts.v2` | Um segredo por nome de conta |
+| Índice de contas | `~/.config/supa.cc/accounts.json` | Somente nomes, modo de arquivo `0600` |
+| Seleção ativa | `~/.config/supa.cc/active-account` | Somente um nome, modo de arquivo `0600` |
+| Diretório de configuração | `~/.config/supa.cc/` | Modo de diretório `0700` |
 
-When invoking Supa.cc on behalf of a user:
+Leituras do Keychain usam um cache positivo de curta duração no processo. Sobrescrita e exclusão invalidam a entrada. Um item ausente é consultado de novo na próxima leitura. Um índice de contas inválido ou ilegível é preservado e reportado; não é recriado silenciosamente.
 
-1. **Never construct commands with real tokens visible in the command string.** Prefer `supa.cc add <name>` so the user can type the token in Click's hidden prompt. Use `--token` only for explicit non-interactive automation, and never echo, log, persist, or include the real value in generated files or transcripts.
-2. **For automation, use `--yes` with `remove`.** Example: `supa.cc remove work --yes`
-3. **Do not rely on `list` to determine the active account.** Supa.cc does not track this. Use `supabase status` if needed.
-4. **Validate account names before calling `add`.** If the name contains spaces, unicode, or special characters, it will fail.
-5. **Token format check:** If the user provides a token for automation, ensure it starts with `sbp_` and is longer than 10 characters before invoking `add`.
-6. **Migration is automatic.** Do not manually move files from legacy config directories unless troubleshooting.
-7. **For CI/server use, do not use Supa.cc.** Use environment variables directly instead.
+O serviço antigo `supa.cc.supabase.accounts` e namespaces predecessores não são lidos, migrados, apagados ou reescritos automaticamente. Re-adicione uma conta pelo prompt oculto ou use um procedimento explícito de migração. `list`, `switch` e `doctor` normais não devem realizar migração.
+
+## Prompts do Keychain no macOS
+
+O acessor visto pelo Keychain é o runtime Python que executa o Supa.cc. No `pipx`, esse runtime vive no ambiente gerenciado pelo pipx. Um caminho de Python alterado, rebuild do ambiente, assinatura de código ou proveniência de instalação pode exigir uma nova autorização.
+
+Prompts repetidos com o mesmo runtime inalterado indicam problema de permissão/controle de acesso do Keychain. Inspecione a identidade não secreta do executável com `doctor`; não despeje o item, não conceda acesso a todos os aplicativos nem afrouxa a ACL. O Supa.cc nunca realiza exclusão de credencial ou reparo de sessão nativa como efeito colateral.
+
+O Supa.cc também não cria arquivos marcadores de ACL ou de correção de credencial durante operações normais de conta.
+
+## Classificação de falhas
+
+CLI e TUI usam as mesmas categorias de resultado tipado e retornam status diferente de zero para falhas reais:
+
+| Categoria | Significado |
+| --- | --- |
+| token missing | Nenhum item v2 existe para o nome selecionado |
+| token format invalid | O valor armazenado não tem formato válido de PAT do Supabase |
+| token rejected / HTTP 401 | A Management API rejeitou um PAT bem formado; pode estar revogado, expirado ou pertencer à conta errada |
+| Keychain permission denied | O macOS negou ou bloqueou o acesso |
+| Keychain read failure | A leitura do backend/item falhou por outro motivo |
+| network unavailable | A validação não conseguiu alcançar a API |
+| CLI missing/incompatible | O executável do Supabase não pôde ser resolvido ou usado |
+| environment blocked | Sandbox, caminho de telemetria ou falha de permissão de diretório como `EPERM` |
+| profile mismatch | Um contexto persistido/nativo não corresponde ao contexto selecionado |
+
+Erros, exceções, stdout e stderr são sanitizados antes da apresentação. Nunca adicione PATs, headers de autorização, dumps de ambiente ou `repr` com segredos a um diagnóstico.
+
+## Distinção do sandbox do Codex
+
+O Supabase CLI pode tentar gravar estado de telemetria em `~/.supabase`. Um `EPERM` ali quando lançado dentro do sandbox do Codex é restrição de ambiente, não evidência de que o PAT é inválido. Quando a validação live for necessária, execute-a por uma execução aprovada fora do sandbox e ainda assim mantenha o PAT fora da string de comando e da saída.
+
+## Smoke test opt-in do Keychain do macOS
+
+Execute o smoke test do Keychain real somente no macOS e somente após consentimento explícito:
+
+```bash
+SUPA_CC_RUN_KEYCHAIN_SMOKE=1 .venv/bin/pytest -q tests/test_macos_keychain_smoke.py
+```
+
+O teste cria um item falso e descartável sob o serviço `supa.cc.tests.<uuid>` e a conta `smoke-<uuid>`, verifica o round-trip e o remove em `finally`. Ele nunca acessa o serviço canônico do Supa.cc nem qualquer credencial pertencente ao Supabase CLI. Sem a variável de ambiente opt-in, essa verificação de Keychain real permanece ignorada.
+
+## Regras do operador
+
+1. Nunca coloque um PAT em comando, fixture de teste, log, transcript de prompt ou arquivo.
+2. Use `supa.cc run -- ...` para comandos autenticados sob a conta selecionada.
+3. Use `doctor` antes de inspecionar o Keychain manualmente; diagnósticos padrão não abrem segredo.
+4. Não edite ACLs do Keychain, não exporte itens e não remova credenciais nativas do Supabase CLI.
+5. Não apague itens duplicados/legados sem prévia exata e aprovação explícita.
+6. Para CI ou servidores, use a injeção de segredos da plataforma em vez do Supa.cc.

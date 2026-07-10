@@ -1,155 +1,131 @@
+```text
+ ____
+/ ___| _   _ _ __   __ _   ___ ___
+\___ \| | | | '_ \ / _` | / __/ __|
+ ___) | |_| | |_) | (_| || (_| (__
+|____/ \__,_| .__/ \__,_(_)___\___|
+            |_|
+```
+
 # Supa.cc
 
-Supa.cc é uma ferramenta de linha de comando para gerenciar múltiplas contas do Supabase localmente no macOS. Ela guarda tokens no Keychain do macOS, mantém apenas um índice local com nomes de contas e integra com o Supabase CLI para alternar a conta ativa sem repetir login manual.
-
-## Por que foi criado
-
-O projeto nasceu de uma necessidade prática: alternar com frequência entre contas do Supabase CLI sem repetir autenticação, troca de token e comandos manuais. Supa.cc simplifica esse fluxo criando um gerenciador local de contas, com uma TUI para uso interativo e comandos diretos para automação.
-
-## Recursos
-
-- Gerenciamento local de múltiplas contas Supabase.
-- Armazenamento seguro de tokens no Keychain do macOS via `keyring`.
-- Índice local com nomes de contas apenas, sem tokens em texto puro.
-- Integração com o Supabase CLI usando `SUPABASE_ACCESS_TOKEN` ao alternar contas.
-- TUI no terminal com Rich e Questionary.
-- Comandos CLI para scripts e automações.
-- Migração de dados legados dos antigos namespaces `supakiller` e `sbc`, quando encontrados.
-- `SKILL.md` incluído para orientar agentes e LLMs que precisem operar este projeto.
+Supa.cc é uma ferramenta de linha de comando para gerenciar múltiplas contas do Supabase no macOS. Os Personal Access Tokens (PATs) ficam no Keychain; os arquivos locais contêm somente nomes de contas.
 
 ## Requisitos
 
-- macOS, pois o armazenamento seguro usa o Keychain.
+- macOS.
 - Python 3.9 ou superior.
-- Supabase CLI instalado e disponível como `supabase` no `PATH`.
-- Um Personal Access Token (PAT) do Supabase para cada conta. PATs válidos devem começar com `sbp_`.
+- Supabase CLI disponível como `supabase` no `PATH`.
+- Um PAT no formato oficial: prefixo `sbp_` ou `sbp_oauth_`, seguido por exatamente 40 caracteres hexadecimais minúsculos (`0-9`, `a-f`).
 
 ## Instalação
 
-A instalação recomendada para uso local é via Homebrew:
+O método recomendado é o Homebrew:
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
 brew install supa-cc
 ```
 
-Para instalar diretamente do branch `main` durante desenvolvimento:
+Para instalar a versão atual do branch `main` durante desenvolvimento:
 
 ```bash
 brew install --HEAD supa-cc
 ```
 
-Depois da instalação, o comando fica disponível como:
-
-```bash
-supa.cc
-```
-
-Para uso global isolado com `pipx`:
+Alternativamente, instale em um ambiente Python isolado:
 
 ```bash
 pipx install "git+https://github.com/dgabreuu/supa.cc.git"
 ```
 
-Para instalar a partir de um checkout local de desenvolvimento:
-
-```bash
-NEW_REPO_URL="https://github.com/dgabreuu/supa.cc.git"
-git clone "$NEW_REPO_URL" supa.cc
-cd supa.cc
-python3 -m pip install -e ".[dev]"
-```
-
-Veja detalhes em `docs/installation.md`.
+Consulte [docs/installation.md](docs/installation.md) para instalação local, atualização e reinstalação segura.
 
 ## Uso rápido
 
-Abra a interface interativa:
-
-```bash
-supa.cc
-```
-
-Adicione uma conta pelo prompt interativo. O Click pedirá o PAT com entrada oculta, sem exibir o token no terminal:
+Adicione uma conta. O PAT é solicitado sempre por um prompt com entrada oculta; não há opção de linha de comando para fornecê-lo:
 
 ```bash
 supa.cc add work
 ```
 
-Para uso normal, prefira o prompt interativo. Informe apenas um PAT do Supabase válido, começando com `sbp_`, e nunca publique tokens reais em comandos, logs ou documentação.
+O formato aceito é `^(?:sbp_|sbp_oauth_)[0-9a-f]{40}$`; nenhum exemplo usa um token real.
 
-Liste contas cadastradas e alterne a conta ativa:
+Selecione a conta e execute comandos autenticados:
 
 ```bash
-supa.cc list
 supa.cc switch work
+supa.cc run -- projects list
 ```
 
-## Comandos disponíveis
+`switch` valida o PAT com uma operação read-only da Management API e grava somente o nome selecionado em `~/.config/supa.cc/active-account`. Ele não faz login, não cria perfil e não altera a credencial nativa do Supabase CLI. Por isso, use `supa.cc run -- <argumentos do supabase>` para os comandos que devem usar a conta selecionada; executar `supabase ...` diretamente continua usando a sessão própria do CLI oficial.
+
+## Comandos
 
 | Comando | Descrição |
 | --- | --- |
 | `supa.cc` | Abre a TUI interativa. |
-| `supa.cc add <name> --token <token>` | Cadastra ou atualiza uma conta local. Disponível para automação; para uso normal, prefira `supa.cc add <name>` e digite o token no prompt oculto. Passar tokens em comandos pode expô-los no histórico do shell, logs ou listas de processos. |
-| `supa.cc list` | Lista os nomes das contas cadastradas. |
-| `supa.cc switch <name>` | Ativa a conta informada no Supabase CLI. |
-| `supa.cc remove <name>` | Remove uma conta após confirmação interativa. |
-| `supa.cc remove <name> --yes` | Remove uma conta sem pedir confirmação, útil para scripts. |
-| `supa.cc version` | Mostra a versão do Supa.cc e tenta verificar atualizações. |
-| `supa.cc --version` | Mostra a versão via opção padrão do CLI. |
+| `supa.cc add <nome>` | Solicita o PAT em prompt oculto e cadastra ou atualiza a conta. |
+| `supa.cc list` | Lista somente os nomes cadastrados. |
+| `supa.cc switch <nome>` | Valida o PAT e grava o nome da conta ativa do Supa.cc. |
+| `supa.cc run -- <argumentos>` | Executa o Supabase CLI com o PAT da conta ativa somente no ambiente do processo filho. |
+| `supa.cc doctor` | Diagnóstico local read-only que não abre nenhum token. |
+| `supa.cc doctor --json` | Emite o mesmo diagnóstico em JSON, sem segredos. |
+| `supa.cc doctor --account <nome> --live` | Lê o token uma vez e realiza uma validação online autorizada. |
+| `supa.cc remove <nome>` | Remove a conta após confirmação. |
+| `supa.cc remove <nome> --yes` | Remove a conta sem confirmação interativa. |
+| `supa.cc version` / `supa.cc --version` | Mostra a versão. |
 
-## Como a alternância funciona
+`run` passa os argumentos literalmente para o executável resolvido do Supabase, transmite a saída já sanitizada e devolve o código de saída do processo filho. O PAT nunca entra em `argv`, em arquivos de configuração ou em mensagens.
 
-Cada conta cadastrada tem um nome local e um token armazenado no Keychain. Ao executar `supa.cc switch <name>`, Supa.cc recupera o token da conta escolhida e chama o Supabase CLI passando o valor pela variável de ambiente `SUPABASE_ACCESS_TOKEN`.
+## Diagnóstico
 
-Esse modelo evita colocar o token como argumento de processo ou em histórico de shell. O arquivo `~/.config/supa.cc/accounts.json` existe apenas para listar nomes de contas rapidamente; ele não contém tokens.
+O modo padrão de `doctor` é seguro para coleta de suporte: não consulta o Keychain e não executa uma operação autenticada. A saída humana ou JSON informa, sem valores secretos:
+
+- launcher do `supa.cc`, runtime Python e caminho invocado → caminho real do Supabase CLI;
+- versões, proveniência e informações de assinatura disponíveis;
+- backend e serviço do Keychain;
+- estado do índice e da seleção ativa;
+- presença, nunca o valor, de variáveis sensíveis e configuração de telemetria;
+- falhas classificadas de CLI, ambiente e permissões.
+
+Use `--live` somente com `--account`. Esse modo abre uma única vez o item escolhido no Keychain e valida o PAT por `projects list` com `SUPABASE_ACCESS_TOKEN` no ambiente do processo filho.
+
+Os diagnósticos distinguem token ausente, formato inválido, PAT rejeitado/HTTP 401, leitura ou permissão do Keychain, rede, CLI ausente ou incompatível, ambiente sem permissão (`EPERM`) e divergência de perfil. Um `EPERM` ao acessar `~/.supabase` dentro do sandbox do Codex é uma falha ambiental independente da validade do PAT; quando necessário, faça a validação live em uma execução aprovada fora do sandbox.
 
 ## Modelo de segurança
 
-- Tokens não são gravados em texto puro no disco.
-- Tokens ficam no Keychain do macOS, associados ao serviço local do Supa.cc.
-- O índice em `~/.config/supa.cc/accounts.json` guarda somente nomes de contas.
-- Exemplos públicos devem usar placeholders em prosa; nunca use tokens reais em README, issues, logs, testes ou exemplos.
-- Tokens devem ser PATs do Supabase e devem começar com `sbp_`.
-- Antes de publicar o repositório, revise o histórico, arquivos ignorados, logs, capturas de tela e fixtures para garantir que não há segredos.
-- Não publique conteúdo de `~/.config/supa.cc`, arquivos `.env`, saídas de terminal com segredos ou exports do Keychain.
+- O serviço canônico é `supa.cc.supabase.accounts.v2`.
+- `~/.config/supa.cc/accounts.json` guarda somente nomes; `~/.config/supa.cc/active-account` guarda somente o nome selecionado.
+- Tokens recuperados podem permanecer apenas em cache positivo de curta duração no processo atual. Ausências não são memorizadas.
+- Um índice inválido ou ilegível é preservado para diagnóstico; não é substituído automaticamente por um índice vazio.
+- Namespaces anteriores são ignorados. Migração exige uma ação explícita ou adicionar novamente cada conta pelo prompt oculto.
+- O Supa.cc não modifica, apaga nem recria credenciais ou perfis pertencentes ao Supabase CLI.
+- O Supa.cc não cria marcadores de ACL ou de correção da credencial nativa.
+- O Supa.cc não instala ACL ampla, não contorna um Keychain bloqueado e não exporta segredos em texto puro.
+- Erros, `stdout`, `stderr` e exceções são sanitizados antes de serem exibidos.
 
-## Migração legada
+No macOS, quem acessa o item do Keychain é o runtime Python que executa o Supa.cc. Em uma instalação `pipx`, atualizar o ambiente, mudar o caminho do Python ou alterar a assinatura do executável pode justificar uma nova autorização única. Prompts repetidos com o mesmo runtime indicam permissão/controle de acesso inconsistente; use `doctor` para identificar os caminhos envolvidos, sem exportar o token ou afrouxar a ACL.
 
-Supa.cc inclui suporte para migrar dados locais legados dos namespaces antigos `supakiller` e `sbc`. Quando não encontra um índice novo do Supa.cc, ele procura os índices legados e tenta copiar os tokens correspondentes dos serviços legados no Keychain para o serviço atual. A migração preserva a regra principal: tokens continuam no Keychain e o índice local contém apenas nomes.
-
-## Uso por agentes e LLMs
-
-Este repositório inclui um `SKILL.md` com instruções para agentes/LLMs que precisem usar ou manter o projeto. Use esse arquivo como referência operacional para automações assistidas por IA, sem colocar tokens reais no prompt, no contexto ou em arquivos gerados.
-
-## Desenvolvimento e testes
-
-Instale as dependências de desenvolvimento em modo editável:
+## Desenvolvimento
 
 ```bash
+git clone https://github.com/dgabreuu/supa.cc.git supa.cc
+cd supa.cc
 python3 -m pip install -e ".[dev]"
-```
-
-Rode a suíte de testes:
-
-```bash
 pytest
 ```
 
-Comandos úteis durante validação local:
+### Smoke test do Keychain do macOS
+
+Com consentimento explícito para acessar o Keychain real, execute o smoke test opt-in somente no macOS:
 
 ```bash
-supa.cc --version
-supa.cc version
-supa.cc list
+SUPA_CC_RUN_KEYCHAIN_SMOKE=1 .venv/bin/pytest -q tests/test_macos_keychain_smoke.py
 ```
 
-## Publicação
-
-O repositório público oficial é `https://github.com/dgabreuu/supa.cc.git`.
-
-Antes de publicar uma release, revise histórico, arquivos ignorados, logs, caches, ambientes virtuais, fixtures e saídas de terminal para confirmar que não há tokens, URLs privadas, nomes pessoais, emails privados ou referências a remotes antigos. O checklist de publicação e atualização da fórmula Homebrew está em `docs/release.md`.
+O teste cria uma credencial falsa e descartável com serviço `supa.cc.tests.<uuid>` e conta `smoke-<uuid>`, verifica o round-trip e a remove em um bloco `finally`. Ele nunca usa o serviço canônico do Supa.cc nem lê, altera ou remove credenciais do Supabase CLI.
 
 ## Licença
 
-MIT. Veja `LICENSE`. A licença permite baixar, usar, modificar e redistribuir o projeto, mantendo os avisos de copyright e permissão.
+MIT. Veja `LICENSE`.

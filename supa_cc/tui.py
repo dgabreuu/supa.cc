@@ -1,7 +1,7 @@
 from .ui.app import TUIApp
 
 
-def run() -> None:
+def run() -> int:
     """Entrypoint para a aplicação TUI."""
     app = TUIApp()
-    app.run()
+    return app.run()
