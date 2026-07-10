@@ -1,5 +1,7 @@
 from dataclasses import dataclass, field
 
+from .auth import is_valid_access_token
+
 
 @dataclass
 class Account:
@@ -8,4 +10,4 @@ class Account:
 
     def validate_token(self) -> bool:
         """Valida formato do token Supabase."""
-        return self.token.startswith("sbp_") and len(self.token) > 10
+        return is_valid_access_token(self.token)

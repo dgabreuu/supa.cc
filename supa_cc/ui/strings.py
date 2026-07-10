@@ -17,11 +17,13 @@ class UIStrings:
     MENU_LIST = "Listar contas"
     MENU_SWITCH = "Alternar conta ativa"
     MENU_REMOVE = "Remover conta"
+    MENU_BACK = "Voltar"
     MENU_EXIT = "Sair"
 
     # Prompts
     PROMPT_ACCOUNT_NAME = "Nome da conta:"
     PROMPT_ACCESS_TOKEN = "Token de acesso:"
+    PROMPT_LIST_ACCOUNTS = "Contas cadastradas:"
     PROMPT_SELECT_ACCOUNT = "Selecione a conta:"
     PROMPT_SELECT_REMOVE = "Selecione a conta para remover:"
     PROMPT_CONFIRM_REMOVE = "Remover conta '{}'?"
@@ -36,11 +38,14 @@ class UIStrings:
     MSG_LISTED_ACCOUNTS = "Listadas {} {}."
     MSG_SWITCH_CANCELLED = "Alternância de conta cancelada."
     MSG_REMOVE_CANCELLED = "Remoção de conta cancelada."
-    MSG_ACCOUNT_ACTIVATED = "Conta '{}' ativada. Comandos Supabase usarão ela."
+    MSG_ACCOUNT_ACTIVATED = "Conta '{}' ativada."
     MSG_ACTIVATE_FAILED = "Falha ao ativar conta '{}'."
     MSG_ACCOUNT_REMOVED = "Conta '{}' removida."
     MSG_UNKNOWN_OPTION = "Opção de menu desconhecida."
     MSG_GOODBYE = "Até logo!"
+
+    # Loading
+    LOADING_SWITCH_ACCOUNT = "Ativando conta..."
 
     # Tabela de contas
     TABLE_TITLE = "Contas cadastradas"

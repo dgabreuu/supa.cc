@@ -69,3 +69,4 @@ class CLIStrings(CommonStrings):
     CMD_REMOVE_HELP = "Remover conta cadastrada."
     MSG_ERROR = "Erro: {}"
     MSG_CONFIRM_REMOVE = "Remover conta?"
+    PROMPT_ACCESS_TOKEN = "Token de acesso"

@@ -1,9 +1,21 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 import supa_cc
 from supa_cc.__main__ import _check_for_updates, main
+from supa_cc.auth import (
+    AccountIndexInvalidError,
+    AccountTransactionError,
+    AuthFailureCode,
+    AuthResult,
+    CommandResult,
+    InvalidAccessTokenError,
+    InvalidAccountNameError,
+    KeychainPermissionDeniedError,
+)
+from supa_cc.diagnostics import DoctorReport
 from supa_cc.models import Account
 
 from helpers import fake_pat
@@ -58,55 +70,192 @@ class TestCLICommands:
         assert "work" in result.output
 
     def test_add_valid_account(self):
+        token = fake_pat("prompt_only")
         runner = CliRunner()
         with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
-            result = runner.invoke(main, ["add", "work", "--token", fake_pat()])
+            result = runner.invoke(main, ["add", "work"], input=f"{token}\n")
         assert result.exit_code == 0
         assert "Conta 'work' adicionada." in result.output
-        mock_manager.add.assert_called_once_with("work", fake_pat())
+        assert token not in result.output
+        mock_manager.add.assert_called_once_with("work", token)
+
+    def test_add_rejects_public_token_option(self):
+        token = fake_pat("must_not_be_argv")
+        runner = CliRunner()
+
+        result = runner.invoke(main, ["add", "work", "--token", token])
+
+        assert result.exit_code == 2
+        assert "No such option '--token'" in result.output
+        assert token not in result.output
 
     def test_add_invalid_token_shows_sanitized_error(self):
         runner = CliRunner()
         with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
             mock_manager = MagicMock()
-            token_prefix = "sbp" + "_"
-            mock_manager.add.side_effect = ValueError(f"Token inválido. Deve começar com '{token_prefix}'")
+            mock_manager.add.side_effect = InvalidAccessTokenError("private")
             mock_manager_class.return_value = mock_manager
-            result = runner.invoke(main, ["add", "work", "--token", "bad"])
-        assert result.exit_code == 0
-        assert "Erro de validação. Verifique os dados fornecidos." in result.output
+            result = runner.invoke(main, ["add", "work"], input="bad\n")
+        assert result.exit_code != 0
+        assert "Token inválido: informe um PAT Supabase em formato sbp_ válido." in result.output
 
     def test_add_invalid_name_shows_error(self):
         runner = CliRunner()
         with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
             mock_manager = MagicMock()
-            mock_manager.add.side_effect = ValueError("Nome da conta deve ter entre 1 e 50 caracteres.")
+            mock_manager.add.side_effect = InvalidAccountNameError(
+                "Nome da conta deve ter entre 1 e 50 caracteres."
+            )
             mock_manager_class.return_value = mock_manager
-            result = runner.invoke(main, ["add", "", "--token", fake_pat()])
-        assert result.exit_code == 0
-        assert "Nome da conta deve ter entre 1 e 50 caracteres." in result.output
+            result = runner.invoke(main, ["add", ""], input=f"{fake_pat()}\n")
+        assert result.exit_code != 0
+        assert "Nome de conta inválido: use entre 1 e 50 caracteres" in result.output
+
+    def test_add_keychain_failure_is_nonzero_and_sanitized(self):
+        token = fake_pat("keychain_failure")
+        runner = CliRunner()
+        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+            mock_manager = MagicMock()
+            mock_manager.add.side_effect = KeychainPermissionDeniedError(
+                f"storage failed {token}"
+            )
+            mock_manager_class.return_value = mock_manager
+            result = runner.invoke(main, ["add", "work"], input=f"{token}\n")
+
+        assert result.exit_code != 0
+        assert token not in result.output
+        assert "Acesso ao Keychain não autorizado." in result.output
+
+    def test_list_maps_index_failure_without_traceback(self):
+        runner = CliRunner()
+        with patch("supa_cc.accounts.AccountManager") as manager_class:
+            manager_class.return_value.list.side_effect = AccountIndexInvalidError(
+                "private index detail"
+            )
+            result = runner.invoke(main, ["list"])
+
+        assert result.exit_code != 0
+        assert "O índice local de contas é inválido." in result.output
+        assert "private index detail" not in result.output
+
+    def test_remove_maps_transaction_failure_without_traceback(self):
+        runner = CliRunner()
+        with patch("supa_cc.accounts.AccountManager") as manager_class:
+            manager_class.return_value.remove.side_effect = AccountTransactionError(
+                "private transaction detail"
+            )
+            result = runner.invoke(main, ["remove", "work", "--yes"])
+
+        assert result.exit_code != 0
+        assert "não pôde ser concluída com segurança" in result.output
+        assert "private transaction detail" not in result.output
+
+    @pytest.mark.parametrize(
+        "token_like_name",
+        [
+            fake_pat("remove_cli_namespace"),
+            "acct_" + fake_pat("embedded_cli"),
+        ],
+    )
+    def test_remove_rejects_pat_like_name_without_echoing_it_or_touching_keychain(
+        self, token_like_name
+    ):
+        runner = CliRunner()
+
+        result = runner.invoke(main, ["remove", token_like_name, "--yes"])
+
+        assert result.exit_code != 0
+        assert token_like_name not in result.output
+        assert "Nome de conta inválido" in result.output
 
     def test_switch_nonexistent_account_shows_failure(self):
         runner = CliRunner()
         with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
             mock_manager = MagicMock()
-            mock_manager.set_active.return_value = False
+            mock_manager.set_active.return_value = AuthResult.failure(
+                AuthFailureCode.TOKEN_MISSING,
+                "Token não encontrado para a conta selecionada.",
+                exit_code=7,
+            )
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["switch", "missing"])
-        assert result.exit_code == 0
-        assert "Falha ao ativar conta 'missing'." in result.output
+        assert result.exit_code == 7
+        assert "Token não encontrado para a conta selecionada." in result.output
 
     def test_switch_valid_account(self):
         runner = CliRunner()
         with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
             mock_manager = MagicMock()
-            mock_manager.set_active.return_value = True
+            mock_manager.set_active.return_value = AuthResult.success(
+                "Conta 'work' ativada no Supa.cc. A sessão nativa independente "
+                "da Supabase CLI não foi alterada; use 'supa.cc run -- ...'."
+            )
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["switch", "work"])
         assert result.exit_code == 0
-        assert "Conta 'work' ativada." in result.output
+        assert "Conta 'work' ativada no Supa.cc." in result.output
+        assert "sessão nativa independente" in result.output
+        assert "supa.cc run -- ..." in result.output
+
+    def test_run_requires_command(self):
+        runner = CliRunner()
+
+        result = runner.invoke(main, ["run", "--"])
+
+        assert result.exit_code != 0
+        assert "Missing argument" in result.output
+
+    def test_run_accepts_unknown_supabase_options_and_emits_sanitized_streams(self):
+        runner = CliRunner()
+        command_result = CommandResult.success(
+            stdout="safe stdout\n", stderr="safe stderr\n"
+        )
+        with patch("supa_cc.accounts.AccountManager") as manager_class:
+            manager = MagicMock()
+            def stream(_arguments, stdout_sink, stderr_sink):
+                stdout_sink("safe stdout\n")
+                stderr_sink("safe stderr\n")
+                return command_result
+
+            manager.run_active.side_effect = stream
+            manager_class.return_value = manager
+
+            result = runner.invoke(
+                main,
+                ["run", "--", "projects", "list", "--profile", "work"],
+            )
+
+        assert result.exit_code == 0
+        assert result.stdout == "safe stdout\n"
+        assert result.stderr == "safe stderr\n"
+        assert manager.run_active.call_count == 1
+        assert manager.run_active.call_args.args == (
+            ["projects", "list", "--profile", "work"],
+        )
+        assert callable(manager.run_active.call_args.kwargs["stdout_sink"])
+        assert callable(manager.run_active.call_args.kwargs["stderr_sink"])
+
+    def test_run_propagates_normalized_failure_exit_and_message(self):
+        runner = CliRunner()
+        command_result = CommandResult.failure(
+            AuthFailureCode.TOKEN_REJECTED,
+            "O token foi rejeitado pela API da Supabase.",
+            exit_code=17,
+            stdout="partial\n",
+            stderr="401 Unauthorized [REDACTED]\n",
+        )
+        with patch("supa_cc.accounts.AccountManager") as manager_class:
+            manager = MagicMock()
+            manager.run_active.return_value = command_result
+            manager_class.return_value = manager
+            result = runner.invoke(main, ["run", "--", "projects", "list"])
+
+        assert result.exit_code == 17
+        assert result.stdout == ""
+        assert "401 Unauthorized [REDACTED]" not in result.stderr
+        assert "O token foi rejeitado" in result.stderr
 
     def test_remove_prompts_for_confirmation(self):
         runner = CliRunner()
@@ -128,9 +277,72 @@ class TestCLICommands:
         assert "Conta 'work' removida." in result.output
         mock_manager.remove.assert_called_once_with("work")
 
+    def test_doctor_default_renders_human_report(self):
+        runner = CliRunner()
+        report = DoctorReport(
+            ok=True,
+            exit_code=0,
+            runtime={"launcher": "/safe/supa.cc"},
+            supabase_cli={"path": "/safe/supabase", "version": "2.109.1", "provenance": "homebrew"},
+            keychain_service="supa.cc.supabase.accounts.v2",
+            keychain_backend="macOS",
+            index={"path": "/safe/accounts.json", "state": "valid", "account_count": 1},
+            active_account="work",
+            environment={"supabase_access_token_present": False},
+            diagnostic_codes=[],
+        )
+        with patch("supa_cc.diagnostics.DiagnosticService") as service_class:
+            service_class.return_value.run.return_value = report
+            result = runner.invoke(main, ["doctor"])
+
+        assert result.exit_code == 0
+        assert "Supabase CLI" in result.output
+        assert "/safe/supabase" in result.output
+        service_class.return_value.run.assert_called_once_with(
+            account=None, live=False
+        )
+
+    def test_doctor_json_and_live_failure_exit(self):
+        runner = CliRunner()
+        report = DoctorReport(
+            ok=False,
+            exit_code=11,
+            runtime={},
+            supabase_cli={},
+            keychain_service="supa.cc.supabase.accounts.v2",
+            keychain_backend="macOS",
+            index={"state": "valid"},
+            active_account="work",
+            environment={"supabase_access_token_present": False},
+            diagnostic_codes=[AuthFailureCode.TOKEN_REJECTED.value],
+            live_result=AuthResult.failure(
+                AuthFailureCode.TOKEN_REJECTED,
+                "O token foi rejeitado pela API da Supabase.",
+                exit_code=11,
+            ),
+        )
+        with patch("supa_cc.diagnostics.DiagnosticService") as service_class:
+            service_class.return_value.run.return_value = report
+            result = runner.invoke(
+                main, ["doctor", "--json", "--account", "work", "--live"]
+            )
+
+        assert result.exit_code == 11
+        assert '"token_rejected"' in result.output
+        service_class.return_value.run.assert_called_once_with(
+            account="work", live=True
+        )
+
     def test_main_without_command_launches_tui(self):
         runner = CliRunner()
-        with patch("supa_cc.__main__.run_tui") as mock_run_tui:
+        with patch("supa_cc.__main__.run_tui", return_value=0) as mock_run_tui:
             result = runner.invoke(main, [])
         assert result.exit_code == 0
         mock_run_tui.assert_called_once()
+
+    def test_main_without_command_propagates_tui_failure_exit(self):
+        runner = CliRunner()
+        with patch("supa_cc.__main__.run_tui", return_value=7):
+            result = runner.invoke(main, [])
+
+        assert result.exit_code == 7

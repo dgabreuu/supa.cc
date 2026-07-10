@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "supa.cc"
-version = "0.1.1"
+version = "0.2.0"
 description = "Local Supabase account switcher for macOS Keychain"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -52,3 +52,8 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["supa_cc"]
+
+[tool.pytest.ini_options]
+markers = [
+    "real_keychain: opt-in smoke test that accesses an isolated macOS Keychain item",
+]

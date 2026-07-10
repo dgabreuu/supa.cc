@@ -1,10 +1,17 @@
 import subprocess
 import click
 import supa_cc
+from .auth import classify_local_failure, normalize_exit_code
 from .tui import run as run_tui
 from .strings import CLIStrings as Textos
 
 UPGRADE_HINT = "brew upgrade supa-cc ou brew upgrade --fetch-HEAD supa-cc; para pipx: pipx upgrade supa.cc"
+
+
+def _exit_with_local_failure(error):
+    result = classify_local_failure(error)
+    click.echo(Textos.MSG_ERROR.format(result.message), err=True)
+    raise click.exceptions.Exit(normalize_exit_code(result.exit_code) or 1)
 
 
 def _check_for_updates():
@@ -43,7 +50,9 @@ def _check_for_updates():
 def main(ctx):
     """Gerenciador de Contas Supabase"""
     if ctx.invoked_subcommand is None:
-        run_tui()
+        exit_code = run_tui()
+        if exit_code:
+            ctx.exit(normalize_exit_code(exit_code) or 1)
 
 
 @main.command()
@@ -55,28 +64,32 @@ def version():
 
 @main.command()
 @click.argument("name")
-@click.option("--token", prompt=True, hide_input=True)
-def add(name, token):
+def add(name):
     """Adicionar nova conta."""
     from .accounts import AccountManager
+
+    token = click.prompt(
+        Textos.PROMPT_ACCESS_TOKEN,
+        hide_input=True,
+        confirmation_prompt=False,
+    )
     manager = AccountManager()
     try:
         manager.add(name, token)
         click.echo(Textos.MSG_ACCOUNT_ADDED.format(name))
-    except ValueError as e:
-        msg = str(e)
-        # Sanitiza mensagem para evitar vazamento de token
-        if "sbp_" in msg:
-            msg = "Erro de validação. Verifique os dados fornecidos."
-        click.echo(Textos.MSG_ERROR.format(msg))
+    except Exception as error:
+        _exit_with_local_failure(error)
 
 
-@main.command()
-def list():
+@main.command("list")
+def list_accounts_command():
     """Listar contas cadastradas."""
     from .accounts import AccountManager
     manager = AccountManager()
-    accounts = manager.list()
+    try:
+        accounts = manager.list()
+    except Exception as error:
+        _exit_with_local_failure(error)
     if not accounts:
         click.echo(Textos.MSG_NO_ACCOUNTS)
         return
@@ -91,10 +104,67 @@ def switch(name):
     """Alternar conta ativa."""
     from .accounts import AccountManager
     manager = AccountManager()
-    if manager.set_active(name):
-        click.echo(Textos.MSG_ACCOUNT_ACTIVATED.format(name))
-    else:
-        click.echo(Textos.MSG_ACTIVATE_FAILED.format(name))
+    try:
+        result = manager.set_active(name)
+    except Exception as error:
+        _exit_with_local_failure(error)
+    if result.ok:
+        click.echo(result.message)
+        return
+    click.echo(result.message, err=True)
+    raise click.exceptions.Exit(normalize_exit_code(result.exit_code) or 1)
+
+
+@main.command(
+    context_settings={
+        "ignore_unknown_options": True,
+        "allow_extra_args": True,
+    }
+)
+@click.argument("arguments", nargs=-1, required=True, type=click.UNPROCESSED)
+def run(arguments):
+    """Executar a Supabase CLI com a conta ativa, usando PAT somente no ambiente."""
+    from .accounts import AccountManager
+
+    stdout = click.get_text_stream("stdout")
+    stderr = click.get_text_stream("stderr")
+
+    def stdout_sink(text):
+        stdout.write(text)
+        stdout.flush()
+
+    def stderr_sink(text):
+        stderr.write(text)
+        stderr.flush()
+
+    try:
+        result = AccountManager().run_active(
+            [argument for argument in arguments],
+            stdout_sink=stdout_sink,
+            stderr_sink=stderr_sink,
+        )
+    except Exception as error:
+        _exit_with_local_failure(error)
+    if not result.ok:
+        click.echo(result.message, err=True)
+        raise click.exceptions.Exit(normalize_exit_code(result.exit_code) or 1)
+
+
+@main.command()
+@click.option("--account", type=str, default=None)
+@click.option("--live", is_flag=True, default=False)
+@click.option("--json", "as_json", is_flag=True, default=False)
+def doctor(account, live, as_json):
+    """Diagnosticar executáveis, índice, ambiente e autenticação opcional."""
+    from .diagnostics import DiagnosticService
+
+    try:
+        report = DiagnosticService().run(account=account, live=live)
+    except Exception as error:
+        _exit_with_local_failure(error)
+    click.echo(report.to_json() if as_json else report.to_human())
+    if not report.ok:
+        raise click.exceptions.Exit(normalize_exit_code(report.exit_code) or 1)
 
 
 @main.command()
@@ -104,7 +174,10 @@ def remove(name):
     """Remover conta cadastrada."""
     from .accounts import AccountManager
     manager = AccountManager()
-    manager.remove(name)
+    try:
+        manager.remove(name)
+    except Exception as error:
+        _exit_with_local_failure(error)
     click.echo(Textos.MSG_ACCOUNT_REMOVED.format(name))
 
 

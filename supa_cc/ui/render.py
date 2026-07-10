@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Callable, Iterable, Optional
 
 from rich.align import Align
 from rich.console import Console
@@ -8,20 +8,39 @@ from rich.text import Text
 
 from ..models import Account
 from .console import console as default_console
-from .layout import create_message_panel
+from .layout import center_banner_lines, clear_screen, create_header, create_message_panel
 from .state import NavigationState, UIMessage
 from .strings import UIStrings as Textos
-from .theme import RICH_STYLES, SUPA_CC_BANNER
+from .theme import RICH_STYLES, get_banner
 
 
 class UIRenderer:
     def __init__(self, console: Console = None):
         self.console = console or default_console
 
+    def clear(self) -> None:
+        clear_screen(self.console)
+
+    def paint_home(self, state: NavigationState, account_count: int) -> None:
+        self.clear()
+        self.show_home(state, account_count=account_count)
+
+    def paint_subpage(
+        self,
+        state: NavigationState,
+        title: str,
+        render_body: Optional[Callable[[], None]] = None,
+    ) -> None:
+        self.clear()
+        self.console.print(create_header(title, Textos.APP_NAME))
+        if render_body is not None:
+            render_body()
+
     def show_home(self, state: NavigationState, account_count: int) -> None:
         account_label = Textos.ACCOUNT_COUNT_ONE if account_count == 1 else Textos.ACCOUNT_COUNT_MANY
+        banner = center_banner_lines(get_banner(self.console.width))
         body = Text()
-        body.append(SUPA_CC_BANNER, style=RICH_STYLES["banner"])
+        body.append(banner, style=RICH_STYLES["banner"])
         body.append(f"\n{Textos.APP_NAME}", style="bold white")
         body.append(f"\n{Textos.APP_DESCRIPTION}", style=RICH_STYLES["dim"])
         body.append(f"\n\n{account_count} {account_label}", style=RICH_STYLES["info"])

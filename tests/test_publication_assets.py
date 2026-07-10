@@ -2,8 +2,8 @@ from pathlib import Path
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.1.0.tar.gz"
-TARBALL_SHA256 = "9f6a417f5d80ff5bcd53c0a5605b50446f5288be1e6e6979245f82e684f4014c"
+TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.1.1.tar.gz"
+TARBALL_SHA256 = "a4204159444e34612247c664acb5707536464724b20fe582a6bc4933c9bffe42"
 
 
 def test_readme_uses_public_repository_url():
@@ -49,3 +49,56 @@ def test_publication_docs_cover_installation_and_release():
     assert "brew audit --strict supa-cc" in release
     assert "brew test supa-cc" in release
     assert "git status --short" in release
+
+
+def test_public_authentication_contract_is_safe_and_current():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    skill = Path("SKILL.md").read_text(encoding="utf-8")
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+    docs = "\n".join((readme, skill, installation))
+    normalized = docs.lower()
+
+    assert "supa.cc add <name> --token" not in normalized
+    assert "supa.cc add <nome> --token" not in normalized
+    assert "supabase login --name" not in normalized
+    assert "repair automático" not in normalized
+    assert "credential repair is automatic" not in normalized
+    assert "memoizes both loaded tokens and missing" not in normalized
+    assert "ativa a conta informada no supabase cli" not in normalized
+
+    assert "supa.cc run --" in docs
+    assert "supa.cc doctor" in docs
+    assert "doctor --json" in docs
+    assert "--account <nome> --live" in docs or "--account <name> --live" in docs
+    assert "SUPABASE_ACCESS_TOKEN" in docs
+    assert "supa.cc.supabase.accounts.v2" in docs
+    assert "active-account" in docs
+    assert "não altera a sessão nativa" in normalized or "does not own or alter" in normalized
+    assert "prompt oculto" in normalized or "hidden prompt" in normalized
+    assert "sbp_oauth_" in docs
+    assert "[0-9a-f]{40}" in docs
+    assert "40 lowercase hexadecimal" in normalized or "40 caracteres hexadecimais minúsculos" in normalized
+
+
+def test_public_docs_describe_the_opt_in_keychain_smoke_safely():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    skill = Path("SKILL.md").read_text(encoding="utf-8")
+    docs = "\n".join((readme, skill))
+
+    command = (
+        "SUPA_CC_RUN_KEYCHAIN_SMOKE=1 .venv/bin/pytest -q "
+        "tests/test_macos_keychain_smoke.py"
+    )
+    assert command in docs
+    assert "supa.cc.tests.<uuid>" in docs
+    assert "smoke-<uuid>" in docs
+    assert "finally" in docs
+    assert "consentimento explícito" in docs or "explicit consent" in docs
+    assert (
+        "nunca acessa o serviço canônico do Supa.cc" in docs
+        or "never accesses the canonical Supa.cc service" in docs
+    )
+    assert (
+        ("nunca acessa" in docs and "Supabase CLI" in docs)
+        or ("never accesses" in docs and "Supabase CLI" in docs)
+    )
