@@ -21,7 +21,9 @@ Supa.cc é uma ferramenta de linha de comando para gerenciar múltiplas contas d
 
 ## Instalação
 
-O método recomendado é o Homebrew:
+### Homebrew (somente macOS)
+
+No macOS, o método recomendado é o Homebrew:
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
@@ -34,7 +36,9 @@ Para instalar a versão atual do branch `main` durante desenvolvimento:
 brew install --HEAD supa-cc
 ```
 
-Em Linux, instale os pré-requisitos do seu sistema e use `pipx`; os comandos exatos estão em [docs/installation.md](docs/installation.md). Alternativamente, `pipx` também instala em um ambiente Python isolado no macOS:
+### Linux (somente pipx)
+
+Em Linux, instale os pré-requisitos do seu sistema e use `pipx`; os comandos exatos estão em [docs/installation.md](docs/installation.md). `pipx` também pode instalar em um ambiente Python isolado no macOS:
 
 ```bash
 pipx install "git+https://github.com/dgabreuu/supa.cc.git"

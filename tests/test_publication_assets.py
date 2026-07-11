@@ -71,6 +71,20 @@ def test_public_docs_cover_linux_installation_and_credential_requirements():
     assert "keyrings.alt" in normalized
 
 
+def test_public_docs_keep_installation_routes_and_credential_flow_platform_specific():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+    skill = Path("SKILL.md").read_text(encoding="utf-8")
+
+    assert "Homebrew (somente macOS)" in readme
+    assert "Linux (somente pipx)" in readme
+    assert "Homebrew (somente macOS)" in installation
+    assert "Linux (somente pipx)" in installation
+    assert "macOS: Keychain service supa.cc.supabase.accounts.v2" in skill
+    assert "Linux: Secret Service supa.cc.supabase.accounts.v2" in skill
+    assert "plaintext" in skill.lower()
+
+
 def test_release_docs_build_and_validate_linux_artifacts():
     release = Path("docs/release.md").read_text(encoding="utf-8")
 

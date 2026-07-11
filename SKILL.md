@@ -17,17 +17,20 @@ Use-o para seleção interativa local de contas. Não o use como gerenciador de 
 supa.cc add <name>
     hidden PAT prompt
       -> validate format
-      -> Keychain service supa.cc.supabase.accounts.v2
+      -> macOS: Keychain service supa.cc.supabase.accounts.v2
+      -> Linux: Secret Service supa.cc.supabase.accounts.v2
       -> accounts.json stores name only
 
 supa.cc switch <name>
-    Keychain read
+    macOS: Keychain read
+    Linux: Secret Service read
       -> read-only projects list with PAT in child environment
       -> active-account stores name only
 
 supa.cc run -- <supabase arguments>
     active-account name
-      -> Keychain read
+      -> macOS: Keychain read
+      -> Linux: Secret Service read
       -> resolved real Supabase CLI executable
       -> PAT in child SUPABASE_ACCESS_TOKEN only
       -> sanitized streaming output and child exit code

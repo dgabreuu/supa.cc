@@ -2,9 +2,9 @@
 
 Supa.cc é uma CLI para macOS e para Debian/Ubuntu, Arch Linux e Fedora. Ela espera que o Supabase CLI esteja disponível como `supabase` no `PATH`. No macOS os tokens ficam no Keychain; no Linux ficam exclusivamente no Secret Service.
 
-## Homebrew
+## Homebrew (somente macOS)
 
-Método principal de instalação:
+No macOS, este é o método principal de instalação:
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
@@ -31,7 +31,7 @@ brew upgrade supa-cc
 brew uninstall supa-cc
 ```
 
-## Linux com pipx
+## Linux (somente pipx)
 
 No Linux, instale primeiro `pipx`, o Secret Service e suas ferramentas. Execute somente o comando correspondente à sua distribuição:
 
