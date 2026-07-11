@@ -312,6 +312,19 @@ def test_doctor_json_contains_no_environment_or_validation_secret(tmp_path):
     assert payload["live"]["message"] == "unsafe [REDACTED]"
 
 
+def test_macos_doctor_human_output_reports_operating_system(tmp_path):
+    report = _service(
+        tmp_path,
+        environment=detect_environment(system_name="Darwin"),
+    ).run()
+
+    human = report.to_human()
+
+    assert "Sistema operacional: macos" in human
+    assert "Distribuição Linux" not in human
+    assert "keychain" not in human.lower()
+
+
 def test_linux_doctor_reports_distribution_and_unavailable_credential_store(
     tmp_path,
 ):
@@ -344,3 +357,29 @@ def test_linux_doctor_reports_distribution_and_unavailable_credential_store(
     )
     assert "keychain" not in report.to_human().lower()
     signature_resolver.assert_not_called()
+
+
+def test_linux_doctor_human_output_reports_distribution_and_remediation(
+    tmp_path,
+):
+    credential_store = Mock()
+    credential_store.status.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.SecretService.Keyring",
+        available=False,
+        message="credential store unavailable",
+    )
+    report = _service(
+        tmp_path,
+        environment=detect_environment(
+            system_name="Linux", os_release="ID=ubuntu\n"
+        ),
+        credential_store=credential_store,
+    ).run()
+
+    human = report.to_human()
+
+    assert "Sistema operacional: linux" in human
+    assert "Distribuição Linux: ubuntu" in human
+    assert "Remediação: Instale os pré-requisitos indicados" in human
+    assert "Secret Service" in human
+    assert "keychain" not in human.lower()

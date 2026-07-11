@@ -294,6 +294,9 @@ class DoctorReport:
                 f"{realpath or 'não identificado'} (assinatura: {status})"
             )
         active = self.active_account or "não selecionada"
+        operating_system = self.runtime.get("operating_system") or "unknown"
+        linux_distribution = self.runtime.get("linux_distribution")
+        remediation = self.credentials.get("remediation")
         diagnostics = ", ".join(
             code.replace("keychain", "credential_store")
             for code in self.diagnostic_codes
@@ -301,6 +304,7 @@ class DoctorReport:
         lines = [
             "Supa.cc doctor",
             f"Supa.cc versão: {self.runtime.get('supa_cc_version') or 'unknown'}",
+            f"Sistema operacional: {operating_system}",
             identity_line(
                 "Supa.cc launcher",
                 launcher_invoked,
@@ -335,6 +339,10 @@ class DoctorReport:
             f"Diagnósticos: {diagnostics}",
             "Ativação: environment_only (sessão nativa e perfil não gerenciados)",
         ]
+        if linux_distribution:
+            lines.append(f"Distribuição Linux: {linux_distribution}")
+        if remediation:
+            lines.append(f"Remediação: {remediation}")
         if self.live_result is not None:
             lines.append(
                 "Validação live: "
