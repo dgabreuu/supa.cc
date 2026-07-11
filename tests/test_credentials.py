@@ -8,6 +8,7 @@ from supa_cc.auth import (
     AuthFailureCode,
     CredentialPermissionDeniedError,
     CredentialReadError,
+    SecretServiceUnavailableError,
     classify_local_failure,
 )
 from supa_cc.credentials import (
@@ -284,6 +285,37 @@ def test_unavailable_store_blocks_writes_before_token_access(fake_secret_service
 
     assert "D-Bus" in str(raised.value)
     assert account.token not in str(raised.value)
+    assert [call[0] for call in fake.calls] == ["get"]
+
+
+@pytest.mark.parametrize("operation", ["get", "set", "delete"])
+def test_startup_probe_secret_service_unavailability_survives_classification(
+    fake_secret_service, operation
+):
+    fake_secret_service.next_get_error = PermissionError("private probe detail")
+    account = Account(name="work", token=fake_pat("startup-probe"))
+    store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
+
+    with pytest.raises(SecretServiceUnavailableError) as raised:
+        if operation == "get":
+            store.get(account.name)
+        elif operation == "set":
+            store.set(account)
+        else:
+            store.delete(account.name)
+
+    result = classify_local_failure(raised.value)
+    expected_message = (
+        "O Secret Service não está disponível. Verifique o D-Bus e desbloqueie "
+        "o Secret Service."
+    )
+
+    assert result.code is AuthFailureCode.KEYCHAIN_READ_FAILED
+    assert result.message == expected_message
+    assert account.token not in str(raised.value)
+    assert account.token not in result.message
+    assert "private probe detail" not in result.message
     assert [call[0] for call in fake.calls] == ["get"]
 
 

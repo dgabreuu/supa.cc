@@ -14,6 +14,7 @@ from supa_cc.auth import (
     InvalidAccessTokenError,
     InvalidAccountNameError,
     KeychainPermissionDeniedError,
+    CredentialAccessError,
 )
 from supa_cc.diagnostics import DoctorReport
 from supa_cc.models import Account
@@ -169,6 +170,28 @@ class TestCLICommands:
         assert result.exit_code != 0
         assert "não pôde ser concluída com segurança" in result.output
         assert "private transaction detail" not in result.output
+
+    @pytest.mark.parametrize(
+        "command,input_text",
+        [
+            (["add", "work"], f"{fake_pat('blocked_add')}\n"),
+            (["list"], None),
+            (["switch", "work"], None),
+            (["remove", "work", "--yes"], None),
+        ],
+        ids=["add", "list", "switch", "remove"],
+    )
+    def test_commands_sanitize_account_manager_construction_failures(
+        self, command, input_text
+    ):
+        runner = CliRunner()
+        with patch("supa_cc.accounts.AccountManager") as manager_class:
+            manager_class.side_effect = CredentialAccessError("private backend detail")
+            result = runner.invoke(main, command, input=input_text)
+
+        assert result.exit_code != 0
+        assert "Não foi possível acessar a credencial no armazenamento de credenciais." in result.output
+        assert "private backend detail" not in result.output
 
     @pytest.mark.parametrize(
         "token_like_name",

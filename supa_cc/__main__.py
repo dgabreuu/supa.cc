@@ -73,8 +73,8 @@ def add(name):
         hide_input=True,
         confirmation_prompt=False,
     )
-    manager = AccountManager()
     try:
+        manager = AccountManager()
         manager.add(name, token)
         click.echo(Textos.MSG_ACCOUNT_ADDED.format(name))
     except Exception as error:
@@ -85,8 +85,8 @@ def add(name):
 def list_accounts_command():
     """Listar contas cadastradas."""
     from .accounts import AccountManager
-    manager = AccountManager()
     try:
+        manager = AccountManager()
         accounts = manager.list()
     except Exception as error:
         _exit_with_local_failure(error)
@@ -103,8 +103,8 @@ def list_accounts_command():
 def switch(name):
     """Alternar conta ativa."""
     from .accounts import AccountManager
-    manager = AccountManager()
     try:
+        manager = AccountManager()
         result = manager.set_active(name)
     except Exception as error:
         _exit_with_local_failure(error)
@@ -173,8 +173,8 @@ def doctor(account, live, as_json):
 def remove(name):
     """Remover conta cadastrada."""
     from .accounts import AccountManager
-    manager = AccountManager()
     try:
+        manager = AccountManager()
         manager.remove(name)
     except Exception as error:
         _exit_with_local_failure(error)

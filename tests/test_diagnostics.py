@@ -15,6 +15,7 @@ from supa_cc.config import SupabaseConfig
 from supa_cc.credentials import CredentialStoreStatus
 from supa_cc.diagnostics import DiagnosticService
 from supa_cc.environment import detect_environment
+from supa_cc.installation import installation_guidance
 from supa_cc.keychain import KEYCHAIN_SERVICE
 
 from helpers import fake_pat
@@ -383,3 +384,55 @@ def test_linux_doctor_human_output_reports_distribution_and_remediation(
     assert "Remediação: Instale os pré-requisitos indicados" in human
     assert "Secret Service" in human
     assert "keychain" not in human.lower()
+
+
+def test_doctor_blocks_unknown_linux_without_constructing_account_manager(
+    tmp_path, monkeypatch
+):
+    environment = detect_environment(system_name="Linux", os_release="ID=custom\n")
+    token = fake_pat("blocked_doctor")
+    monkeypatch.setattr(
+        "supa_cc.diagnostics.AccountManager",
+        Mock(side_effect=AssertionError("must not construct manager")),
+    )
+
+    report = DiagnosticService(
+        env={"SUPABASE_ACCESS_TOKEN": token},
+        launcher_path=tmp_path / "supa.cc",
+        python_executable=tmp_path / "python",
+        telemetry_path=tmp_path / ".supabase",
+        environment=environment,
+    ).run()
+
+    assert report.ok is False
+    assert report.runtime["operating_system"] == "linux"
+    assert report.runtime["linux_distribution"] == "unknown"
+    assert report.credentials["available"] is False
+    assert report.credentials["status"] == "unavailable"
+    assert report.credentials["remediation"] == installation_guidance(environment).remediation
+    assert report.diagnostic_codes == [AuthFailureCode.ENVIRONMENT_BLOCKED.value]
+    assert token not in report.to_json()
+
+
+def test_doctor_blocks_unsupported_os_without_constructing_account_manager(
+    tmp_path, monkeypatch
+):
+    environment = detect_environment(system_name="Windows")
+    monkeypatch.setattr(
+        "supa_cc.diagnostics.AccountManager",
+        Mock(side_effect=AssertionError("must not construct manager")),
+    )
+
+    report = DiagnosticService(
+        launcher_path=tmp_path / "supa.cc",
+        python_executable=tmp_path / "python",
+        telemetry_path=tmp_path / ".supabase",
+        environment=environment,
+    ).run()
+
+    assert report.ok is False
+    assert report.runtime["operating_system"] == "unsupported"
+    assert report.runtime["linux_distribution"] is None
+    assert report.credentials["available"] is False
+    assert report.credentials["remediation"] == installation_guidance(environment).remediation
+    assert report.diagnostic_codes == [AuthFailureCode.ENVIRONMENT_BLOCKED.value]

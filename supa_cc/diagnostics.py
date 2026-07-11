@@ -367,7 +367,8 @@ class DiagnosticService:
         environment: Optional[Environment] = None,
         credential_store=None,
     ):
-        self.manager = manager if manager is not None else AccountManager()
+        self.environment = environment or detect_environment()
+        self._manager = manager
         self.env = os.environ if env is None else env
         self.launcher_path = launcher_path or Path(sys.argv[0])
         self.python_executable = python_executable or Path(sys.executable)
@@ -380,20 +381,92 @@ class DiagnosticService:
         self.python_implementation = (
             python_implementation or platform.python_implementation()
         )
-        self.environment = environment or detect_environment()
         self.credential_store = credential_store
+
+    def _get_manager(self) -> AccountManager:
+        if self._manager is None:
+            self._manager = AccountManager()
+        return self._manager
+
+    def _environment_blocked_report(self) -> DoctorReport:
+        guidance = installation_guidance(self.environment)
+        launcher_invoked = _safe_invoked_path(self.launcher_path)
+        launcher_realpath = _safe_realpath(self.launcher_path)
+        python_invoked = _safe_invoked_path(self.python_executable)
+        python_realpath = _safe_realpath(self.python_executable)
+        runtime = {
+            "supa_cc_version": supa_cc.__version__,
+            "operating_system": self.environment.operating_system.value,
+            "linux_distribution": (
+                self.environment.distribution.value
+                if self.environment.distribution is not None
+                else None
+            ),
+            "launcher": {
+                "invoked": launcher_invoked,
+                "realpath": launcher_realpath,
+                "signature": {"status": "not_applicable"},
+            },
+            "python": {
+                "invoked": python_invoked,
+                "realpath": python_realpath,
+                "implementation": self.python_implementation,
+                "version": self.python_version,
+                "signature": {"status": "not_applicable"},
+            },
+        }
+        return DoctorReport(
+            ok=False,
+            exit_code=1,
+            runtime=runtime,
+            supabase_cli={
+                "invoked": None,
+                "realpath": None,
+                "version": "unknown",
+                "provenance": "unknown",
+                "signature": {"status": "not_applicable"},
+            },
+            keychain_service=KEYCHAIN_SERVICE,
+            keychain_backend="indisponível",
+            credentials={
+                "service": KEYCHAIN_SERVICE,
+                "backend": "indisponível",
+                "available": False,
+                "status": "unavailable",
+                "message": "O armazenamento de credenciais não está disponível neste ambiente.",
+                "remediation": guidance.remediation,
+            },
+            index={
+                "path": str(
+                    self.environment.config_directory() / "accounts.json"
+                ),
+                "state": "not_checked",
+                "account_count": 0,
+            },
+            active_account=None,
+            environment={
+                "supabase_access_token_present": "SUPABASE_ACCESS_TOKEN" in self.env,
+                "telemetry_directory_exists": self.telemetry_path.exists(),
+                "telemetry_directory_writable": _path_writable(self.telemetry_path),
+            },
+            diagnostic_codes=[AuthFailureCode.ENVIRONMENT_BLOCKED.value],
+        )
 
     def run(
         self,
         account: Optional[str] = None,
         live: bool = False,
     ) -> DoctorReport:
+        if not self.environment.is_supported:
+            return self._environment_blocked_report()
+
+        manager = self._get_manager()
         codes: List[str] = []
         ok = True
         exit_code = 0
 
         try:
-            names = safe_load_json_index(self.manager.keychain.index_path)
+            names = safe_load_json_index(manager.keychain.index_path)
             index_state = "missing" if names is None else "valid"
             account_count = 0 if names is None else len(names)
         except AccountIndexInvalidError:
@@ -411,7 +484,7 @@ class DiagnosticService:
 
         credential_store = self.credential_store
         if credential_store is None:
-            credential_store = getattr(self.manager.keychain, "credential_store", None)
+            credential_store = getattr(manager.keychain, "credential_store", None)
         credential_status = None
         if credential_store is not None:
             try:
@@ -433,8 +506,8 @@ class DiagnosticService:
                 exit_code = 1
 
         cli_identity = _supabase_identity(
-            self.manager.config.supabase_cli_invoked,
-            self.manager.config.supabase_cli,
+            manager.config.supabase_cli_invoked,
+            manager.config.supabase_cli,
             self.signature_resolver,
             self.environment,
         )
@@ -459,7 +532,7 @@ class DiagnosticService:
                     exit_code=2,
                 )
             else:
-                live_result = self.manager.validate_named_account(account)
+                live_result = manager.validate_named_account(account)
             if not live_result.ok:
                 ok = False
                 exit_code = live_result.exit_code or 1
@@ -497,7 +570,7 @@ class DiagnosticService:
             },
         }
         index = {
-            "path": str(self.manager.keychain.index_path),
+            "path": str(manager.keychain.index_path),
             "state": index_state,
             "account_count": account_count,
         }
@@ -508,7 +581,7 @@ class DiagnosticService:
         }
         active_account = None
         try:
-            active_account = self.manager.active_store.read()
+            active_account = manager.active_store.read()
         except ActiveAccountError as error:
             active_failure = classify_local_failure(error)
             codes.append(active_failure.code.value)
@@ -516,13 +589,13 @@ class DiagnosticService:
             exit_code = exit_code or active_failure.exit_code
 
         credential_service = getattr(
-            getattr(self.manager.keychain, "credential_store", None),
+            getattr(manager.keychain, "credential_store", None),
             "service",
             None,
         )
         keychain_service = credential_service
         if not isinstance(keychain_service, str):
-            keychain_service = getattr(self.manager.keychain, "service", None)
+            keychain_service = getattr(manager.keychain, "service", None)
         if not isinstance(keychain_service, str):
             keychain_service = KEYCHAIN_SERVICE
 

@@ -95,6 +95,8 @@ class CredentialStore:
 
     def _require_available(self) -> None:
         if not self._status.available:
+            if self.backend_name == _SECRET_SERVICE_BACKEND_NAME:
+                raise SecretServiceUnavailableError()
             raise CredentialAccessError(self._status.message)
 
 
