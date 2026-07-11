@@ -183,6 +183,28 @@ def test_active_account_store_writes_only_name_with_private_permissions(tmp_path
     assert store.read() == "work"
 
 
+def test_active_account_store_resolves_default_path_at_runtime(tmp_path, monkeypatch):
+    config_path = tmp_path / "supa.cc"
+    monkeypatch.setattr(auth, "config_directory", lambda: config_path)
+
+    store = ActiveAccountStore()
+
+    assert store.path == config_path / "active-account"
+
+
+def test_active_account_store_keeps_explicit_path_without_default_resolution(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "active-account"
+
+    def unexpected_default_path():
+        raise AssertionError("default path should not be resolved")
+
+    monkeypatch.setattr(auth, "default_active_account_path", unexpected_default_path)
+
+    assert ActiveAccountStore(path).path == path
+
+
 def test_active_account_store_restricts_existing_permissions(tmp_path):
     path = tmp_path / "supa.cc" / "active-account"
     path.parent.mkdir(mode=0o755)

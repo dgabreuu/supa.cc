@@ -6,10 +6,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from supa_cc.environment import config_directory
 
-DEFAULT_ACTIVE_ACCOUNT_PATH = (
-    Path.home() / ".config" / "supa.cc" / "active-account"
-)
 _ACCOUNT_NAME_REGEX = re.compile(r"[a-zA-Z0-9_-]{1,50}")
 ACCESS_TOKEN_PREFIX = "sbp_"
 ACCESS_TOKEN_BODY_CHARACTERS = frozenset(
@@ -260,6 +258,10 @@ def normalize_exit_code(value: object, default: int = 1) -> int:
     return code if 1 <= code <= 255 else default
 
 
+def default_active_account_path() -> Path:
+    return config_directory() / "active-account"
+
+
 @dataclass(frozen=True)
 class CommandResult:
     ok: bool
@@ -310,7 +312,7 @@ class CommandResult:
 
 class ActiveAccountStore:
     def __init__(self, path: Optional[Path] = None):
-        self.path = Path(path) if path is not None else DEFAULT_ACTIVE_ACCOUNT_PATH
+        self.path = Path(path) if path is not None else default_active_account_path()
 
     def read(self) -> Optional[str]:
         try:
