@@ -33,11 +33,12 @@ Em seguida execute:
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
 python3 -m pytest -m "not real_keychain and not real_secret_service"
+SUPA_CC_REAL_SECRET_SERVICE=1 python3 -m pytest -m real_secret_service -v
 python3 -m build
 ls dist/
 ```
 
-`python3 -m build` deve gerar uma wheel e um sdist em `dist/`. Execute os jobs de teste em Linux suportado (Debian/Ubuntu, Arch Linux e Fedora) além do macOS antes da release. Os smoke tests de Keychain e Secret Service são opt-in e não entram no job padrão sem um serviço real e consentimento explícito.
+`python3 -m build` deve gerar uma wheel e um sdist em `dist/`. Execute os jobs de teste em Linux suportado (Debian/Ubuntu, Arch Linux e Fedora) além do macOS antes da release. Os smoke tests de Keychain e Secret Service são opt-in e não entram no job padrão sem um serviço real e consentimento explícito. O smoke de Secret Service pula com segurança caso o serviço não esteja disponível.
 
 ## Release no GitHub
 

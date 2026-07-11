@@ -21,6 +21,10 @@ def silence_security_keychain(request):
         yield
         return
 
+    if request.node.get_closest_marker("real_secret_service") is not None:
+        yield
+        return
+
     with patch(
         "supa_cc.keychain.create_credential_store",
         side_effect=lambda _environment, **_kwargs: FakeCredentialStore(),
