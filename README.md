@@ -60,10 +60,14 @@ Selecione a conta e execute comandos autenticados:
 
 ```bash
 supa.cc switch work
+supabase projects list
+# opcional: execução isolada com a conta ativa
 supa.cc run -- projects list
 ```
 
-`switch` valida o PAT com uma operação read-only da Management API e grava somente o nome selecionado em `~/.config/supa.cc/active-account`. Ele não faz login, não cria perfil e não altera a credencial nativa do Supabase CLI. Por isso, use `supa.cc run -- <argumentos do supabase>` para os comandos que devem usar a conta selecionada; executar `supabase ...` diretamente continua usando a sessão própria do CLI oficial.
+`switch` valida o PAT com uma operação read-only da Management API, autentica e verifica a sessão nativa pelo CLI oficial e então grava somente o nome selecionado em `~/.config/supa.cc/active-account`. Após sucesso, `supabase ...` direto usa a conta selecionada. `supa.cc run -- <argumentos>` continua disponível como execução isolada opcional.
+
+Um `SUPABASE_ACCESS_TOKEN` herdado faz override da sessão persistida e bloqueia a sincronização até ser removido do ambiente. O Supa.cc também bloqueia qualquer fallback `access-token` plaintext criado ou encontrado pela Supabase CLI, sem ler ou migrar seu conteúdo.
 
 ## Comandos
 
@@ -72,7 +76,7 @@ supa.cc run -- projects list
 | `supa.cc` | Abre a TUI interativa. |
 | `supa.cc add <nome>` | Solicita o PAT em prompt oculto e cadastra ou atualiza a conta. |
 | `supa.cc list` | Lista somente os nomes cadastrados. |
-| `supa.cc switch <nome>` | Valida o PAT e grava o nome da conta ativa do Supa.cc. |
+| `supa.cc switch <nome>` | Valida o PAT e sincroniza a sessão nativa antes de gravar a conta ativa. |
 | `supa.cc run -- <argumentos>` | Executa o Supabase CLI com o PAT da conta ativa somente no ambiente do processo filho. |
 | `supa.cc doctor` | Diagnóstico local read-only que não abre nenhum token. |
 | `supa.cc doctor --json` | Emite o mesmo diagnóstico em JSON, sem segredos. |
@@ -92,6 +96,7 @@ O modo padrão de `doctor` é seguro para coleta de suporte: não consulta o Key
 - backend e serviço do Keychain;
 - estado do índice e da seleção ativa;
 - presença, nunca o valor, de variáveis sensíveis e configuração de telemetria;
+- presença do journal de recuperação e do fallback plaintext, sem abrir seus conteúdos;
 - falhas classificadas de CLI, ambiente e permissões.
 
 Use `--live` somente com `--account`. Esse modo abre uma única vez o item escolhido no Keychain e valida o PAT por `projects list` com `SUPABASE_ACCESS_TOKEN` no ambiente do processo filho.
@@ -105,12 +110,14 @@ Os diagnósticos distinguem token ausente, formato inválido, PAT rejeitado/HTTP
 - Tokens recuperados podem permanecer apenas em cache positivo de curta duração no processo atual. Ausências não são memorizadas.
 - Um índice inválido ou ilegível é preservado para diagnóstico; não é substituído automaticamente por um índice vazio.
 - Namespaces anteriores são ignorados. Migração exige uma ação explícita ou adicionar novamente cada conta pelo prompt oculto.
-- O Supa.cc não modifica, apaga nem recria credenciais ou perfis pertencentes ao Supabase CLI.
+- A sincronização usa somente os comandos públicos `login`, `logout --yes` e `projects list` suportados pelo Supabase CLI; não edita diretamente credenciais ou perfis dele.
 - O Supa.cc não cria marcadores de ACL ou de correção da credencial nativa.
 - O Supa.cc não instala ACL ampla, não contorna um Keychain bloqueado e não exporta segredos em texto puro.
 - No Linux, o único backend aceito é o Secret Service acessado pelo D-Bus de usuário. Um serviço indisponível ou bloqueado, inclusive em ambiente headless, falha com orientação de correção; o Supa.cc não usa arquivos plaintext nem o fallback `keyrings.alt`.
 - O diretório de configuração no Linux segue `XDG_CONFIG_HOME` quando definido, ou `~/.config/supa.cc` caso contrário.
 - Erros, `stdout`, `stderr` e exceções são sanitizados antes de serem exibidos.
+- Remover a conta ativa invoca o logout oficial. Esse comando pode remover credenciais auxiliares de projeto gerenciadas pelo próprio Supabase CLI.
+- Um journal sem token permite recuperar uma sincronização interrompida no próximo comando mutável. A trava cobre processos Supa.cc cooperantes, mas não coordena execuções concorrentes externas do comando `supabase`.
 
 No macOS, quem acessa o item do Keychain é o runtime Python que executa o Supa.cc. Em uma instalação `pipx`, atualizar o ambiente, mudar o caminho do Python ou alterar a assinatura do executável pode justificar uma nova autorização única. Prompts repetidos com o mesmo runtime indicam permissão/controle de acesso inconsistente; use `doctor` para identificar os caminhos envolvidos, sem exportar o token ou afrouxar a ACL.
 

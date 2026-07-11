@@ -116,7 +116,15 @@ def test_public_authentication_contract_is_safe_and_current():
     assert "SUPABASE_ACCESS_TOKEN" in docs
     assert "supa.cc.supabase.accounts.v2" in docs
     assert "active-account" in docs
-    assert "não altera a sessão nativa" in normalized or "does not own or alter" in normalized
+    assert "supabase projects list" in docs
+    assert "opcional" in normalized or "optional" in normalized
+    assert "override" in normalized
+    assert "fallback" in normalized and "plaintext" in normalized
+    assert "logout" in normalized
+    assert "credenciais auxiliares" in normalized or "auxiliary credentials" in normalized
+    assert "journal" in normalized
+    assert "concorr" in normalized or "concurr" in normalized
+    assert "login" in normalized and "logout" in normalized and "projects list" in normalized
     assert "prompt oculto" in normalized or "hidden prompt" in normalized
     assert "sbp_oauth_" in docs
     assert "[0-9a-f]{40}" in docs

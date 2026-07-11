@@ -4,8 +4,8 @@ class CommonStrings:
     """Textos compartilhados entre CLI e TUI."""
 
     MSG_ACCOUNT_ADDED = "Conta '{}' adicionada."
-    MSG_ACCOUNT_ACTIVATED = "Conta '{}' ativada."
-    MSG_ACTIVATE_FAILED = "Falha ao ativar conta '{}'."
+    MSG_ACCOUNT_ACTIVATED = "Conta '{}' ativada e sessão nativa sincronizada."
+    MSG_ACTIVATE_FAILED = "Falha ao sincronizar a sessão da conta '{}'."
     MSG_ACCOUNT_REMOVED = "Conta '{}' removida."
     MSG_NO_ACCOUNTS = "Nenhuma conta cadastrada."
 

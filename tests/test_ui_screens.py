@@ -313,8 +313,7 @@ def test_add_account_cancel_returns_home_without_error_message():
 def test_switch_account_success_returns_home():
     account = Account(name="work", token=fake_pat("token"))
     message = (
-        "Conta 'work' ativada no Supa.cc. A sessão nativa independente da "
-        "Supabase CLI não foi alterada; use 'supa.cc run -- ...'."
+        "Conta 'work' ativada e sessão nativa sincronizada."
     )
     manager = FakeManager(
         accounts=[account], activate_result=AuthResult.success(message)

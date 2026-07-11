@@ -38,6 +38,8 @@ python3 -m build
 ls dist/
 ```
 
+Valide também que a versão mínima suportada do Supabase CLI oferece os comandos públicos `login`, `logout --yes` e `projects list`. O fluxo de sincronização depende dessas capacidades e deve bloquear fallback de token plaintext.
+
 `python3 -m build` deve gerar uma wheel e um sdist em `dist/`. Execute os jobs de teste em Linux suportado (Debian/Ubuntu, Arch Linux e Fedora) além do macOS antes da release. Os smoke tests de Keychain e Secret Service são opt-in e não entram no job padrão sem um serviço real e consentimento explícito. O smoke de Secret Service pula com segurança caso o serviço não esteja disponível.
 
 Após `python3 -m build`, valide a wheel em um ambiente virtual descartável. Esta validação padrão requer um runtime Python com `ensurepip`; não use um gerenciador de pacotes automaticamente.

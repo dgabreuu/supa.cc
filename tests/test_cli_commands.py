@@ -230,15 +230,35 @@ class TestCLICommands:
         with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.set_active.return_value = AuthResult.success(
-                "Conta 'work' ativada no Supa.cc. A sessão nativa independente "
-                "da Supabase CLI não foi alterada; use 'supa.cc run -- ...'."
+                "Conta 'work' ativada e sessão nativa sincronizada."
             )
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["switch", "work"])
         assert result.exit_code == 0
-        assert "Conta 'work' ativada no Supa.cc." in result.output
-        assert "sessão nativa independente" in result.output
-        assert "supa.cc run -- ..." in result.output
+        assert "Conta 'work' ativada e sessão nativa sincronizada." in result.output
+        assert "supa.cc run" not in result.output
+        mock_manager.set_active.assert_called_once_with("work")
+
+    @pytest.mark.parametrize(
+        "code,message",
+        [
+            (AuthFailureCode.NATIVE_LOGIN_FAILED, "Falha no login da sessão nativa."),
+            (AuthFailureCode.NATIVE_VERIFICATION_FAILED, "Falha ao verificar a sessão nativa."),
+            (AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED, "Fallback plaintext bloqueado."),
+            (AuthFailureCode.SYNC_ROLLBACK_FAILED, "Falha ao restaurar a sessão anterior."),
+        ],
+    )
+    def test_switch_preserves_native_sync_failure_category(self, code, message):
+        runner = CliRunner()
+        with patch("supa_cc.accounts.AccountManager") as manager_class:
+            manager_class.return_value.set_active.return_value = AuthResult.failure(
+                code, message, exit_code=9
+            )
+            result = runner.invoke(main, ["switch", "work"])
+
+        assert result.exit_code == 9
+        assert message in result.output
+        manager_class.return_value.set_active.assert_called_once_with("work")
 
     def test_run_requires_command(self):
         runner = CliRunner()

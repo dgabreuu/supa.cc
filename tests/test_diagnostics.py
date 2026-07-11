@@ -17,6 +17,7 @@ from supa_cc.diagnostics import DiagnosticService
 from supa_cc.environment import detect_environment
 from supa_cc.installation import installation_guidance
 from supa_cc.keychain import KEYCHAIN_SERVICE
+from supa_cc.native_session import NativeSessionSynchronizer, SessionSyncJournal
 
 from helpers import fake_pat
 
@@ -40,6 +41,14 @@ def _service(
         manager.active_store.read.return_value = None
         manager.config = SupabaseConfig(
             binary_resolver=lambda _: supabase_path
+        )
+        manager.sync_journal = SessionSyncJournal(
+            tmp_path / "session-sync.json"
+        )
+        manager.native_session = NativeSessionSynchronizer(
+            manager.config,
+            env={} if env is None else env,
+            supabase_home=tmp_path / ".supabase",
         )
     return DiagnosticService(
         manager=manager,
@@ -176,9 +185,12 @@ def test_doctor_reports_verified_runtime_identity_and_homebrew_receipt(tmp_path)
     assert payload["supabase_cli"]["version"] == "2.109.1"
     assert payload["supabase_cli"]["provenance"] == "homebrew"
     assert payload["activation"] == {
-        "mode": "environment_only",
-        "native_session": "unmanaged",
+        "mode": "native_session",
+        "native_session": "managed",
         "profile": "unmanaged",
+        "journal_present": False,
+        "plaintext_fallback_present": False,
+        "parent_override_present": False,
     }
     assert set(signatures) == {
         str(launcher_target),
@@ -190,6 +202,46 @@ def test_doctor_reports_verified_runtime_identity_and_homebrew_receipt(tmp_path)
     assert f"{python_link} -> {python_target}" in human
     assert f"{invoked} -> {binary}" in human
     assert human.count("assinatura: signed") == 3
+    assert "Ativação: native_session" in human
+
+
+def test_doctor_reports_sync_metadata_by_presence_without_reading_contents(tmp_path):
+    manager = Mock(spec=AccountManager)
+    manager.keychain = Mock()
+    manager.active_store = Mock()
+    manager.keychain.index_path = tmp_path / "accounts.json"
+    manager.keychain.service = KEYCHAIN_SERVICE
+    manager.active_store.read.return_value = "work"
+    manager.config = SupabaseConfig(binary_resolver=lambda _: None)
+    manager.sync_journal = Mock()
+    manager.sync_journal.path = tmp_path / "session-sync.json"
+    manager.sync_journal.read.side_effect = AssertionError("must not read journal")
+    manager.native_session = Mock()
+    manager.native_session.fallback_path = tmp_path / ".supabase" / "access-token"
+    manager.native_session.fallback_path.parent.mkdir()
+    manager.sync_journal.path.write_text("private journal", encoding="utf-8")
+    manager.native_session.fallback_path.write_text("private token", encoding="utf-8")
+    manager.get.side_effect = AssertionError("must not read credential")
+
+    report = _service(
+        tmp_path,
+        manager=manager,
+        env={"SUPABASE_ACCESS_TOKEN": fake_pat("parent_override")},
+    ).run()
+
+    assert report.activation == {
+        "mode": "native_session",
+        "native_session": "managed",
+        "profile": "unmanaged",
+        "journal_present": True,
+        "plaintext_fallback_present": True,
+        "parent_override_present": True,
+    }
+    manager.sync_journal.read.assert_not_called()
+    manager.get.assert_not_called()
+    rendered = report.to_json()
+    assert "private journal" not in rendered
+    assert "private token" not in rendered
 
 
 def test_doctor_does_not_trust_fake_cellar_path_without_receipt(tmp_path):

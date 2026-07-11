@@ -73,6 +73,15 @@ def _path_writable(path: Path) -> bool:
     return candidate.exists() and os.access(candidate, os.W_OK)
 
 
+def _metadata_path_present(owner: object, attribute: str) -> bool:
+    path = getattr(owner, attribute, None)
+    try:
+        Path(os.fspath(path)).lstat()
+    except (TypeError, ValueError, OSError):
+        return False
+    return True
+
+
 def _read_json(path: Path) -> Optional[dict]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -202,11 +211,14 @@ class DoctorReport:
     diagnostic_codes: List[str]
     credentials: Dict[str, object] = field(default_factory=dict, repr=False)
     live_result: Optional[AuthResult] = field(default=None, repr=False)
-    activation: Dict[str, str] = field(
+    activation: Dict[str, object] = field(
         default_factory=lambda: {
-            "mode": "environment_only",
-            "native_session": "unmanaged",
+            "mode": "native_session",
+            "native_session": "managed",
             "profile": "unmanaged",
+            "journal_present": False,
+            "plaintext_fallback_present": False,
+            "parent_override_present": False,
         }
     )
 
@@ -337,7 +349,17 @@ class DoctorReport:
                 else "ausente"
             ),
             f"Diagnósticos: {diagnostics}",
-            "Ativação: environment_only (sessão nativa e perfil não gerenciados)",
+            f"Ativação: {self.activation.get('mode', 'unknown')} "
+            f"(sessão nativa: {self.activation.get('native_session', 'unknown')}; "
+            f"perfil: {self.activation.get('profile', 'unknown')})",
+            "Sincronização pendente: "
+            + ("sim" if self.activation.get("journal_present") else "não"),
+            "Fallback plaintext presente: "
+            + (
+                "sim"
+                if self.activation.get("plaintext_fallback_present")
+                else "não"
+            ),
         ]
         if linux_distribution:
             lines.append(f"Distribuição Linux: {linux_distribution}")
@@ -450,6 +472,14 @@ class DiagnosticService:
                 "telemetry_directory_writable": _path_writable(self.telemetry_path),
             },
             diagnostic_codes=[AuthFailureCode.ENVIRONMENT_BLOCKED.value],
+            activation={
+                "mode": "native_session",
+                "native_session": "managed",
+                "profile": "unmanaged",
+                "journal_present": False,
+                "plaintext_fallback_present": False,
+                "parent_override_present": "SUPABASE_ACCESS_TOKEN" in self.env,
+            },
         )
 
     def run(
@@ -579,6 +609,18 @@ class DiagnosticService:
             "telemetry_directory_exists": telemetry_exists,
             "telemetry_directory_writable": telemetry_writable,
         }
+        activation = {
+            "mode": "native_session",
+            "native_session": "managed",
+            "profile": "unmanaged",
+            "journal_present": _metadata_path_present(
+                getattr(manager, "sync_journal", None), "path"
+            ),
+            "plaintext_fallback_present": _metadata_path_present(
+                getattr(manager, "native_session", None), "fallback_path"
+            ),
+            "parent_override_present": "SUPABASE_ACCESS_TOKEN" in self.env,
+        }
         active_account = None
         try:
             active_account = manager.active_store.read()
@@ -634,4 +676,5 @@ class DiagnosticService:
             environment=environment,
             diagnostic_codes=codes,
             live_result=live_result,
+            activation=activation,
         )

@@ -85,10 +85,13 @@ supa.cc --version
 supa.cc doctor
 supa.cc add work
 supa.cc switch work
+supabase projects list
 supa.cc run -- projects list
 ```
 
-`add` solicita o PAT em prompt oculto. `switch` valida o PAT e guarda somente o nome ativo; ele não altera a sessão nativa do Supabase CLI. `doctor` sem `--live` não abre token. Para uma verificação online explícita, use `supa.cc doctor --account work --live`.
+`add` solicita o PAT em prompt oculto. `switch` valida o PAT, executa `login` e `projects list` pelo CLI oficial e só então guarda o nome ativo. Depois do sucesso, `supabase ...` direto usa essa sessão; `supa.cc run -- ...` é opcional. `doctor` sem `--live` não abre token. Para uma verificação online explícita, use `supa.cc doctor --account work --live`.
+
+Remova qualquer `SUPABASE_ACCESS_TOKEN` herdado antes do `switch`, pois esse override bloqueia a sincronização. Um fallback `access-token` plaintext também é bloqueado e nunca é lido. Operações interrompidas deixam um journal sem token para recuperação pelo próximo comando mutável; a trava coordena apenas processos Supa.cc, não comandos `supabase` externos concorrentes. Remover a conta ativa chama `logout --yes`, que pode remover credenciais auxiliares de projeto mantidas pelo CLI oficial.
 
 Em Linux, execute `supa.cc doctor` após instalar para confirmar a distribuição detectada, o backend Secret Service e a orientação de correção. Se o D-Bus ou a coleção estiver indisponível ou bloqueada, desbloqueie e disponibilize o Secret Service para a sessão de usuário antes de adicionar uma conta. Não tente contornar a falha com `keyrings.alt` ou qualquer armazenamento plaintext.
 

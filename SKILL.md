@@ -7,7 +7,7 @@ description: Use ao operar ou manter fluxos de conta, Keychain, Secret Service, 
 
 ## Propósito e limite
 
-Supa.cc gerencia PATs do Supabase localmente no macOS e em Debian/Ubuntu, Arch Linux e Fedora. Os tokens são armazenados pelo Python `keyring` no Keychain do macOS ou no Secret Service do Linux; os arquivos contêm apenas nomes de contas. Ele não possui nem altera a sessão oficial do Supabase CLI.
+Supa.cc gerencia PATs do Supabase localmente no macOS e em Debian/Ubuntu, Arch Linux e Fedora. Os tokens são armazenados pelo Python `keyring` no Keychain do macOS ou no Secret Service do Linux; os arquivos contêm apenas nomes de contas. Uma seleção bem-sucedida sincroniza a sessão oficial por comandos públicos do Supabase CLI.
 
 Use-o para seleção interativa local de contas. Não o use como gerenciador de segredos de CI, em sistemas fora das plataformas suportadas, nem para credenciais que não sejam do Supabase.
 
@@ -25,6 +25,7 @@ supa.cc switch <name>
     macOS: Keychain read
     Linux: Secret Service read
       -> read-only projects list with PAT in child environment
+      -> public login and persisted-session verification
       -> active-account stores name only
 
 supa.cc run -- <supabase arguments>
@@ -36,7 +37,7 @@ supa.cc run -- <supabase arguments>
       -> sanitized streaming output and child exit code
 ```
 
-`switch` nunca faz login no Supabase CLI nativo, não cria perfil e não altera a credencial dele. Por isso, um comando `supabase ...` executado depois continua usando a sessão própria do CLI oficial. Use `supa.cc run -- ...` quando a conta selecionada no Supa.cc deve ser usada.
+`switch` executa `login` e verifica a sessão persistida com `projects list`. Depois do sucesso, `supabase projects list` e outros comandos diretos usam a conta selecionada. `supa.cc run -- ...` permanece opcional para uma execução isolada.
 
 ## Comandos
 
@@ -62,7 +63,7 @@ Lê apenas `accounts.json`. Não deve abrir o Keychain.
 supa.cc switch work
 ```
 
-A operação lê o item v2 do Keychain, verifica o formato do token, valida online com um `projects list` read-only e grava atomicamente `work` em `active-account`. Sucesso significa que a seleção do Supa.cc está pronta para `run`; não afirma que a sessão nativa do Supabase mudou.
+A operação lê o item v2, valida online, executa o login oficial, verifica a sessão persistida e grava atomicamente `work` em `active-account`. Um `SUPABASE_ACCESS_TOKEN` herdado faz override e bloqueia a sincronização. Fallback `access-token` plaintext é bloqueado sem leitura do conteúdo.
 
 ### Executar o CLI oficial com a conta selecionada
 
@@ -88,6 +89,7 @@ O modo padrão é totalmente read-only e não abre token. Os modos humano e JSON
 - backend do Keychain e nome canônico do serviço;
 - saúde/contagem do índice e estado do nome ativo;
 - apenas presença de configurações de autenticação/telemetria no ambiente;
+- presença do journal de sincronização e do fallback plaintext, nunca seus conteúdos;
 - diagnósticos tipados de ambiente, CLI e permissões.
 
 O modo live exige uma conta. Ele lê esse item do Keychain uma vez e realiza a mesma validação read-only da Management API usada por `switch`.
@@ -99,7 +101,7 @@ supa.cc remove work
 supa.cc remove work --yes
 ```
 
-A remoção afeta o item v2 nomeado do Keychain do Supa.cc e o índice de nomes. Não deve remover uma credencial global ou nativa do Supabase CLI.
+A remoção da conta ativa executa primeiro `logout --yes` no CLI oficial. O logout pode remover credenciais auxiliares de projeto gerenciadas pelo Supabase CLI; depois o Supa.cc remove seu item v2, índice e seleção local.
 
 ### TUI e versão
 
@@ -175,6 +177,9 @@ CLI e TUI usam as mesmas categorias de resultado tipado e retornam status difere
 | CLI missing/incompatible | O executável do Supabase não pôde ser resolvido ou usado |
 | environment blocked | Sandbox, caminho de telemetria ou falha de permissão de diretório como `EPERM` |
 | profile mismatch | Um contexto persistido/nativo não corresponde ao contexto selecionado |
+| native login/verification | O CLI oficial não autenticou ou não confirmou a sessão persistida |
+| plaintext fallback blocked | O CLI tentou usar um arquivo de token plaintext |
+| sync rollback/pending | A sessão anterior não foi restaurada ou há recuperação pendente |
 
 Erros, exceções, stdout e stderr são sanitizados antes da apresentação. Nunca adicione PATs, headers de autorização, dumps de ambiente ou `repr` com segredos a um diagnóstico.
 
@@ -195,8 +200,10 @@ O teste cria um item falso e descartável sob o serviço `supa.cc.tests.<uuid>` 
 ## Regras do operador
 
 1. Nunca coloque um PAT em comando, fixture de teste, log, transcript de prompt ou arquivo.
-2. Use `supa.cc run -- ...` para comandos autenticados sob a conta selecionada.
+2. Após `switch`, use `supabase ...` diretamente; `supa.cc run -- ...` é uma alternativa opcional e isolada.
 3. Use `doctor` antes de inspecionar o Keychain manualmente; diagnósticos padrão não abrem segredo.
 4. Não edite ACLs do Keychain, não exporte itens e não remova credenciais nativas do Supabase CLI.
 5. Não apague itens duplicados/legados sem prévia exata e aprovação explícita.
 6. Para CI ou servidores, use a injeção de segredos da plataforma em vez do Supa.cc.
+
+O journal de sincronização contém apenas operação, fase e nomes e permite recuperação após interrupção. A trava evita concorrência entre processos Supa.cc cooperantes, mas não coordena comandos `supabase` externos executados ao mesmo tempo.
