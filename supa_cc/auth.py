@@ -73,15 +73,29 @@ class AuthFailureCode(str, Enum):
     COMMAND_FAILED = "command_failed"
 
 
-class KeychainAccessError(RuntimeError):
+class CredentialAccessError(RuntimeError):
+    """Base safe error for system credential-store access."""
+
+
+class CredentialPermissionDeniedError(CredentialAccessError):
+    """The system credential store denied access."""
+
+
+class CredentialReadError(CredentialAccessError):
+    """The credential could not be read or verified."""
+
+
+class KeychainAccessError(CredentialAccessError):
     """Base segura para falhas de acesso ao Keychain."""
 
 
-class KeychainPermissionDeniedError(KeychainAccessError):
+class KeychainPermissionDeniedError(
+    KeychainAccessError, CredentialPermissionDeniedError
+):
     """O Keychain recusou acesso à credencial."""
 
 
-class KeychainReadError(KeychainAccessError):
+class KeychainReadError(KeychainAccessError, CredentialReadError):
     """A credencial não pôde ser lida ou confirmada."""
 
 
@@ -183,10 +197,20 @@ def classify_local_failure(error: BaseException) -> AuthResult:
             AuthFailureCode.KEYCHAIN_PERMISSION_DENIED,
             "Acesso ao Keychain não autorizado.",
         )
+    if isinstance(error, CredentialPermissionDeniedError):
+        return AuthResult.failure(
+            AuthFailureCode.KEYCHAIN_PERMISSION_DENIED,
+            "Acesso ao armazenamento de credenciais não autorizado.",
+        )
     if isinstance(error, KeychainReadError):
         return AuthResult.failure(
             AuthFailureCode.KEYCHAIN_READ_FAILED,
             "Não foi possível acessar a credencial no Keychain.",
+        )
+    if isinstance(error, CredentialReadError):
+        return AuthResult.failure(
+            AuthFailureCode.KEYCHAIN_READ_FAILED,
+            "Não foi possível acessar a credencial no armazenamento de credenciais.",
         )
     if isinstance(error, AccountIndexInvalidError):
         return AuthResult.failure(
