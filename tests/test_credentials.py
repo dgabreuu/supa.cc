@@ -146,8 +146,11 @@ def test_linux_rejects_unavailable_secret_service(monkeypatch):
     assert "fake backend detail" not in str(raised.value)
 
 
-def test_credential_store_factory_has_no_backend_injection_parameters():
-    assert list(inspect.signature(create_credential_store).parameters) == ["environment"]
+def test_credential_store_factory_accepts_only_environment_and_service():
+    assert list(inspect.signature(create_credential_store).parameters) == [
+        "environment",
+        "service",
+    ]
 
 
 class PlaintextBackend:
@@ -299,6 +302,26 @@ def test_store_uses_the_selected_fake_for_every_operation(fake_secret_service):
         ("get", "supa.cc.supabase.accounts.v2", account.name),
         ("get", "supa.cc.supabase.accounts.v2", account.name),
         ("delete", "supa.cc.supabase.accounts.v2", account.name),
+    ]
+
+
+def test_store_routes_operations_to_an_explicit_service(fake_secret_service):
+    service = "supa.cc.tests.custom"
+    store = create_credential_store(linux_environment(), service=service)
+    fake = fake_secret_service.instances[0]
+    account = Account(name="work", token=fake_pat("custom-service"))
+
+    fake.calls.clear()
+    store.set(account)
+    assert store.get(account.name) == account.token
+    store.delete(account.name)
+
+    assert store.service == service
+    assert fake.calls == [
+        ("set", service, account.name, account.token),
+        ("get", service, account.name),
+        ("get", service, account.name),
+        ("delete", service, account.name),
     ]
 
 

@@ -467,18 +467,23 @@ class DiagnosticService:
             ok = False
             exit_code = exit_code or active_failure.exit_code
 
+        credential_service = getattr(
+            getattr(self.manager.keychain, "credential_store", None),
+            "service",
+            None,
+        )
+        keychain_service = credential_service
+        if not isinstance(keychain_service, str):
+            keychain_service = getattr(self.manager.keychain, "service", None)
+        if not isinstance(keychain_service, str):
+            keychain_service = KEYCHAIN_SERVICE
+
         return DoctorReport(
             ok=ok,
             exit_code=exit_code,
             runtime=runtime,
             supabase_cli=cli_identity,
-            keychain_service=(
-                self.manager.keychain.service
-                if isinstance(
-                    getattr(self.manager.keychain, "service", None), str
-                )
-                else KEYCHAIN_SERVICE
-            ),
+            keychain_service=keychain_service,
             keychain_backend=backend,
             index=index,
             active_account=active_account,

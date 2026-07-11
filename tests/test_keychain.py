@@ -42,12 +42,48 @@ def test_default_index_path_uses_linux_xdg_config_home(monkeypatch, tmp_path):
 def test_default_store_is_created_for_the_detected_environment(monkeypatch, tmp_path):
     environment = ubuntu_environment()
     store = FakeCredentialStore()
+    calls = []
     monkeypatch.setattr(keychain, "detect_environment", lambda: environment)
-    monkeypatch.setattr(keychain, "create_credential_store", lambda value: store)
+    monkeypatch.setattr(
+        keychain,
+        "create_credential_store",
+        lambda value, service: calls.append((value, service)) or store,
+    )
 
     manager = KeychainManager(index_path=tmp_path / "accounts.json")
 
     assert manager.credential_store is store
+    assert calls == [(environment, KEYCHAIN_SERVICE)]
+
+
+def test_custom_service_is_passed_to_the_default_credential_store(
+    monkeypatch, tmp_path
+):
+    environment = ubuntu_environment()
+    service = "supa.cc.tests.custom"
+    store = FakeCredentialStore()
+    calls = []
+    monkeypatch.setattr(keychain, "detect_environment", lambda: environment)
+    monkeypatch.setattr(
+        keychain,
+        "create_credential_store",
+        lambda value, service: calls.append((value, service)) or store,
+    )
+
+    manager = KeychainManager(index_path=tmp_path / "accounts.json", service=service)
+
+    assert manager.credential_store is store
+    assert manager.service == service
+    assert calls == [(environment, service)]
+
+
+def test_injected_store_namespace_is_used_for_diagnostics(tmp_path):
+    store = FakeCredentialStore()
+    store.service = "supa.cc.tests.injected"
+
+    manager = KeychainManager(index_path=tmp_path / "accounts.json", credential_store=store)
+
+    assert manager.service == store.service
 
 
 def test_keychain_manager_has_no_direct_keyring_dependency():

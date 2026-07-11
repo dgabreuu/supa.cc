@@ -76,12 +76,13 @@ class KeychainManager:
             if index_path is not None
             else environment.config_directory() / "accounts.json"
         )
-        self.service = service
         self.credential_store = (
             credential_store
             if credential_store is not None
-            else create_credential_store(environment)
+            else create_credential_store(environment, service=service)
         )
+        stored_service = getattr(self.credential_store, "service", None)
+        self.service = stored_service if isinstance(stored_service, str) else service
         self._cache_ttl_seconds = max(0.0, cache_ttl_seconds)
         self._clock = clock if clock is not None else time.monotonic
         self._token_cache: dict[str, tuple[str, float]] = {}

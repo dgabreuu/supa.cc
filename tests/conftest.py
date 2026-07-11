@@ -23,6 +23,6 @@ def silence_security_keychain(request):
 
     with patch(
         "supa_cc.keychain.create_credential_store",
-        side_effect=lambda _environment: FakeCredentialStore(),
+        side_effect=lambda _environment, **_kwargs: FakeCredentialStore(),
     ):
         yield

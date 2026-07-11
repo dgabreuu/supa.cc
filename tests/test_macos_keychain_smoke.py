@@ -42,6 +42,7 @@ def test_disposable_macos_keychain_round_trip(tmp_path):
     assert not isinstance(keyring.get_password, Mock)
     assert not isinstance(keyring.delete_password, Mock)
     assert service != KEYCHAIN_SERVICE
+    assert manager.credential_store.service == service
     assert Account(name=account_name, token=original_token).validate_token()
     assert Account(name=account_name, token=updated_token).validate_token()
     try:
@@ -51,6 +52,9 @@ def test_disposable_macos_keychain_round_trip(tmp_path):
         loaded = manager.get_account(account_name)
         assert loaded is not None
         assert hmac.compare_digest(loaded.token, original_token)
+        assert hmac.compare_digest(
+            keyring.get_password(service, account_name), original_token
+        )
 
         manager.add_account(
             Account(name=account_name, token=updated_token)
@@ -61,6 +65,7 @@ def test_disposable_macos_keychain_round_trip(tmp_path):
 
         manager.remove_account(account_name)
         assert manager.get_account(account_name) is None
+        assert keyring.get_password(service, account_name) is None
     finally:
         try:
             manager.delete_account(account_name)

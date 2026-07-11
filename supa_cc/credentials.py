@@ -47,8 +47,9 @@ class CredentialStoreStatus:
 
 
 class CredentialStore:
-    def __init__(self, backend_name: str):
+    def __init__(self, backend_name: str, service: str = _CREDENTIAL_SERVICE):
         self.backend_name = backend_name
+        self.service = service
         self._backend = _create_backend(backend_name)
         self._status = _probe_backend(self._backend, backend_name)
 
@@ -58,7 +59,7 @@ class CredentialStore:
     def get(self, name: str) -> Optional[str]:
         self._require_available()
         try:
-            return self._backend.get_password(_CREDENTIAL_SERVICE, name)
+            return self._backend.get_password(self.service, name)
         except Exception as error:
             _raise_credential_operation_error(error)
 
@@ -66,11 +67,11 @@ class CredentialStore:
         self._require_available()
         try:
             self._backend.set_password(
-                _CREDENTIAL_SERVICE,
+                self.service,
                 account.name,
                 account.token,
             )
-            saved_token = self._backend.get_password(_CREDENTIAL_SERVICE, account.name)
+            saved_token = self._backend.get_password(self.service, account.name)
         except Exception as error:
             _raise_credential_operation_error(error)
 
@@ -85,7 +86,7 @@ class CredentialStore:
     def delete(self, name: str) -> None:
         self._require_available()
         try:
-            self._backend.delete_password(_CREDENTIAL_SERVICE, name)
+            self._backend.delete_password(self.service, name)
         except Exception as error:
             if _is_missing_credential(error):
                 return
@@ -98,11 +99,12 @@ class CredentialStore:
 
 def create_credential_store(
     environment: Environment,
+    service: str = _CREDENTIAL_SERVICE,
 ) -> CredentialStore:
     if environment.operating_system is OperatingSystem.MACOS:
-        return CredentialStore(_MACOS_BACKEND_NAME)
+        return CredentialStore(_MACOS_BACKEND_NAME, service=service)
     if environment.operating_system is OperatingSystem.LINUX and environment.is_supported:
-        return CredentialStore(_SECRET_SERVICE_BACKEND_NAME)
+        return CredentialStore(_SECRET_SERVICE_BACKEND_NAME, service=service)
     raise CredentialAccessError(
         "O armazenamento de credenciais não está disponível neste ambiente."
     )

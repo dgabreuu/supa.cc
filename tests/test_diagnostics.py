@@ -94,6 +94,21 @@ def test_doctor_reports_effective_custom_keychain_service(tmp_path):
     assert report.to_dict()["keychain"]["service"] == "supa.cc.tests.doctor"
 
 
+def test_doctor_reports_the_effective_credential_store_namespace(tmp_path):
+    manager = Mock(spec=AccountManager)
+    manager.keychain = Mock()
+    manager.active_store = Mock()
+    manager.keychain.index_path = tmp_path / "accounts.json"
+    manager.keychain.service = "supa.cc.tests.requested"
+    manager.keychain.credential_store.service = "supa.cc.tests.effective"
+    manager.active_store.read.return_value = None
+    manager.config = SupabaseConfig(binary_resolver=lambda _: None)
+
+    report = _service(tmp_path, manager=manager).run()
+
+    assert report.keychain_service == "supa.cc.tests.effective"
+
+
 def test_doctor_reports_verified_runtime_identity_and_homebrew_receipt(tmp_path):
     launcher_target = tmp_path / "venv" / "bin" / "supa-cc-real"
     launcher_target.parent.mkdir(parents=True)
