@@ -1,6 +1,7 @@
 import threading
 import stat
 import traceback
+import time
 
 import pytest
 from unittest.mock import Mock, call, patch
@@ -22,7 +23,12 @@ from supa_cc.keychain import KeychainManager
 from supa_cc.models import Account
 from supa_cc.environment import detect_environment
 
-from helpers import FakeCredentialStore, MemoryActiveAccountStore, fake_pat
+from helpers import (
+    FakeCredentialStore,
+    FaultInjectingJournal,
+    MemoryActiveAccountStore,
+    fake_pat,
+)
 from supa_cc.native_session import SessionSyncJournal
 
 
@@ -152,6 +158,10 @@ class TestAccountManager:
     def test_recover_pending_sync_rolls_forward_without_token_in_journal(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="old")
         manager.sync_journal.write("activate", "work", "old", "native_verified")
+        persisted = manager.sync_journal.path.read_text(encoding="utf-8")
+
+        assert fake_pat("work") not in persisted
+        assert fake_pat("old") not in persisted
 
         result = manager.recover_pending_sync()
 
@@ -162,7 +172,206 @@ class TestAccountManager:
         )
         assert manager.active_store.name == "work"
         assert manager.sync_journal.read() is None
-        assert fake_pat("work") not in (tmp_path / "session-sync.json").read_text() if (tmp_path / "session-sync.json").exists() else True
+
+    @pytest.mark.parametrize(
+        "phase,expected,native_account",
+        [
+            ("intent", "old", "old"),
+            ("native_login", "old", "old"),
+            ("native_verified", "work", "work"),
+            ("local_write", "work", "work"),
+            ("verified", "old", None),
+            ("rollback", "old", "old"),
+        ],
+    )
+    def test_restart_recovery_is_deterministic_for_every_phase(
+        self, tmp_path, phase, expected, native_account
+    ):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        manager.sync_journal.write("activate", "work", "old", phase)
+
+        result = manager.recover_pending_sync()
+
+        assert result.ok
+        assert manager.active_store.name == expected
+        assert manager.sync_journal.read() is None
+        if native_account is None:
+            manager.native_session.activate.assert_not_called()
+        else:
+            assert manager.native_session.activate.call_args.args[0].name == native_account
+
+    @pytest.mark.parametrize(
+        "failure_method,failure_call,expected_phase",
+        [
+            ("write", 1, None),
+            ("write", 2, "intent"),
+            ("write", 3, "native_login"),
+            ("write", 4, "native_verified"),
+            ("write", 5, "local_write"),
+            ("clear", 1, "verified"),
+        ],
+    )
+    def test_set_active_sanitizes_transition_failures_and_keeps_recovery_state(
+        self, tmp_path, failure_method, failure_call, expected_phase
+    ):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        durable = manager.sync_journal
+        manager.sync_journal = FaultInjectingJournal(
+            durable, failure_method, failure_call
+        )
+
+        result = manager.set_active("work")
+
+        assert not result.ok
+        assert "private" not in result.message
+        payload = durable.read()
+        assert (payload["phase"] if payload else None) == expected_phase
+
+    @pytest.mark.parametrize("method", ["read", "clear"])
+    def test_recovery_sanitizes_journal_failures(self, tmp_path, method):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        durable = manager.sync_journal
+        durable.write("activate", "work", "old", "verified")
+        manager.sync_journal = FaultInjectingJournal(durable, method, 1)
+
+        result = manager.recover_pending_sync()
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        assert "private" not in result.message
+        assert durable.read() is not None
+
+    @pytest.mark.parametrize("operation", ["mkdir", "chmod", "open", "flock"])
+    def test_set_active_sanitizes_sync_lock_failures(self, tmp_path, operation):
+        manager = self.transactional_manager(tmp_path)
+        target = {
+            "mkdir": "pathlib.Path.mkdir",
+            "chmod": "pathlib.Path.chmod",
+            "open": "supa_cc.accounts.os.open",
+            "flock": "supa_cc.accounts.fcntl.flock",
+        }[operation]
+        with patch(target, side_effect=OSError("private lock path")):
+            result = manager.set_active("work")
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        assert "private" not in result.message
+
+    def test_sync_lock_rejects_symlink_and_permissive_file(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        lock_path = manager._sync_lock_path
+        lock_path.symlink_to(tmp_path / "victim")
+
+        symlink_result = manager.set_active("work")
+
+        assert not symlink_result.ok
+        lock_path.unlink()
+        lock_path.write_text("", encoding="utf-8")
+        lock_path.chmod(0o644)
+
+        permissive_result = manager.set_active("work")
+
+        assert not permissive_result.ok
+        assert stat.S_IMODE(lock_path.stat().st_mode) == 0o644
+
+    def test_sync_lock_is_private(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+
+        assert manager.set_active("work").ok
+
+        assert stat.S_IMODE(manager._sync_lock_path.stat().st_mode) == 0o600
+
+    def test_sync_lock_detects_path_replacement_after_acquire(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        manager._sync_lock_path.touch(mode=0o600)
+        original = manager._sync_lock_path.lstat()
+        replaced = Mock(
+            st_mode=original.st_mode,
+            st_uid=original.st_uid,
+            st_dev=original.st_dev,
+            st_ino=original.st_ino + 1,
+        )
+
+        with patch.object(
+            type(manager._sync_lock_path),
+            "lstat",
+            side_effect=[original, replaced],
+        ):
+            result = manager.set_active("work")
+
+        assert not result.ok
+        manager.native_session.activate.assert_not_called()
+
+    @pytest.mark.parametrize("failure", ["unlock", "close"])
+    def test_sync_lock_release_failures_are_sanitized(self, tmp_path, failure):
+        manager = self.transactional_manager(tmp_path)
+        if failure == "unlock":
+            real_flock = __import__("fcntl").flock
+
+            def fail_unlock(descriptor, operation):
+                if operation == __import__("fcntl").LOCK_UN:
+                    raise OSError("private unlock path")
+                return real_flock(descriptor, operation)
+
+            patched = patch("supa_cc.accounts.fcntl.flock", side_effect=fail_unlock)
+        else:
+            patched = patch("supa_cc.accounts.os.close", side_effect=OSError("private close path"))
+
+        with patched:
+            result = manager.set_active("work")
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        assert "private" not in result.message
+
+    def test_concurrent_set_active_calls_are_serialized(self, tmp_path):
+        first = self.transactional_manager(tmp_path)
+        second = self.transactional_manager(tmp_path)
+        entered = threading.Event()
+        release = threading.Event()
+
+        def block(_account):
+            entered.set()
+            release.wait(timeout=2)
+            return AuthResult.success()
+
+        first.native_session.activate.side_effect = block
+        first_thread = threading.Thread(target=first.set_active, args=("work",))
+        second_thread = threading.Thread(target=second.set_active, args=("work",))
+        first_thread.start()
+        assert entered.wait(timeout=1)
+        second_thread.start()
+        time.sleep(0.05)
+        assert second.native_session.activate.called is False
+        release.set()
+        first_thread.join(timeout=2)
+        second_thread.join(timeout=2)
+        assert second.native_session.activate.called
+
+    def test_recovery_and_selection_share_sync_lock(self, tmp_path):
+        recovery = self.transactional_manager(tmp_path, previous="old")
+        selection = self.transactional_manager(tmp_path, previous="old")
+        recovery.sync_journal.write("activate", "work", "old", "native_verified")
+        entered = threading.Event()
+        release = threading.Event()
+
+        def block(_account):
+            entered.set()
+            release.wait(timeout=2)
+            return AuthResult.success()
+
+        recovery.native_session.activate.side_effect = block
+        recovery_thread = threading.Thread(target=recovery.recover_pending_sync)
+        selection_thread = threading.Thread(target=selection.set_active, args=("work",))
+        recovery_thread.start()
+        assert entered.wait(timeout=1)
+        selection_thread.start()
+        time.sleep(0.05)
+        selection.config.validate_access_token.assert_not_called()
+        release.set()
+        recovery_thread.join(timeout=2)
+        selection_thread.join(timeout=2)
+        selection.config.validate_access_token.assert_called_once()
 
     def test_recover_pending_sync_retains_journal_when_credential_is_missing(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="old")

@@ -1,5 +1,6 @@
 import fcntl
 import os
+import stat
 from contextlib import contextmanager
 from typing import Callable, Iterator, List, Optional, Sequence, Tuple
 
@@ -66,13 +67,44 @@ class AccountManager:
     def _sync_lock(self) -> Iterator[None]:
         self._sync_lock_path.parent.mkdir(parents=True, exist_ok=True)
         self._sync_lock_path.parent.chmod(0o700)
-        descriptor = os.open(self._sync_lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(self._sync_lock_path, flags, 0o600)
+        locked = False
         try:
+            opened = os.fstat(descriptor)
+            current = self._sync_lock_path.lstat()
+            if (
+                not stat.S_ISREG(opened.st_mode)
+                or opened.st_uid != os.getuid()
+                or stat.S_IMODE(opened.st_mode) != 0o600
+                or not stat.S_ISREG(current.st_mode)
+                or current.st_uid != os.getuid()
+                or stat.S_IMODE(current.st_mode) != 0o600
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+            ):
+                raise ValueError("O lock de sincronização é inválido.")
             fcntl.flock(descriptor, fcntl.LOCK_EX)
+            locked = True
+            current = self._sync_lock_path.lstat()
+            if (
+                not stat.S_ISREG(current.st_mode)
+                or current.st_uid != os.getuid()
+                or stat.S_IMODE(current.st_mode) != 0o600
+                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
+            ):
+                raise ValueError("O lock de sincronização é inválido.")
             yield
         finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            if locked:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)
+
+    def _run_with_sync_lock(self, operation: Callable[[], AuthResult]) -> AuthResult:
+        try:
+            with self._sync_lock():
+                return operation()
+        except (OSError, ValueError):
+            return self._pending_sync_failure()
 
     def add(self, name: str, token: str) -> Account:
         """Adiciona nova conta."""
@@ -143,55 +175,76 @@ class AccountManager:
 
     def set_active(self, name: str) -> AuthResult:
         """Sincroniza a sessão nativa antes de confirmar a seleção local."""
-        with self._sync_lock():
-            recovery = self._recover_pending_sync_locked()
-            if not recovery.ok:
-                return recovery
+        return self._run_with_sync_lock(lambda: self._set_active_locked(name))
 
-            account, failure = self._load_account_for_auth(name)
-            if failure is not None:
-                return failure
-            assert account is not None
-            validation = self.config.validate_access_token(account)
-            if not validation.ok:
-                return validation
-            try:
-                previous_name = self.active_store.read()
-            except ActiveAccountError as error:
-                return classify_local_failure(error)
+    def _set_active_locked(self, name: str) -> AuthResult:
+        recovery = self._recover_pending_sync_locked()
+        if not recovery.ok:
+            return recovery
 
+        account, failure = self._load_account_for_auth(name)
+        if failure is not None:
+            return failure
+        assert account is not None
+        validation = self.config.validate_access_token(account)
+        if not validation.ok:
+            return validation
+        try:
+            previous_name = self.active_store.read()
+        except ActiveAccountError as error:
+            return classify_local_failure(error)
+
+        try:
             self.sync_journal.write("activate", name, previous_name, "intent")
             self.sync_journal.write("activate", name, previous_name, "native_login")
+        except (OSError, ValueError):
+            return self._pending_sync_failure()
+        try:
             activation = self.native_session.activate(account)
-            if not activation.ok:
-                return self._compensate(previous_name, activation)
+        except (OSError, ValueError):
+            activation = self._pending_sync_failure()
+        if not activation.ok:
+            return self._compensate(name, previous_name, activation)
 
+        try:
             self.sync_journal.write("activate", name, previous_name, "native_verified")
             self.sync_journal.write("activate", name, previous_name, "local_write")
-            try:
-                self.active_store.write(name)
-            except PermissionError:
-                failure = classify_local_failure(ActiveAccountPermissionDeniedError())
-                return self._compensate(previous_name, failure)
-            except OSError:
-                failure = classify_local_failure(ActiveAccountWriteError())
-                return self._compensate(previous_name, failure)
-            except ValueError:
-                failure = classify_local_failure(ActiveAccountInvalidError())
-                return self._compensate(previous_name, failure)
+        except (OSError, ValueError):
+            return self._pending_sync_failure()
+        try:
+            self.active_store.write(name)
+        except PermissionError:
+            failure = classify_local_failure(ActiveAccountPermissionDeniedError())
+            return self._compensate(name, previous_name, failure)
+        except OSError:
+            failure = classify_local_failure(ActiveAccountWriteError())
+            return self._compensate(name, previous_name, failure)
+        except ValueError:
+            failure = classify_local_failure(ActiveAccountInvalidError())
+            return self._compensate(name, previous_name, failure)
 
+        try:
             self.sync_journal.write("activate", name, previous_name, "verified")
             self.sync_journal.clear()
-            return AuthResult.success(
-                f"Conta '{name}' ativada e sessão nativa sincronizada."
-            )
+        except (OSError, ValueError):
+            return self._pending_sync_failure()
+        return AuthResult.success(
+            f"Conta '{name}' ativada e sessão nativa sincronizada."
+        )
 
-    def _compensate(self, previous_name: Optional[str], failure: AuthResult) -> AuthResult:
-        payload = self.sync_journal.read()
-        target_name = payload["target_account"] if payload is not None else None
-        self.sync_journal.write("activate", target_name, previous_name, "rollback")
+    def _compensate(
+        self, target_name: str, previous_name: Optional[str], failure: AuthResult
+    ) -> AuthResult:
+        journal_failed = False
+        try:
+            self.sync_journal.write("activate", target_name, previous_name, "rollback")
+        except (OSError, ValueError):
+            journal_failed = True
         if previous_name is None:
-            compensation = self.native_session.logout()
+            try:
+                compensation = self.native_session.logout()
+            except (OSError, ValueError):
+                compensation = self._pending_sync_failure()
             if compensation.ok:
                 try:
                     self.active_store.clear()
@@ -206,7 +259,10 @@ class AccountManager:
                 compensation = load_failure
             else:
                 assert previous is not None
-                compensation = self.native_session.activate(previous)
+                try:
+                    compensation = self.native_session.activate(previous)
+                except (OSError, ValueError):
+                    compensation = self._pending_sync_failure()
                 if compensation.ok:
                     try:
                         self.active_store.write(previous_name)
@@ -215,17 +271,20 @@ class AccountManager:
                             AuthFailureCode.SYNC_ROLLBACK_FAILED,
                             "A seleção anterior não pôde ser restaurada.",
                         )
-        if compensation.ok:
-            self.sync_journal.clear()
-            return failure
+        if compensation.ok and not journal_failed:
+            try:
+                self.sync_journal.clear()
+            except (OSError, ValueError):
+                journal_failed = True
+            else:
+                return failure
         return AuthResult.failure(
             AuthFailureCode.SYNC_ROLLBACK_FAILED,
             "A sincronização falhou e a sessão anterior não pôde ser restaurada.",
         )
 
     def recover_pending_sync(self) -> AuthResult:
-        with self._sync_lock():
-            return self._recover_pending_sync_locked()
+        return self._run_with_sync_lock(self._recover_pending_sync_locked)
 
     def _recover_pending_sync_locked(self) -> AuthResult:
         try:
@@ -239,14 +298,20 @@ class AccountManager:
 
         phase = payload["phase"]
         if phase == "verified":
-            self.sync_journal.clear()
+            try:
+                self.sync_journal.clear()
+            except (OSError, ValueError):
+                return self._pending_sync_failure()
             return AuthResult.success("Sincronização pendente confirmada.")
         if phase in ("intent", "native_login", "rollback"):
             result = self._recover_compensation(payload["previous_account"])
         else:
             result = self._recover_activation(payload["target_account"])
         if result.ok:
-            self.sync_journal.clear()
+            try:
+                self.sync_journal.clear()
+            except (OSError, ValueError):
+                return self._pending_sync_failure()
         return result
 
     def _recover_activation(self, name: str) -> AuthResult:

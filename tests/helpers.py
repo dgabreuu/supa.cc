@@ -46,6 +46,32 @@ class MemoryActiveAccountStore:
         self.name = None
 
 
+class FaultInjectingJournal:
+    def __init__(self, journal, failure_method=None, failure_call=1):
+        self.journal = journal
+        self.path = journal.path
+        self.failure_method = failure_method
+        self.failure_call = failure_call
+        self.calls = {"read": 0, "write": 0, "clear": 0}
+
+    def _invoke(self, method, *args):
+        self.calls[method] += 1
+        if method == self.failure_method and self.calls[method] == self.failure_call:
+            raise OSError("private journal path")
+        return getattr(self.journal, method)(*args)
+
+    def read(self):
+        return self._invoke("read")
+
+    def write(self, operation, target_account, previous_account, phase):
+        return self._invoke(
+            "write", operation, target_account, previous_account, phase
+        )
+
+    def clear(self):
+        return self._invoke("clear")
+
+
 def fake_pat(value: str = "valid_token") -> str:
     body = hashlib.sha256(value.encode("utf-8")).hexdigest()[:40]
     return "sbp" + "_" + body
