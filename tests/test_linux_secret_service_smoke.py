@@ -1,5 +1,7 @@
 import hmac
 import os
+import platform
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -19,6 +21,9 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.real_secret_service
 def test_secret_service_round_trip_uses_an_isolated_entry():
+    if platform.system() != "Linux":
+        pytest.skip("requires Linux")
+
     unique = uuid4().hex
     service = f"supa.cc.tests.{unique}"
     account_name = f"smoke-{unique}"
@@ -49,3 +54,30 @@ def test_secret_service_round_trip_uses_an_isolated_entry():
                 f"{type(error).__name__}",
                 pytrace=False,
             )
+
+
+def test_secret_service_smoke_skips_off_linux_without_constructing_store(
+    monkeypatch,
+):
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(
+        "test_linux_secret_service_smoke.create_credential_store",
+        lambda *_args, **_kwargs: pytest.fail("credential store was constructed"),
+    )
+
+    with pytest.raises(pytest.skip.Exception, match="requires Linux"):
+        test_secret_service_round_trip_uses_an_isolated_entry()
+
+
+def test_secret_service_smoke_skips_when_service_is_unavailable(monkeypatch):
+    store = SimpleNamespace(
+        status=lambda: SimpleNamespace(available=False),
+    )
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(
+        "test_linux_secret_service_smoke.create_credential_store",
+        lambda *_args, **_kwargs: store,
+    )
+
+    with pytest.raises(pytest.skip.Exception, match="Secret Service is unavailable"):
+        test_secret_service_round_trip_uses_an_isolated_entry()

@@ -40,6 +40,13 @@ ls dist/
 
 `python3 -m build` deve gerar uma wheel e um sdist em `dist/`. Execute os jobs de teste em Linux suportado (Debian/Ubuntu, Arch Linux e Fedora) além do macOS antes da release. Os smoke tests de Keychain e Secret Service são opt-in e não entram no job padrão sem um serviço real e consentimento explícito. O smoke de Secret Service pula com segurança caso o serviço não esteja disponível.
 
+Após instalar a wheel em um ambiente descartável, valide as duas saídas de versão:
+
+```bash
+supa.cc --version  # Click: supa.cc, version 0.2.0
+supa.cc version    # Aplicação: Supa.cc v0.2.0
+```
+
 ## Release no GitHub
 
 ```bash
