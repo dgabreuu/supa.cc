@@ -39,11 +39,29 @@ class TestCLICommands:
         assert "Supa.cc v9.9.9" in result.output
 
     def test_update_check_mentions_homebrew_for_non_git_installs(self):
-        with patch("os.path.isdir", return_value=False):
+        from supa_cc.environment import detect_environment
+
+        with patch(
+            "supa_cc.__main__.detect_environment",
+            return_value=detect_environment(system_name="Darwin"),
+        ), patch("os.path.isdir", return_value=False):
             message = _check_for_updates()
 
         assert "brew upgrade supa-cc" in message
         assert "pipx upgrade supa.cc" in message
+
+    def test_update_check_uses_linux_guidance(self, monkeypatch):
+        from supa_cc.environment import detect_environment
+
+        monkeypatch.setattr(
+            "supa_cc.__main__.detect_environment",
+            lambda: detect_environment(system_name="Linux", os_release="ID=arch\n"),
+        )
+        with patch("os.path.isdir", return_value=False):
+            message = _check_for_updates()
+
+        assert "pipx upgrade supa.cc" in message
+        assert "brew" not in message
 
     def test_list_empty_accounts(self):
         runner = CliRunner()

@@ -25,6 +25,9 @@ from .keychain import (
     AccountIndexReadError,
     safe_load_json_index,
 )
+from .credentials import CredentialStoreStatus
+from .environment import Environment, OperatingSystem, detect_environment
+from .installation import installation_guidance
 
 
 BackendResolver = Callable[[], str]
@@ -161,21 +164,27 @@ def _supabase_identity(
     invoked: Optional[str],
     realpath: Optional[str],
     signature_resolver: SignatureResolver,
+    environment: Environment,
 ) -> Dict[str, object]:
+    signature = (
+        _safe_signature(signature_resolver, Path(realpath))
+        if environment.operating_system is OperatingSystem.MACOS and realpath
+        else {"status": "not_applicable"}
+    )
     if realpath is None:
         return {
             "invoked": invoked,
             "realpath": None,
             "version": "unknown",
             "provenance": "unknown",
-            "signature": {"status": "unknown"},
+            "signature": signature,
         }
     metadata = _verified_cli_metadata(Path(realpath))
     return {
         "invoked": invoked,
         "realpath": realpath,
         **metadata,
-        "signature": _safe_signature(signature_resolver, Path(realpath)),
+        "signature": signature,
     }
 
 
@@ -191,6 +200,7 @@ class DoctorReport:
     active_account: Optional[str]
     environment: Dict[str, object] = field(repr=False)
     diagnostic_codes: List[str]
+    credentials: Dict[str, object] = field(default_factory=dict, repr=False)
     live_result: Optional[AuthResult] = field(default=None, repr=False)
     activation: Dict[str, str] = field(
         default_factory=lambda: {
@@ -218,6 +228,7 @@ class DoctorReport:
                 "service": self.keychain_service,
                 "backend": self.keychain_backend,
             },
+            "credentials": self.credentials,
             "index": self.index,
             "active_account": self.active_account,
             "environment": self.environment,
@@ -283,7 +294,10 @@ class DoctorReport:
                 f"{realpath or 'não identificado'} (assinatura: {status})"
             )
         active = self.active_account or "não selecionada"
-        diagnostics = ", ".join(self.diagnostic_codes) or "none"
+        diagnostics = ", ".join(
+            code.replace("keychain", "credential_store")
+            for code in self.diagnostic_codes
+        ) or "none"
         lines = [
             "Supa.cc doctor",
             f"Supa.cc versão: {self.runtime.get('supa_cc_version') or 'unknown'}",
@@ -307,8 +321,9 @@ class DoctorReport:
             ),
             f"Versão da Supabase CLI: {cli_version}",
             f"Proveniência: {provenance}",
-            f"Keychain backend: {self.keychain_backend}",
-            f"Keychain service: {self.keychain_service}",
+            "Armazenamento de credenciais: "
+            f"{self.credentials.get('backend', self.keychain_backend)} "
+            f"({self.credentials.get('status', 'unknown')})",
             f"Índice: {self.index.get('state')} ({self.index.get('account_count', 0)} contas)",
             f"Conta ativa: {active}",
             "SUPABASE_ACCESS_TOKEN no ambiente: "
@@ -341,6 +356,8 @@ class DiagnosticService:
         signature_resolver: Optional[SignatureResolver] = None,
         python_version: Optional[str] = None,
         python_implementation: Optional[str] = None,
+        environment: Optional[Environment] = None,
+        credential_store=None,
     ):
         self.manager = manager if manager is not None else AccountManager()
         self.env = os.environ if env is None else env
@@ -355,6 +372,8 @@ class DiagnosticService:
         self.python_implementation = (
             python_implementation or platform.python_implementation()
         )
+        self.environment = environment or detect_environment()
+        self.credential_store = credential_store
 
     def run(
         self,
@@ -382,18 +401,34 @@ class DiagnosticService:
             ok = False
             exit_code = 1
 
-        try:
-            backend = self.backend_resolver()
-        except Exception:
-            backend = "indisponível"
-            codes.append(AuthFailureCode.KEYCHAIN_READ_FAILED.value)
-            ok = False
-            exit_code = 1
+        credential_store = self.credential_store
+        if credential_store is None:
+            credential_store = getattr(self.manager.keychain, "credential_store", None)
+        credential_status = None
+        if credential_store is not None:
+            try:
+                status = credential_store.status()
+            except Exception:
+                status = None
+            if isinstance(status, CredentialStoreStatus):
+                credential_status = status
+
+        if credential_status is not None:
+            backend = credential_status.backend_name
+        else:
+            try:
+                backend = self.backend_resolver()
+            except Exception:
+                backend = "indisponível"
+                codes.append(AuthFailureCode.KEYCHAIN_READ_FAILED.value)
+                ok = False
+                exit_code = 1
 
         cli_identity = _supabase_identity(
             self.manager.config.supabase_cli_invoked,
             self.manager.config.supabase_cli,
             self.signature_resolver,
+            self.environment,
         )
         if cli_identity["realpath"] is None:
             codes.append(AuthFailureCode.CLI_NOT_FOUND.value)
@@ -427,25 +462,30 @@ class DiagnosticService:
         launcher_realpath = _safe_realpath(self.launcher_path)
         python_invoked = _safe_invoked_path(self.python_executable)
         python_realpath = _safe_realpath(self.python_executable)
+        signature = lambda path: (
+            _safe_signature(self.signature_resolver, path)
+            if self.environment.operating_system is OperatingSystem.MACOS
+            else {"status": "not_applicable"}
+        )
         runtime = {
             "supa_cc_version": supa_cc.__version__,
+            "operating_system": self.environment.operating_system.value,
+            "linux_distribution": (
+                self.environment.distribution.value
+                if self.environment.distribution is not None
+                else None
+            ),
             "launcher": {
                 "invoked": launcher_invoked,
                 "realpath": launcher_realpath,
-                "signature": _safe_signature(
-                    self.signature_resolver,
-                    Path(launcher_realpath),
-                ),
+                "signature": signature(Path(launcher_realpath)),
             },
             "python": {
                 "invoked": python_invoked,
                 "realpath": python_realpath,
                 "implementation": self.python_implementation,
                 "version": self.python_version,
-                "signature": _safe_signature(
-                    self.signature_resolver,
-                    Path(python_realpath),
-                ),
+                "signature": signature(Path(python_realpath)),
             },
         }
         index = {
@@ -478,6 +518,28 @@ class DiagnosticService:
         if not isinstance(keychain_service, str):
             keychain_service = KEYCHAIN_SERVICE
 
+        guidance = installation_guidance(self.environment)
+        credentials = {
+            "service": keychain_service,
+            "backend": backend,
+            "available": (
+                credential_status.available
+                if credential_status is not None
+                else True
+            ),
+            "status": (
+                "available"
+                if credential_status is None or credential_status.available
+                else "unavailable"
+            ),
+            "message": credential_status.message if credential_status else "",
+            "remediation": guidance.remediation,
+        }
+        if credential_status is not None and not credential_status.available:
+            codes.append(AuthFailureCode.KEYCHAIN_READ_FAILED.value)
+            ok = False
+            exit_code = exit_code or 1
+
         return DoctorReport(
             ok=ok,
             exit_code=exit_code,
@@ -485,6 +547,7 @@ class DiagnosticService:
             supabase_cli=cli_identity,
             keychain_service=keychain_service,
             keychain_backend=backend,
+            credentials=credentials,
             index=index,
             active_account=active_account,
             environment=environment,

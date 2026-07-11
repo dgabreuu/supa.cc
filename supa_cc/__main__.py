@@ -2,11 +2,10 @@ import subprocess
 import click
 import supa_cc
 from .auth import classify_local_failure, normalize_exit_code
+from .environment import detect_environment
+from .installation import installation_guidance
 from .tui import run as run_tui
 from .strings import CLIStrings as Textos
-
-UPGRADE_HINT = "brew upgrade supa-cc ou brew upgrade --fetch-HEAD supa-cc; para pipx: pipx upgrade supa.cc"
-
 
 def _exit_with_local_failure(error):
     result = classify_local_failure(error)
@@ -18,11 +17,12 @@ def _check_for_updates():
     """Verifica se há uma versão mais recente disponível."""
     import os
 
+    update_hint = installation_guidance(detect_environment()).update_hint
     pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     git_dir = os.path.join(pkg_dir, ".git")
 
     if not os.path.isdir(git_dir):
-        return f"Para verificar atualizações, clone o repositório ou execute: {UPGRADE_HINT}"
+        return f"Para verificar atualizações, clone o repositório ou execute: {update_hint}"
 
     try:
         local = subprocess.run(
@@ -39,9 +39,9 @@ def _check_for_updates():
             return f"Nova versão disponível! (local: {local_hash} → remoto: {remote_hash})"
         return "Você está na versão mais recente."
     except subprocess.CalledProcessError:
-        return f"Não foi possível verificar atualizações. Verifique sua conexão ou execute: {UPGRADE_HINT}"
+        return f"Não foi possível verificar atualizações. Verifique sua conexão ou execute: {update_hint}"
     except FileNotFoundError:
-        return f"Git não encontrado. Para atualizar, execute: {UPGRADE_HINT}"
+        return f"Git não encontrado. Para atualizar, execute: {update_hint}"
 
 
 @click.group(invoke_without_command=True)

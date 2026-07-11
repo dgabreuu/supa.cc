@@ -12,7 +12,9 @@ from supa_cc.auth import (
     AuthResult,
 )
 from supa_cc.config import SupabaseConfig
+from supa_cc.credentials import CredentialStoreStatus
 from supa_cc.diagnostics import DiagnosticService
+from supa_cc.environment import detect_environment
 from supa_cc.keychain import KEYCHAIN_SERVICE
 
 from helpers import fake_pat
@@ -25,6 +27,8 @@ def _service(
     env=None,
     supabase_path=None,
     signature_resolver=None,
+    environment=None,
+    credential_store=None,
 ):
     if manager is None:
         manager = Mock(spec=AccountManager)
@@ -48,6 +52,9 @@ def _service(
         ),
         python_version="3.14.0",
         python_implementation="CPython",
+        environment=environment
+        or detect_environment(system_name="Darwin"),
+        credential_store=credential_store,
     )
 
 
@@ -145,6 +152,7 @@ def test_doctor_reports_verified_runtime_identity_and_homebrew_receipt(tmp_path)
         tmp_path,
         supabase_path=str(invoked),
         signature_resolver=signature,
+        environment=detect_environment(system_name="Darwin"),
     )
     service.launcher_path = launcher
     service.python_executable = python_link
@@ -302,3 +310,37 @@ def test_doctor_json_contains_no_environment_or_validation_secret(tmp_path):
     }
     assert payload["live"]["code"] == AuthFailureCode.TOKEN_REJECTED.value
     assert payload["live"]["message"] == "unsafe [REDACTED]"
+
+
+def test_linux_doctor_reports_distribution_and_unavailable_credential_store(
+    tmp_path,
+):
+    credential_store = Mock()
+    credential_store.service = "supa.cc.tests.credentials"
+    credential_store.status.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.SecretService.Keyring",
+        available=False,
+        message="credential store unavailable",
+    )
+    signature_resolver = Mock(return_value={"status": "signed"})
+    service = _service(
+        tmp_path,
+        signature_resolver=signature_resolver,
+        environment=detect_environment(
+            system_name="Linux", os_release="ID=ubuntu\n"
+        ),
+        credential_store=credential_store,
+    )
+
+    report = service.run()
+
+    assert report.runtime["operating_system"] == "linux"
+    assert report.runtime["linux_distribution"] == "ubuntu"
+    assert report.credentials["available"] is False
+    assert report.credentials["remediation"]
+    assert AuthFailureCode.KEYCHAIN_READ_FAILED.value in report.diagnostic_codes
+    assert report.to_dict()["keychain"]["backend"] == (
+        "keyring.backends.SecretService.Keyring"
+    )
+    assert "keychain" not in report.to_human().lower()
+    signature_resolver.assert_not_called()
