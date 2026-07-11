@@ -9,13 +9,14 @@
 
 # Supa.cc
 
-Supa.cc é uma ferramenta de linha de comando para gerenciar múltiplas contas do Supabase no macOS. Os Personal Access Tokens (PATs) ficam no Keychain; os arquivos locais contêm somente nomes de contas.
+Supa.cc é uma ferramenta de linha de comando para gerenciar múltiplas contas do Supabase no macOS e em Debian/Ubuntu, Arch Linux e Fedora. Os Personal Access Tokens (PATs) ficam no Keychain do macOS ou no Secret Service do Linux; os arquivos locais contêm somente nomes de contas.
 
 ## Requisitos
 
-- macOS.
+- macOS, Debian/Ubuntu, Arch Linux ou Fedora.
 - Python 3.9 ou superior.
 - Supabase CLI disponível como `supabase` no `PATH`.
+- No Linux, D-Bus de usuário em execução e Secret Service desbloqueado. Em sessões headless sem esses serviços, o Supa.cc falha com orientação segura, sem armazenar tokens em texto puro.
 - Um PAT no formato oficial: prefixo `sbp_` ou `sbp_oauth_`, seguido por exatamente 40 caracteres hexadecimais minúsculos (`0-9`, `a-f`).
 
 ## Instalação
@@ -33,7 +34,7 @@ Para instalar a versão atual do branch `main` durante desenvolvimento:
 brew install --HEAD supa-cc
 ```
 
-Alternativamente, instale em um ambiente Python isolado:
+Em Linux, instale os pré-requisitos do seu sistema e use `pipx`; os comandos exatos estão em [docs/installation.md](docs/installation.md). Alternativamente, `pipx` também instala em um ambiente Python isolado no macOS:
 
 ```bash
 pipx install "git+https://github.com/dgabreuu/supa.cc.git"
@@ -103,6 +104,8 @@ Os diagnósticos distinguem token ausente, formato inválido, PAT rejeitado/HTTP
 - O Supa.cc não modifica, apaga nem recria credenciais ou perfis pertencentes ao Supabase CLI.
 - O Supa.cc não cria marcadores de ACL ou de correção da credencial nativa.
 - O Supa.cc não instala ACL ampla, não contorna um Keychain bloqueado e não exporta segredos em texto puro.
+- No Linux, o único backend aceito é o Secret Service acessado pelo D-Bus de usuário. Um serviço indisponível ou bloqueado, inclusive em ambiente headless, falha com orientação de correção; o Supa.cc não usa arquivos plaintext nem o fallback `keyrings.alt`.
+- O diretório de configuração no Linux segue `XDG_CONFIG_HOME` quando definido, ou `~/.config/supa.cc` caso contrário.
 - Erros, `stdout`, `stderr` e exceções são sanitizados antes de serem exibidos.
 
 No macOS, quem acessa o item do Keychain é o runtime Python que executa o Supa.cc. Em uma instalação `pipx`, atualizar o ambiente, mudar o caminho do Python ou alterar a assinatura do executável pode justificar uma nova autorização única. Prompts repetidos com o mesmo runtime indicam permissão/controle de acesso inconsistente; use `doctor` para identificar os caminhos envolvidos, sem exportar o token ou afrouxar a ACL.

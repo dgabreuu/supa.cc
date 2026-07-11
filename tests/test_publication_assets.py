@@ -51,6 +51,35 @@ def test_publication_docs_cover_installation_and_release():
     assert "git status --short" in release
 
 
+def test_public_docs_cover_linux_installation_and_credential_requirements():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+    skill = Path("SKILL.md").read_text(encoding="utf-8")
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
+    docs = "\n".join((readme, installation, skill, agents))
+    normalized = docs.lower()
+
+    for distribution in ("Debian", "Ubuntu", "Arch", "Fedora"):
+        assert distribution in installation
+    assert "pipx" in docs
+    assert "Secret Service" in docs
+    assert "D-Bus" in docs
+    assert "XDG_CONFIG_HOME" in docs
+    assert "supa.cc doctor" in docs
+    assert "headless" in normalized
+    assert "plaintext" in normalized
+    assert "keyrings.alt" in normalized
+
+
+def test_release_docs_build_and_validate_linux_artifacts():
+    release = Path("docs/release.md").read_text(encoding="utf-8")
+
+    assert "python3 -m build" in release
+    assert "dist/" in release
+    assert "Linux" in release
+    assert "python3 -m pytest" in release
+
+
 def test_public_authentication_contract_is_safe_and_current():
     readme = Path("README.md").read_text(encoding="utf-8")
     skill = Path("SKILL.md").read_text(encoding="utf-8")

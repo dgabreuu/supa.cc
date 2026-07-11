@@ -1,15 +1,15 @@
 ---
 name: supa-cc-cli
-description: Use ao operar ou manter fluxos de conta, Keychain, autenticação, diagnóstico ou execução do Supabase CLI no Supa.cc
+description: Use ao operar ou manter fluxos de conta, Keychain, Secret Service, autenticação, diagnóstico ou execução do Supabase CLI no Supa.cc
 ---
 
 # Supa.cc CLI
 
 ## Propósito e limite
 
-Supa.cc gerencia PATs do Supabase localmente no macOS. Os tokens são armazenados pelo Python `keyring` no Keychain do macOS; os arquivos contêm apenas nomes de contas. Ele não possui nem altera a sessão oficial do Supabase CLI.
+Supa.cc gerencia PATs do Supabase localmente no macOS e em Debian/Ubuntu, Arch Linux e Fedora. Os tokens são armazenados pelo Python `keyring` no Keychain do macOS ou no Secret Service do Linux; os arquivos contêm apenas nomes de contas. Ele não possui nem altera a sessão oficial do Supabase CLI.
 
-Use-o para seleção interativa local de contas. Não o use como gerenciador de segredos de CI, em sistemas que não sejam macOS, nem para credenciais que não sejam do Supabase.
+Use-o para seleção interativa local de contas. Não o use como gerenciador de segredos de CI, em sistemas fora das plataformas suportadas, nem para credenciais que não sejam do Supabase.
 
 ## Fluxo canônico de dados
 
@@ -136,9 +136,10 @@ O frame estável (header + body) permanece montado enquanto a Home atua como hub
 | Dado | Local | Conteúdo |
 | --- | --- | --- |
 | PATs | serviço do Keychain do macOS `supa.cc.supabase.accounts.v2` | Um segredo por nome de conta |
-| Índice de contas | `~/.config/supa.cc/accounts.json` | Somente nomes, modo de arquivo `0600` |
-| Seleção ativa | `~/.config/supa.cc/active-account` | Somente um nome, modo de arquivo `0600` |
-| Diretório de configuração | `~/.config/supa.cc/` | Modo de diretório `0700` |
+| PATs no Linux | Secret Service `supa.cc.supabase.accounts.v2` via D-Bus de usuário | Um segredo por nome de conta |
+| Índice de contas | `$XDG_CONFIG_HOME/supa.cc/accounts.json` no Linux, ou `~/.config/supa.cc/accounts.json` | Somente nomes, modo de arquivo `0600` |
+| Seleção ativa | `$XDG_CONFIG_HOME/supa.cc/active-account` no Linux, ou `~/.config/supa.cc/active-account` | Somente um nome, modo de arquivo `0600` |
+| Diretório de configuração | `$XDG_CONFIG_HOME/supa.cc/` no Linux, ou `~/.config/supa.cc/` | Modo de diretório `0700` |
 
 Leituras do Keychain usam um cache positivo de curta duração no processo. Sobrescrita e exclusão invalidam a entrada. Um item ausente é consultado de novo na próxima leitura. Um índice de contas inválido ou ilegível é preservado e reportado; não é recriado silenciosamente.
 
@@ -151,6 +152,10 @@ O acessor visto pelo Keychain é o runtime Python que executa o Supa.cc. No `pip
 Prompts repetidos com o mesmo runtime inalterado indicam problema de permissão/controle de acesso do Keychain. Inspecione a identidade não secreta do executável com `doctor`; não despeje o item, não conceda acesso a todos os aplicativos nem afrouxa a ACL. O Supa.cc nunca realiza exclusão de credencial ou reparo de sessão nativa como efeito colateral.
 
 O Supa.cc também não cria arquivos marcadores de ACL ou de correção de credencial durante operações normais de conta.
+
+## Secret Service no Linux
+
+Em Debian/Ubuntu, Arch Linux e Fedora, instale os pré-requisitos e o `pipx` descritos em `docs/installation.md`. A sessão do usuário precisa ter D-Bus funcional e um Secret Service desbloqueado. Em ambiente headless sem eles, o Supa.cc deve falhar com a orientação exibida por `supa.cc doctor`; não habilite `keyrings.alt`, arquivos plaintext ou qualquer backend alternativo para contornar essa falha.
 
 ## Classificação de falhas
 

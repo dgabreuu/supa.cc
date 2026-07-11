@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "supa.cc"
 version = "0.2.0"
-description = "Local Supabase account switcher for macOS Keychain"
+description = "Local Supabase account switcher for macOS Keychain and Linux Secret Service"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
@@ -13,7 +13,9 @@ keywords = [
     "supabase",
     "cli",
     "macos",
+    "linux",
     "keychain",
+    "secret-service",
     "account-management",
     "developer-tools",
 ]
@@ -24,6 +26,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Natural Language :: Portuguese",
     "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Topic :: Software Development",
@@ -44,6 +47,7 @@ Issues = "https://github.com/dgabreuu/supa.cc/issues"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "build>=1.2.0",
     "tomli>=2.0.0; python_version < \"3.11\"",
 ]
 
@@ -56,4 +60,5 @@ packages = ["supa_cc"]
 [tool.pytest.ini_options]
 markers = [
     "real_keychain: opt-in smoke test that accesses an isolated macOS Keychain item",
+    "real_secret_service: opt-in smoke test that accesses an isolated Linux Secret Service item",
 ]

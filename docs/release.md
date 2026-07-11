@@ -1,6 +1,6 @@
 # Checklist de release
 
-Use este checklist antes de publicar o Supa.cc no GitHub ou atualizar a fórmula Homebrew.
+Use este checklist antes de publicar o Supa.cc no GitHub ou atualizar a fórmula Homebrew macOS-only.
 
 ## Segurança do repositório
 
@@ -32,8 +32,12 @@ Em seguida execute:
 ```bash
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
+python3 -m pytest -m "not real_keychain and not real_secret_service"
 python3 -m build
+ls dist/
 ```
+
+`python3 -m build` deve gerar uma wheel e um sdist em `dist/`. Execute os jobs de teste em Linux suportado (Debian/Ubuntu, Arch Linux e Fedora) além do macOS antes da release. Os smoke tests de Keychain e Secret Service são opt-in e não entram no job padrão sem um serviço real e consentimento explícito.
 
 ## Release no GitHub
 
@@ -46,6 +50,8 @@ git push origin v0.2.0
 Crie uma GitHub Release a partir da tag e anexe artefatos gerados somente se necessário. Não anexe arquivos de configuração local, ambientes virtuais, caches, logs ou exportações de token.
 
 ## Fórmula Homebrew
+
+A fórmula `Formula/supa-cc.rb` permanece exclusivamente para macOS. Não crie assets Debian, PKGBUILD/AUR ou RPM como parte desta release.
 
 O repositório não usa o prefixo `homebrew-` no nome. Faça o tap com URL explícita ao testar localmente:
 
