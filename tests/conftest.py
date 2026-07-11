@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
+from helpers import FakeCredentialStore
+
 
 @pytest.fixture(autouse=True)
 def silence_security_keychain(request):
@@ -19,7 +21,8 @@ def silence_security_keychain(request):
         yield
         return
 
-    with patch("supa_cc.keychain.keyring.set_password"), patch(
-        "supa_cc.keychain.keyring.get_password", return_value=None
-    ), patch("supa_cc.keychain.keyring.delete_password"):
+    with patch(
+        "supa_cc.keychain.create_credential_store",
+        side_effect=lambda _environment: FakeCredentialStore(),
+    ):
         yield

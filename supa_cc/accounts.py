@@ -10,14 +10,14 @@ from .auth import (
     AuthFailureCode,
     AuthResult,
     CommandResult,
-    KeychainPermissionDeniedError,
-    KeychainReadError,
+    CredentialAccessError,
     InvalidAccessTokenError,
     InvalidAccountNameError,
     classify_local_failure,
     is_valid_account_name,
 )
 from .config import SupabaseConfig
+from .environment import detect_environment
 from .models import Account
 from .keychain import KeychainManager
 
@@ -29,10 +29,19 @@ class AccountManager:
         config: Optional[SupabaseConfig] = None,
         active_store: Optional[ActiveAccountStore] = None,
     ):
-        self.keychain = keychain if keychain is not None else KeychainManager()
+        environment = detect_environment()
+        self.keychain = (
+            keychain
+            if keychain is not None
+            else KeychainManager(environment=environment)
+        )
         self.config = config if config is not None else SupabaseConfig()
         self.active_store = (
-            active_store if active_store is not None else ActiveAccountStore()
+            active_store
+            if active_store is not None
+            else ActiveAccountStore(
+                path=environment.config_directory() / "active-account"
+            )
         )
 
     def add(self, name: str, token: str) -> Account:
@@ -73,7 +82,7 @@ class AccountManager:
     ) -> Tuple[Optional[Account], Optional[AuthResult]]:
         try:
             account = self.get(name)
-        except (KeychainPermissionDeniedError, KeychainReadError) as error:
+        except CredentialAccessError as error:
             return None, classify_local_failure(error)
 
         if not account:

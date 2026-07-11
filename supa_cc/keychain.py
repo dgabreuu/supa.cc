@@ -1,5 +1,4 @@
 import fcntl
-import hmac
 import json
 import os
 import tempfile
@@ -8,51 +7,20 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator, List, Optional
 
-import keyring
-from keyring.errors import KeyringError, KeyringLocked, PasswordDeleteError
-
 from .auth import (
     AccountIndexError,
     AccountIndexInvalidError,
     AccountIndexReadError,
     AccountTransactionError,
-    KeychainPermissionDeniedError,
-    KeychainReadError,
     is_valid_account_name,
 )
+from .credentials import CredentialStore, create_credential_store
+from .environment import Environment, detect_environment
 from .models import Account
 
 
 KEYCHAIN_SERVICE = "supa.cc.supabase.accounts.v2"
-DEFAULT_INDEX_PATH = Path.home() / ".config" / "supa.cc" / "accounts.json"
-_MACOS_KEYCHAIN_ITEM_NOT_FOUND = "-25300"
 DEFAULT_TOKEN_CACHE_TTL_SECONDS = 5.0
-_PERMISSION_ERROR_MARKERS = (
-    "permission denied",
-    "interaction is not allowed",
-    "user interaction is not allowed",
-)
-
-
-def _raise_keychain_access_error(error: BaseException) -> None:
-    message = str(error).lower()
-    if (
-        isinstance(error, (KeyringLocked, PermissionError))
-        or any(marker in message for marker in _PERMISSION_ERROR_MARKERS)
-    ):
-        raise KeychainPermissionDeniedError(
-            "Acesso ao Keychain não autorizado."
-        ) from None
-    raise KeychainReadError("Não foi possível ler a credencial no Keychain.") from None
-
-
-def _is_missing_keychain_item(error: PasswordDeleteError) -> bool:
-    message = str(error).lower()
-    return (
-        _MACOS_KEYCHAIN_ITEM_NOT_FOUND in message
-        or "item not found" in message
-        or "could not be found" in message
-    )
 
 
 def _validated_unique_names(names: List[str]) -> List[str]:
@@ -97,11 +65,23 @@ class KeychainManager:
         self,
         index_path: Optional[Path] = None,
         service: str = KEYCHAIN_SERVICE,
+        credential_store: Optional[CredentialStore] = None,
+        environment: Optional[Environment] = None,
         cache_ttl_seconds: float = DEFAULT_TOKEN_CACHE_TTL_SECONDS,
         clock: Optional[Callable[[], float]] = None,
     ):
-        self.index_path = Path(index_path) if index_path else DEFAULT_INDEX_PATH
+        environment = environment if environment is not None else detect_environment()
+        self.index_path = (
+            Path(index_path)
+            if index_path is not None
+            else environment.config_directory() / "accounts.json"
+        )
         self.service = service
+        self.credential_store = (
+            credential_store
+            if credential_store is not None
+            else create_credential_store(environment)
+        )
         self._cache_ttl_seconds = max(0.0, cache_ttl_seconds)
         self._clock = clock if clock is not None else time.monotonic
         self._token_cache: dict[str, tuple[str, float]] = {}
@@ -163,33 +143,13 @@ class KeychainManager:
                     pass
 
     def _read_token_uncached(self, name: str) -> Optional[str]:
-        try:
-            return keyring.get_password(self.service, name)
-        except (KeyringError, PermissionError) as exc:
-            _raise_keychain_access_error(exc)
+        return self.credential_store.get(name)
 
     def _write_token_verified(self, account: Account) -> None:
-        try:
-            keyring.set_password(self.service, account.name, account.token)
-            saved_token = keyring.get_password(self.service, account.name)
-        except (KeyringError, PermissionError) as exc:
-            _raise_keychain_access_error(exc)
-
-        if saved_token is None or not hmac.compare_digest(
-            account.token,
-            saved_token,
-        ):
-            raise KeychainReadError(
-                "Não foi possível confirmar a credencial no Keychain."
-            )
+        self.credential_store.set(account)
 
     def _delete_token(self, name: str) -> None:
-        try:
-            keyring.delete_password(self.service, name)
-        except (KeyringError, PermissionError) as exc:
-            if isinstance(exc, PasswordDeleteError) and _is_missing_keychain_item(exc):
-                return
-            _raise_keychain_access_error(exc)
+        self.credential_store.delete(name)
 
     def _cache_token(self, name: str, token: str) -> None:
         self._token_cache[name] = (token, self._clock())

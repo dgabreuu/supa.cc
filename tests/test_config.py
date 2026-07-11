@@ -171,13 +171,12 @@ def test_validate_access_token_never_calls_native_keychain_repair(tmp_path):
 
     with patch(
         "supa_cc.config.subprocess.Popen", return_value=_process()
-    ) as run, patch("supa_cc.keychain.keyring.delete_password") as delete_password:
+    ) as run:
         result = config.validate_access_token(
             Account(name="work", token=fake_pat("no-repair"))
         )
 
     assert result.ok is True
-    delete_password.assert_not_called()
     assert all("security" not in str(argument) for argument in run.call_args.args[0])
 
 

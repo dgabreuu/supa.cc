@@ -3,7 +3,6 @@ import stat
 import traceback
 
 import pytest
-from keyring.errors import KeyringError
 from unittest.mock import Mock, call, patch
 
 from supa_cc.accounts import AccountManager
@@ -11,6 +10,8 @@ from supa_cc.auth import (
     AuthFailureCode,
     AuthResult,
     CommandResult,
+    CredentialPermissionDeniedError,
+    CredentialReadError,
     KeychainPermissionDeniedError,
     KeychainReadError,
     ActiveAccountInvalidError,
@@ -19,8 +20,39 @@ from supa_cc.auth import (
 )
 from supa_cc.keychain import KeychainManager
 from supa_cc.models import Account
+from supa_cc.environment import detect_environment
 
-from helpers import fake_pat
+from helpers import FakeCredentialStore, fake_pat
+
+
+def test_default_stores_use_one_detected_environment(monkeypatch):
+    environment = detect_environment(system_name="Linux", os_release="ID=ubuntu\n")
+    created_keychain = Mock()
+    created_active_store = Mock()
+    keychain_arguments = []
+    active_store_arguments = []
+    monkeypatch.setattr(
+        "supa_cc.accounts.detect_environment",
+        lambda: environment,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "supa_cc.accounts.KeychainManager",
+        lambda **kwargs: keychain_arguments.append(kwargs) or created_keychain,
+    )
+    monkeypatch.setattr(
+        "supa_cc.accounts.ActiveAccountStore",
+        lambda **kwargs: active_store_arguments.append(kwargs) or created_active_store,
+    )
+
+    manager = AccountManager()
+
+    assert manager.keychain is created_keychain
+    assert manager.active_store is created_active_store
+    assert keychain_arguments == [{"environment": environment}]
+    assert active_store_arguments == [
+        {"path": environment.config_directory() / "active-account"}
+    ]
 
 
 class TestAccountManager:
@@ -101,8 +133,7 @@ class TestAccountManager:
         manager.keychain.index_path = tmp_path / "accounts.json"
         manager.keychain.update_index(["pilon", "work"])
 
-        with patch("supa_cc.keychain.keyring.delete_password"):
-            manager.remove("pilon")
+        manager.remove("pilon")
 
         assert [account.name for account in manager.list()] == ["work"]
 
@@ -177,8 +208,13 @@ class TestAccountManager:
                 AuthFailureCode.KEYCHAIN_PERMISSION_DENIED,
             ),
             (KeychainReadError("safe"), AuthFailureCode.KEYCHAIN_READ_FAILED),
+            (
+                CredentialPermissionDeniedError("safe"),
+                AuthFailureCode.KEYCHAIN_PERMISSION_DENIED,
+            ),
+            (CredentialReadError("safe"), AuthFailureCode.KEYCHAIN_READ_FAILED),
         ],
-        ids=["permission", "read"],
+        ids=["keychain-permission", "keychain-read", "credential-permission", "credential-read"],
     )
     def test_set_active_maps_keychain_domain_failures(self, failure, expected):
         keychain = Mock()
@@ -437,19 +473,14 @@ class TestAccountManager:
 
     def test_concurrent_additions_do_not_lose_names(self, tmp_path):
         index_path = tmp_path / "accounts.json"
-        first = AccountManager(keychain=KeychainManager(index_path=index_path))
-        second = AccountManager(keychain=KeychainManager(index_path=index_path))
+        store = FakeCredentialStore()
+        first = AccountManager(
+            keychain=KeychainManager(index_path=index_path, credential_store=store)
+        )
+        second = AccountManager(
+            keychain=KeychainManager(index_path=index_path, credential_store=store)
+        )
         first.keychain.update_index([])
-        storage = {}
-        storage_lock = threading.Lock()
-
-        def set_password(_service, name, token):
-            with storage_lock:
-                storage[name] = token
-
-        def get_password(_service, name):
-            with storage_lock:
-                return storage.get(name)
 
         first_has_lock = threading.Event()
         release_first = threading.Event()
@@ -478,11 +509,7 @@ class TestAccountManager:
             except Exception as exc:
                 failures.append(exc)
 
-        with patch(
-            "supa_cc.keychain.keyring.set_password", side_effect=set_password
-        ), patch(
-            "supa_cc.keychain.keyring.get_password", side_effect=get_password
-        ), patch.object(
+        with patch.object(
             first.keychain,
             "_read_index_locked",
             side_effect=paused_first_read,
@@ -523,84 +550,56 @@ class TestAccountManager:
         assert sorted(account.name for account in first.list()) == ["alpha", "beta"]
 
     def test_overwrite_restores_previous_token_when_index_commit_fails(self, tmp_path):
-        manager = AccountManager()
-        manager.keychain.index_path = tmp_path / "accounts.json"
-        manager.keychain.update_index([])
         previous = fake_pat("previous_token")
-        storage = {"work": previous}
-
-        def set_password(_service, name, token):
-            storage[name] = token
-
-        def get_password(_service, name):
-            return storage.get(name)
-
-        def delete_password(_service, name):
-            storage.pop(name, None)
+        store = FakeCredentialStore()
+        store.tokens["work"] = previous
+        manager = AccountManager(
+            keychain=KeychainManager(
+                index_path=tmp_path / "accounts.json", credential_store=store
+            )
+        )
+        manager.keychain.update_index([])
 
         with patch(
-            "supa_cc.keychain.keyring.set_password", side_effect=set_password
-        ), patch(
-            "supa_cc.keychain.keyring.get_password", side_effect=get_password
-        ), patch(
-            "supa_cc.keychain.keyring.delete_password", side_effect=delete_password
-        ), patch(
             "supa_cc.keychain.os.replace", side_effect=OSError("index write failed")
         ):
             with pytest.raises(OSError, match="index write failed"):
                 manager.add("work", fake_pat("replacement_token"))
 
-        assert storage == {"work": previous}
+        assert store.tokens == {"work": previous}
         assert manager.list() == []
 
     def test_remove_restores_token_when_index_commit_fails(self, tmp_path):
-        manager = AccountManager()
-        manager.keychain.index_path = tmp_path / "accounts.json"
-        manager.keychain.update_index(["work"])
         previous = fake_pat("previous_token")
-        storage = {"work": previous}
-
-        def set_password(_service, name, token):
-            storage[name] = token
-
-        def get_password(_service, name):
-            return storage.get(name)
-
-        def delete_password(_service, name):
-            storage.pop(name, None)
+        store = FakeCredentialStore()
+        store.tokens["work"] = previous
+        manager = AccountManager(
+            keychain=KeychainManager(
+                index_path=tmp_path / "accounts.json", credential_store=store
+            )
+        )
+        manager.keychain.update_index(["work"])
 
         with patch(
-            "supa_cc.keychain.keyring.set_password", side_effect=set_password
-        ), patch(
-            "supa_cc.keychain.keyring.get_password", side_effect=get_password
-        ), patch(
-            "supa_cc.keychain.keyring.delete_password", side_effect=delete_password
-        ), patch(
             "supa_cc.keychain.os.replace", side_effect=OSError("index write failed")
         ):
             with pytest.raises(OSError, match="index write failed"):
                 manager.remove("work")
 
-        assert storage == {"work": previous}
+        assert store.tokens == {"work": previous}
         assert [account.name for account in manager.list()] == ["work"]
 
     def test_keyboard_interrupt_after_index_commit_does_not_rollback_token(
         self, tmp_path
     ):
-        manager = AccountManager()
-        manager.keychain.index_path = tmp_path / "accounts.json"
-        manager.keychain.update_index([])
         token = fake_pat("committed_token")
-        storage = {}
-
-        def set_password(_service, name, value):
-            storage[name] = value
-
-        def get_password(_service, name):
-            return storage.get(name)
-
-        def delete_password(_service, name):
-            storage.pop(name, None)
+        store = FakeCredentialStore()
+        manager = AccountManager(
+            keychain=KeychainManager(
+                index_path=tmp_path / "accounts.json", credential_store=store
+            )
+        )
+        manager.keychain.update_index([])
 
         write_index = manager.keychain._write_index_locked
 
@@ -608,13 +607,7 @@ class TestAccountManager:
             write_index(names)
             raise KeyboardInterrupt()
 
-        with patch(
-            "supa_cc.keychain.keyring.set_password", side_effect=set_password
-        ), patch(
-            "supa_cc.keychain.keyring.get_password", side_effect=get_password
-        ), patch(
-            "supa_cc.keychain.keyring.delete_password", side_effect=delete_password
-        ), patch.object(
+        with patch.object(
             manager.keychain,
             "_write_index_locked",
             side_effect=commit_then_interrupt,
@@ -622,33 +615,33 @@ class TestAccountManager:
             with pytest.raises(KeyboardInterrupt):
                 manager.add("work", token)
 
-        assert storage == {"work": token}
+        assert store.tokens == {"work": token}
         assert [account.name for account in manager.list()] == ["work"]
 
     def test_add_reports_sanitized_transaction_error_when_rollback_fails(
         self, tmp_path
     ):
-        manager = AccountManager()
-        manager.keychain.index_path = tmp_path / "accounts.json"
-        manager.keychain.update_index([])
         previous = fake_pat("previous_secret")
         replacement = fake_pat("replacement_secret")
-        storage = {"work": previous}
+        store = FakeCredentialStore()
+        store.tokens["work"] = previous
+        manager = AccountManager(
+            keychain=KeychainManager(
+                index_path=tmp_path / "accounts.json", credential_store=store
+            )
+        )
+        manager.keychain.update_index([])
         commit_failure = OSError(f"index failure containing {replacement}")
 
-        def set_password(_service, name, value):
-            if value == previous and storage.get(name) == replacement:
-                raise KeyringError(f"rollback failure containing {previous}")
-            storage[name] = value
+        original_set = store.set
 
-        def get_password(_service, name):
-            return storage.get(name)
+        def set_account(account):
+            if account.token == previous and store.tokens.get(account.name) == replacement:
+                raise RuntimeError(f"rollback failure containing {previous}")
+            original_set(account)
 
+        store.set = set_account
         with patch(
-            "supa_cc.keychain.keyring.set_password", side_effect=set_password
-        ), patch(
-            "supa_cc.keychain.keyring.get_password", side_effect=get_password
-        ), patch(
             "supa_cc.keychain.os.replace", side_effect=commit_failure
         ):
             with pytest.raises(Exception) as raised:
@@ -671,29 +664,22 @@ class TestAccountManager:
     def test_remove_reports_sanitized_transaction_error_when_rollback_fails(
         self, tmp_path
     ):
-        manager = AccountManager()
-        manager.keychain.index_path = tmp_path / "accounts.json"
-        manager.keychain.update_index(["work"])
         previous = fake_pat("previous_secret")
-        storage = {"work": previous}
+        store = FakeCredentialStore()
+        store.tokens["work"] = previous
+        manager = AccountManager(
+            keychain=KeychainManager(
+                index_path=tmp_path / "accounts.json", credential_store=store
+            )
+        )
+        manager.keychain.update_index(["work"])
         commit_failure = OSError(f"index failure containing {previous}")
 
-        def set_password(_service, _name, _value):
-            raise KeyringError(f"rollback failure containing {previous}")
+        def set_account(_account):
+            raise RuntimeError(f"rollback failure containing {previous}")
 
-        def get_password(_service, name):
-            return storage.get(name)
-
-        def delete_password(_service, name):
-            storage.pop(name, None)
-
+        store.set = set_account
         with patch(
-            "supa_cc.keychain.keyring.set_password", side_effect=set_password
-        ), patch(
-            "supa_cc.keychain.keyring.get_password", side_effect=get_password
-        ), patch(
-            "supa_cc.keychain.keyring.delete_password", side_effect=delete_password
-        ), patch(
             "supa_cc.keychain.os.replace", side_effect=commit_failure
         ):
             with pytest.raises(Exception) as raised:
@@ -711,5 +697,5 @@ class TestAccountManager:
         assert previous not in rendered
         assert "index failure" not in rendered
         assert "rollback failure" not in rendered
-        assert storage == {}
+        assert store.tokens == {}
         assert [account.name for account in manager.list()] == ["work"]
