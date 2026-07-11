@@ -122,7 +122,7 @@ def _create_backend(backend_name: str):
         raise CredentialAccessError(
             _CREDENTIAL_STORE_UNAVAILABLE_MESSAGE
         ) from None
-    if not isinstance(backend, expected_backend_type):
+    if type(backend) is not expected_backend_type:
         raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
     return backend
 

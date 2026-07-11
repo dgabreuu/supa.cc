@@ -192,6 +192,40 @@ def test_linux_rejects_invalid_private_construction_results(monkeypatch, backend
     assert backend is None or backend.calls == []
 
 
+def test_linux_rejects_subclass_of_expected_backend_before_credential_writes(
+    monkeypatch,
+):
+    class ExpectedSecretServiceKeyring(FakeKeyring):
+        instances = []
+        next_get_error = None
+
+    class AlternativeSecretServiceKeyring(ExpectedSecretServiceKeyring):
+        instances = []
+        next_get_error = None
+
+    backend = AlternativeSecretServiceKeyring()
+    monkeypatch.setattr(
+        credentials.SecretService,
+        "Keyring",
+        ExpectedSecretServiceKeyring,
+    )
+    monkeypatch.setattr(
+        credentials,
+        "_create_secret_service_backend",
+        lambda: backend,
+    )
+    monkeypatch.setattr(
+        credentials,
+        "_probe_secret_service_provider",
+        lambda: None,
+    )
+
+    with pytest.raises(CredentialAccessError):
+        create_credential_store(linux_environment())
+
+    assert backend.calls == []
+
+
 def test_unavailable_provider_reports_safe_remediation(
     fake_secret_service, monkeypatch
 ):
