@@ -1,6 +1,7 @@
 import hmac
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Optional
+from uuid import uuid4
 
 from keyring.backends import SecretService, macOS
 from keyring.errors import KeyringLocked, PasswordDeleteError
@@ -46,17 +47,10 @@ class CredentialStoreStatus:
 
 
 class CredentialStore:
-    def __init__(self, backend: Any, backend_name: str):
-        expected_backend_type = _expected_backend_type(backend_name)
-        if not _is_expected_backend(backend, expected_backend_type, backend_name):
-            raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
-        self._backend = backend
+    def __init__(self, backend_name: str):
         self.backend_name = backend_name
-        self._status = _probe_backend(
-            backend,
-            expected_backend_type,
-            backend_name,
-        )
+        self._backend = _create_backend(backend_name)
+        self._status = _probe_backend(self._backend, backend_name)
 
     def status(self) -> CredentialStoreStatus:
         return self._status
@@ -104,81 +98,61 @@ class CredentialStore:
 
 def create_credential_store(
     environment: Environment,
-    secret_service_factory: Callable[[], Any] = SecretService.Keyring,
-    macos_factory: Callable[[], Any] = macOS.Keyring,
 ) -> CredentialStore:
     if environment.operating_system is OperatingSystem.MACOS:
-        return CredentialStore(
-            _create_backend(macos_factory),
-            _MACOS_BACKEND_NAME,
-        )
+        return CredentialStore(_MACOS_BACKEND_NAME)
     if environment.operating_system is OperatingSystem.LINUX and environment.is_supported:
-        return CredentialStore(
-            _create_backend(secret_service_factory),
-            _SECRET_SERVICE_BACKEND_NAME,
-        )
+        return CredentialStore(_SECRET_SERVICE_BACKEND_NAME)
     raise CredentialAccessError(
         "O armazenamento de credenciais não está disponível neste ambiente."
     )
 
 
-def _create_backend(factory: Callable[[], Any]) -> Any:
+def _create_backend(backend_name: str):
     try:
-        return factory()
+        if backend_name == _MACOS_BACKEND_NAME:
+            return _create_macos_backend()
+        if backend_name == _SECRET_SERVICE_BACKEND_NAME:
+            return _create_secret_service_backend()
     except Exception:
         raise CredentialAccessError(
             _CREDENTIAL_STORE_UNAVAILABLE_MESSAGE
         ) from None
-
-
-def _expected_backend_type(backend_name: str) -> Any:
-    if backend_name == _MACOS_BACKEND_NAME:
-        return macOS.Keyring
-    if backend_name == _SECRET_SERVICE_BACKEND_NAME:
-        return SecretService.Keyring
     raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
 
 
-def _is_expected_backend(
-    backend: Any,
-    expected_backend_type: Any,
-    backend_name: str,
-) -> bool:
-    return type(backend) is expected_backend_type or _is_test_double(
-        backend,
-        backend_name,
-    )
+def _create_macos_backend():
+    return macOS.Keyring()
 
 
-def _is_test_double(backend: Any, backend_name: str) -> bool:
-    return (
-        getattr(backend, "credential_store_test_double", False) is True
-        and getattr(backend, "credential_store_backend_name", None) == backend_name
-        and callable(getattr(backend, "credential_store_probe", None))
-    )
+def _create_secret_service_backend():
+    return SecretService.Keyring()
 
 
-def _probe_backend(
-    backend: Any,
-    expected_backend_type: Any,
-    backend_name: str,
-) -> CredentialStoreStatus:
+def _probe_secret_service_provider() -> None:
+    SecretService.Keyring.priority
+
+
+def _probe_backend(backend, backend_name: str) -> CredentialStoreStatus:
     try:
-        if _is_test_double(backend, backend_name):
-            available = backend.credential_store_probe() is not False
+        if backend_name == _SECRET_SERVICE_BACKEND_NAME:
+            _probe_secret_service_provider()
+            suffix = uuid4().hex
+            backend.get_password(
+                f"supa.cc.probe.{suffix}",
+                f"probe-{suffix}",
+            )
+        elif backend_name == _MACOS_BACKEND_NAME:
+            macOS.Keyring.priority
         else:
-            expected_backend_type.priority
-            available = True
+            raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
     except Exception:
-        available = False
-
-    if available:
-        return CredentialStoreStatus(backend_name=backend_name)
-    return CredentialStoreStatus(
-        backend_name=backend_name,
-        available=False,
-        message=_unavailable_message(backend_name),
-    )
+        return CredentialStoreStatus(
+            backend_name=backend_name,
+            available=False,
+            message=_unavailable_message(backend_name),
+        )
+    return CredentialStoreStatus(backend_name=backend_name)
 
 
 def _unavailable_message(backend_name: str) -> str:
