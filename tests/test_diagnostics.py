@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 from unittest.mock import Mock
 
+import pytest
 import supa_cc
 
 from supa_cc.accounts import AccountManager
@@ -189,7 +190,9 @@ def test_doctor_reports_verified_runtime_identity_and_homebrew_receipt(tmp_path)
         "native_session": "managed",
         "profile": "unmanaged",
         "journal_present": False,
+        "journal_state": "absent",
         "plaintext_fallback_present": False,
+        "plaintext_fallback_state": "absent",
         "parent_override_present": False,
     }
     assert set(signatures) == {
@@ -234,7 +237,9 @@ def test_doctor_reports_sync_metadata_by_presence_without_reading_contents(tmp_p
         "native_session": "managed",
         "profile": "unmanaged",
         "journal_present": True,
+        "journal_state": "present",
         "plaintext_fallback_present": True,
+        "plaintext_fallback_state": "present",
         "parent_override_present": True,
     }
     manager.sync_journal.read.assert_not_called()
@@ -242,6 +247,68 @@ def test_doctor_reports_sync_metadata_by_presence_without_reading_contents(tmp_p
     rendered = report.to_json()
     assert "private journal" not in rendered
     assert "private token" not in rendered
+
+
+@pytest.mark.parametrize(
+    "metadata,error",
+    [
+        ("journal", PermissionError("private journal path and backend detail")),
+        ("journal", OSError("private journal inspection detail")),
+        ("fallback", PermissionError("private fallback path and backend detail")),
+        ("fallback", OSError("private fallback inspection detail")),
+    ],
+)
+def test_doctor_reports_inaccessible_sync_metadata_without_reading_secrets(
+    tmp_path, monkeypatch, metadata, error
+):
+    manager = Mock(spec=AccountManager)
+    manager.keychain = Mock()
+    manager.active_store = Mock()
+    manager.keychain.index_path = tmp_path / "accounts.json"
+    manager.keychain.service = KEYCHAIN_SERVICE
+    manager.active_store.read.return_value = "work"
+    manager.config = SupabaseConfig(binary_resolver=lambda _: None)
+    supabase = tmp_path / "supabase"
+    supabase.write_text("safe", encoding="utf-8")
+    manager.config.supabase_cli_invoked = str(supabase)
+    manager.config.supabase_cli = str(supabase)
+    manager.sync_journal = Mock()
+    manager.sync_journal.path = tmp_path / "private-journal-location"
+    manager.sync_journal.read.side_effect = AssertionError("must not read journal")
+    manager.native_session = Mock()
+    manager.native_session.fallback_path = tmp_path / "private-fallback-location"
+    manager.get.side_effect = AssertionError("must not read credential")
+    inspected = (
+        manager.sync_journal.path
+        if metadata == "journal"
+        else manager.native_session.fallback_path
+    )
+    original_lstat = Path.lstat
+
+    def fail_selected_path(path):
+        if path == inspected:
+            raise error
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", fail_selected_path)
+
+    report = _service(tmp_path, manager=manager).run()
+    payload = report.to_dict()
+    human = report.to_human()
+
+    state_key = (
+        "journal_state" if metadata == "journal" else "plaintext_fallback_state"
+    )
+    assert report.ok is False
+    assert report.exit_code != 0
+    assert payload["activation"][state_key] == "inaccessible"
+    assert AuthFailureCode.ENVIRONMENT_BLOCKED.value in payload["diagnostic_codes"]
+    assert "inacessível" in human
+    manager.sync_journal.read.assert_not_called()
+    manager.get.assert_not_called()
+    rendered = report.to_json() + human
+    assert str(inspected) not in rendered
+    assert str(error) not in rendered
 
 
 def test_doctor_does_not_trust_fake_cellar_path_without_receipt(tmp_path):
@@ -319,6 +386,12 @@ def test_live_doctor_reads_and_validates_selected_account_once(tmp_path):
     manager.active_store.read.return_value = "work"
     manager.config = SupabaseConfig(binary_resolver=lambda _: None)
     manager.config.supabase_cli = str(tmp_path / "supabase")
+    manager.sync_journal = SessionSyncJournal(
+        tmp_path / "session-sync.json"
+    )
+    manager.native_session = NativeSessionSynchronizer(
+        manager.config, env={}, supabase_home=tmp_path / ".supabase"
+    )
     manager.validate_named_account.return_value = AuthResult.success(
         "Conta autenticada pela API da Supabase."
     )

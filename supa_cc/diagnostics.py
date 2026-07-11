@@ -73,13 +73,15 @@ def _path_writable(path: Path) -> bool:
     return candidate.exists() and os.access(candidate, os.W_OK)
 
 
-def _metadata_path_present(owner: object, attribute: str) -> bool:
+def _metadata_path_state(owner: object, attribute: str) -> str:
     path = getattr(owner, attribute, None)
     try:
         Path(os.fspath(path)).lstat()
+    except FileNotFoundError:
+        return "absent"
     except (TypeError, ValueError, OSError):
-        return False
-    return True
+        return "inaccessible"
+    return "present"
 
 
 def _read_json(path: Path) -> Optional[dict]:
@@ -217,7 +219,9 @@ class DoctorReport:
             "native_session": "managed",
             "profile": "unmanaged",
             "journal_present": False,
+            "journal_state": "absent",
             "plaintext_fallback_present": False,
+            "plaintext_fallback_state": "absent",
             "parent_override_present": False,
         }
     )
@@ -313,6 +317,15 @@ class DoctorReport:
             code.replace("keychain", "credential_store")
             for code in self.diagnostic_codes
         ) or "none"
+        metadata_state_labels = {
+            "present": "presente",
+            "absent": "ausente",
+            "inaccessible": "inacessível",
+        }
+        journal_state = self.activation.get("journal_state", "absent")
+        fallback_state = self.activation.get(
+            "plaintext_fallback_state", "absent"
+        )
         lines = [
             "Supa.cc doctor",
             f"Supa.cc versão: {self.runtime.get('supa_cc_version') or 'unknown'}",
@@ -352,14 +365,10 @@ class DoctorReport:
             f"Ativação: {self.activation.get('mode', 'unknown')} "
             f"(sessão nativa: {self.activation.get('native_session', 'unknown')}; "
             f"perfil: {self.activation.get('profile', 'unknown')})",
-            "Sincronização pendente: "
-            + ("sim" if self.activation.get("journal_present") else "não"),
-            "Fallback plaintext presente: "
-            + (
-                "sim"
-                if self.activation.get("plaintext_fallback_present")
-                else "não"
-            ),
+            "Journal de sincronização: "
+            + metadata_state_labels.get(journal_state, "desconhecido"),
+            "Fallback plaintext: "
+            + metadata_state_labels.get(fallback_state, "desconhecido"),
         ]
         if linux_distribution:
             lines.append(f"Distribuição Linux: {linux_distribution}")
@@ -477,7 +486,9 @@ class DiagnosticService:
                 "native_session": "managed",
                 "profile": "unmanaged",
                 "journal_present": False,
+                "journal_state": "absent",
                 "plaintext_fallback_present": False,
+                "plaintext_fallback_state": "absent",
                 "parent_override_present": "SUPABASE_ACCESS_TOKEN" in self.env,
             },
         )
@@ -609,16 +620,25 @@ class DiagnosticService:
             "telemetry_directory_exists": telemetry_exists,
             "telemetry_directory_writable": telemetry_writable,
         }
+        journal_state = _metadata_path_state(
+            getattr(manager, "sync_journal", None), "path"
+        )
+        fallback_state = _metadata_path_state(
+            getattr(manager, "native_session", None), "fallback_path"
+        )
+        if "inaccessible" in (journal_state, fallback_state):
+            if AuthFailureCode.ENVIRONMENT_BLOCKED.value not in codes:
+                codes.append(AuthFailureCode.ENVIRONMENT_BLOCKED.value)
+            ok = False
+            exit_code = exit_code or 1
         activation = {
             "mode": "native_session",
             "native_session": "managed",
             "profile": "unmanaged",
-            "journal_present": _metadata_path_present(
-                getattr(manager, "sync_journal", None), "path"
-            ),
-            "plaintext_fallback_present": _metadata_path_present(
-                getattr(manager, "native_session", None), "fallback_path"
-            ),
+            "journal_present": journal_state == "present",
+            "journal_state": journal_state,
+            "plaintext_fallback_present": fallback_state == "present",
+            "plaintext_fallback_state": fallback_state,
             "parent_override_present": "SUPABASE_ACCESS_TOKEN" in self.env,
         }
         active_account = None
