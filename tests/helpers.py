@@ -28,6 +28,24 @@ class FakeCredentialStore:
         self.tokens.pop(name, None)
 
 
+class MemoryActiveAccountStore:
+    def __init__(self, name=None):
+        self.name = name
+        self.operations = []
+
+    def read(self):
+        self.operations.append("read")
+        return self.name
+
+    def write(self, name):
+        self.operations.append(f"write:{name}")
+        self.name = name
+
+    def clear(self):
+        self.operations.append("clear")
+        self.name = None
+
+
 def fake_pat(value: str = "valid_token") -> str:
     body = hashlib.sha256(value.encode("utf-8")).hexdigest()[:40]
     return "sbp" + "_" + body

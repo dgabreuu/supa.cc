@@ -1,4 +1,7 @@
-from typing import Callable, List, Optional, Sequence, Tuple
+import fcntl
+import os
+from contextlib import contextmanager
+from typing import Callable, Iterator, List, Optional, Sequence, Tuple
 
 from .auth import (
     ActiveAccountStore,
@@ -20,6 +23,7 @@ from .config import SupabaseConfig
 from .environment import detect_environment
 from .models import Account
 from .keychain import KeychainManager
+from .native_session import NativeSessionSynchronizer, SessionSyncJournal
 
 
 class AccountManager:
@@ -28,6 +32,8 @@ class AccountManager:
         keychain: Optional[KeychainManager] = None,
         config: Optional[SupabaseConfig] = None,
         active_store: Optional[ActiveAccountStore] = None,
+        native_session: Optional[NativeSessionSynchronizer] = None,
+        sync_journal: Optional[SessionSyncJournal] = None,
     ):
         environment = detect_environment()
         self.keychain = (
@@ -36,13 +42,37 @@ class AccountManager:
             else KeychainManager(environment=environment)
         )
         self.config = config if config is not None else SupabaseConfig()
+        config_directory = environment.config_directory()
         self.active_store = (
             active_store
             if active_store is not None
             else ActiveAccountStore(
-                path=environment.config_directory() / "active-account"
+                path=config_directory / "active-account"
             )
         )
+        self.sync_journal = (
+            sync_journal
+            if sync_journal is not None
+            else SessionSyncJournal(config_directory / "session-sync.json")
+        )
+        self.native_session = (
+            native_session
+            if native_session is not None
+            else NativeSessionSynchronizer(self.config, journal=self.sync_journal)
+        )
+        self._sync_lock_path = self.sync_journal.path.with_name(".session-sync.lock")
+
+    @contextmanager
+    def _sync_lock(self) -> Iterator[None]:
+        self._sync_lock_path.parent.mkdir(parents=True, exist_ok=True)
+        self._sync_lock_path.parent.chmod(0o700)
+        descriptor = os.open(self._sync_lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            os.close(descriptor)
 
     def add(self, name: str, token: str) -> Account:
         """Adiciona nova conta."""
@@ -112,24 +142,154 @@ class AccountManager:
         return self.config.validate_access_token(account)
 
     def set_active(self, name: str) -> AuthResult:
-        """Valida a conta e persiste somente seu nome como seleção ativa."""
-        validation = self.validate_named_account(name)
-        if not validation.ok:
-            return validation
+        """Sincroniza a sessão nativa antes de confirmar a seleção local."""
+        with self._sync_lock():
+            recovery = self._recover_pending_sync_locked()
+            if not recovery.ok:
+                return recovery
 
+            account, failure = self._load_account_for_auth(name)
+            if failure is not None:
+                return failure
+            assert account is not None
+            validation = self.config.validate_access_token(account)
+            if not validation.ok:
+                return validation
+            try:
+                previous_name = self.active_store.read()
+            except ActiveAccountError as error:
+                return classify_local_failure(error)
+
+            self.sync_journal.write("activate", name, previous_name, "intent")
+            self.sync_journal.write("activate", name, previous_name, "native_login")
+            activation = self.native_session.activate(account)
+            if not activation.ok:
+                return self._compensate(previous_name, activation)
+
+            self.sync_journal.write("activate", name, previous_name, "native_verified")
+            self.sync_journal.write("activate", name, previous_name, "local_write")
+            try:
+                self.active_store.write(name)
+            except PermissionError:
+                failure = classify_local_failure(ActiveAccountPermissionDeniedError())
+                return self._compensate(previous_name, failure)
+            except OSError:
+                failure = classify_local_failure(ActiveAccountWriteError())
+                return self._compensate(previous_name, failure)
+            except ValueError:
+                failure = classify_local_failure(ActiveAccountInvalidError())
+                return self._compensate(previous_name, failure)
+
+            self.sync_journal.write("activate", name, previous_name, "verified")
+            self.sync_journal.clear()
+            return AuthResult.success(
+                f"Conta '{name}' ativada e sessão nativa sincronizada."
+            )
+
+    def _compensate(self, previous_name: Optional[str], failure: AuthResult) -> AuthResult:
+        payload = self.sync_journal.read()
+        target_name = payload["target_account"] if payload is not None else None
+        self.sync_journal.write("activate", target_name, previous_name, "rollback")
+        if previous_name is None:
+            compensation = self.native_session.logout()
+            if compensation.ok:
+                try:
+                    self.active_store.clear()
+                except ActiveAccountError:
+                    compensation = AuthResult.failure(
+                        AuthFailureCode.SYNC_ROLLBACK_FAILED,
+                        "A seleção anterior não pôde ser restaurada.",
+                    )
+        else:
+            previous, load_failure = self._load_account_for_auth(previous_name)
+            if load_failure is not None:
+                compensation = load_failure
+            else:
+                assert previous is not None
+                compensation = self.native_session.activate(previous)
+                if compensation.ok:
+                    try:
+                        self.active_store.write(previous_name)
+                    except (ActiveAccountError, OSError, ValueError):
+                        compensation = AuthResult.failure(
+                            AuthFailureCode.SYNC_ROLLBACK_FAILED,
+                            "A seleção anterior não pôde ser restaurada.",
+                        )
+        if compensation.ok:
+            self.sync_journal.clear()
+            return failure
+        return AuthResult.failure(
+            AuthFailureCode.SYNC_ROLLBACK_FAILED,
+            "A sincronização falhou e a sessão anterior não pôde ser restaurada.",
+        )
+
+    def recover_pending_sync(self) -> AuthResult:
+        with self._sync_lock():
+            return self._recover_pending_sync_locked()
+
+    def _recover_pending_sync_locked(self) -> AuthResult:
+        try:
+            payload = self.sync_journal.read()
+        except (OSError, ValueError):
+            return self._pending_sync_failure()
+        if payload is None:
+            return AuthResult.success("Nenhuma sincronização pendente.")
+        if payload["operation"] != "activate":
+            return self._pending_sync_failure()
+
+        phase = payload["phase"]
+        if phase == "verified":
+            self.sync_journal.clear()
+            return AuthResult.success("Sincronização pendente confirmada.")
+        if phase in ("intent", "native_login", "rollback"):
+            result = self._recover_compensation(payload["previous_account"])
+        else:
+            result = self._recover_activation(payload["target_account"])
+        if result.ok:
+            self.sync_journal.clear()
+        return result
+
+    def _recover_activation(self, name: str) -> AuthResult:
+        account, failure = self._load_account_for_auth(name)
+        if failure is not None:
+            return self._pending_sync_failure()
+        assert account is not None
+        activation = self.native_session.activate(account)
+        if not activation.ok:
+            return self._pending_sync_failure()
         try:
             self.active_store.write(name)
-        except PermissionError:
-            return classify_local_failure(
-                ActiveAccountPermissionDeniedError()
-            )
-        except OSError:
-            return classify_local_failure(ActiveAccountWriteError())
-        except ValueError:
-            return classify_local_failure(ActiveAccountInvalidError())
-        return AuthResult.success(
-            f"Conta '{name}' ativada no Supa.cc. A sessão nativa independente "
-            "da Supabase CLI não foi alterada; use 'supa.cc run -- ...'."
+        except (ActiveAccountError, OSError, ValueError):
+            return self._pending_sync_failure()
+        return AuthResult.success("Sincronização pendente concluída.")
+
+    def _recover_compensation(self, previous_name: Optional[str]) -> AuthResult:
+        if previous_name is None:
+            compensation = self.native_session.logout()
+            if compensation.ok:
+                try:
+                    self.active_store.clear()
+                except ActiveAccountError:
+                    return self._pending_sync_failure()
+            return compensation if compensation.ok else self._pending_sync_failure()
+        account, failure = self._load_account_for_auth(previous_name)
+        if failure is not None:
+            return self._pending_sync_failure()
+        assert account is not None
+        compensation = self.native_session.activate(account)
+        if not compensation.ok:
+            return self._pending_sync_failure()
+        try:
+            self.active_store.write(previous_name)
+        except (ActiveAccountError, OSError, ValueError):
+            return self._pending_sync_failure()
+        return AuthResult.success("Sincronização anterior restaurada.")
+
+    @staticmethod
+    def _pending_sync_failure() -> AuthResult:
+        return AuthResult.failure(
+            AuthFailureCode.SYNC_PENDING,
+            "Há uma sincronização de sessão pendente que requer recuperação.",
         )
 
     def run_active(

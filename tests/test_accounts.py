@@ -22,7 +22,8 @@ from supa_cc.keychain import KeychainManager
 from supa_cc.models import Account
 from supa_cc.environment import detect_environment
 
-from helpers import FakeCredentialStore, fake_pat
+from helpers import FakeCredentialStore, MemoryActiveAccountStore, fake_pat
+from supa_cc.native_session import SessionSyncJournal
 
 
 def test_default_stores_use_one_detected_environment(monkeypatch):
@@ -56,6 +57,145 @@ def test_default_stores_use_one_detected_environment(monkeypatch):
 
 
 class TestAccountManager:
+    def transactional_manager(self, tmp_path, previous=None):
+        keychain = Mock()
+        config = Mock()
+        active_store = MemoryActiveAccountStore(previous)
+        native_session = Mock()
+        native_session.activate.return_value = AuthResult.success()
+        native_session.logout.return_value = AuthResult.success()
+        journal = SessionSyncJournal(tmp_path / "session-sync.json")
+        accounts = {
+            "work": Account(name="work", token=fake_pat("work")),
+            "old": Account(name="old", token=fake_pat("old")),
+        }
+        keychain.get_account.side_effect = accounts.get
+        config.validate_access_token.return_value = AuthResult.success()
+        manager = AccountManager(
+            keychain=keychain,
+            config=config,
+            active_store=active_store,
+            native_session=native_session,
+            sync_journal=journal,
+        )
+        return manager
+
+    def test_set_active_synchronizes_native_before_local_success(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        events = Mock()
+        events.attach_mock(manager.native_session, "native")
+        manager.active_store.write = Mock(wraps=manager.active_store.write)
+        events.attach_mock(manager.active_store.write, "local_write")
+
+        result = manager.set_active("work")
+
+        assert result.ok
+        assert events.mock_calls == [
+            call.native.activate(Account(name="work", token=fake_pat("work"))),
+            call.local_write("work"),
+        ]
+        assert manager.active_store.name == "work"
+        assert manager.sync_journal.read() is None
+
+    def test_set_active_first_activation_logs_out_when_native_sync_fails(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        failure = AuthResult.failure(AuthFailureCode.NATIVE_LOGIN_FAILED, "safe")
+        manager.native_session.activate.return_value = failure
+
+        result = manager.set_active("work")
+
+        assert result is failure
+        manager.native_session.logout.assert_called_once_with()
+        assert manager.active_store.name is None
+        assert manager.sync_journal.read() is None
+
+    def test_set_active_restores_previous_account_when_native_sync_fails(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        failure = AuthResult.failure(AuthFailureCode.NATIVE_LOGIN_FAILED, "safe")
+        manager.native_session.activate.side_effect = [failure, AuthResult.success()]
+
+        result = manager.set_active("work")
+
+        assert result is failure
+        assert [call.args[0].name for call in manager.native_session.activate.call_args_list] == ["work", "old"]
+        assert manager.active_store.name == "old"
+        assert manager.sync_journal.read() is None
+
+    def test_set_active_retains_journal_when_compensation_fails(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        manager.native_session.activate.side_effect = [
+            AuthResult.failure(AuthFailureCode.NATIVE_LOGIN_FAILED, "safe"),
+            AuthResult.failure(AuthFailureCode.NATIVE_LOGIN_FAILED, "safe"),
+        ]
+
+        result = manager.set_active("work")
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
+        assert manager.sync_journal.read()["phase"] == "rollback"
+        assert manager.active_store.name == "old"
+
+    def test_set_active_does_not_report_success_when_local_write_fails(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        manager.active_store.write = Mock(side_effect=OSError("private"))
+
+        result = manager.set_active("work")
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
+        manager.native_session.activate.assert_has_calls([
+            call(Account(name="work", token=fake_pat("work"))),
+            call(Account(name="old", token=fake_pat("old"))),
+        ])
+        assert manager.sync_journal.read()["phase"] == "rollback"
+
+    def test_recover_pending_sync_rolls_forward_without_token_in_journal(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        manager.sync_journal.write("activate", "work", "old", "native_verified")
+
+        result = manager.recover_pending_sync()
+
+        assert result.ok
+        manager.keychain.get_account.assert_called_once_with("work")
+        manager.native_session.activate.assert_called_once_with(
+            Account(name="work", token=fake_pat("work"))
+        )
+        assert manager.active_store.name == "work"
+        assert manager.sync_journal.read() is None
+        assert fake_pat("work") not in (tmp_path / "session-sync.json").read_text() if (tmp_path / "session-sync.json").exists() else True
+
+    def test_recover_pending_sync_retains_journal_when_credential_is_missing(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        manager.sync_journal.write("activate", "work", "old", "native_verified")
+        manager.keychain.get_account.side_effect = lambda _name: None
+
+        result = manager.recover_pending_sync()
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        assert manager.sync_journal.read() is not None
+        manager.native_session.activate.assert_not_called()
+
+    def test_set_active_stops_when_pending_recovery_cannot_complete(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        manager.sync_journal.write("activate", "missing", "old", "native_verified")
+
+        result = manager.set_active("work")
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        manager.native_session.activate.assert_not_called()
+
+    def test_set_active_preserves_environment_override_failure(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        blocked = AuthResult.failure(AuthFailureCode.ENVIRONMENT_BLOCKED, "safe")
+        manager.native_session.activate.side_effect = [blocked, AuthResult.success()]
+
+        result = manager.set_active("work")
+
+        assert result is blocked
+        assert manager.active_store.name == "old"
+
     def test_add_valid_account(self, tmp_path):
         manager = AccountManager()
         manager.keychain.index_path = tmp_path / "accounts.json"
@@ -137,10 +277,13 @@ class TestAccountManager:
 
         assert [account.name for account in manager.list()] == ["work"]
 
-    def test_set_active_validates_before_persisting_name(self):
+    def test_set_active_validates_before_persisting_name(self, tmp_path):
         keychain = Mock()
         config = Mock()
         active_store = Mock()
+        active_store.read.return_value = None
+        native_session = Mock()
+        native_session.activate.return_value = AuthResult.success()
         account = Account(name="work", token=fake_pat("valid_token"))
         keychain.get_account.return_value = account
         config.validate_access_token.return_value = AuthResult.success()
@@ -148,6 +291,8 @@ class TestAccountManager:
             keychain=keychain,
             config=config,
             active_store=active_store,
+            native_session=native_session,
+            sync_journal=SessionSyncJournal(tmp_path / "session-sync.json"),
         )
         events = Mock()
         events.attach_mock(keychain, "keychain")
@@ -161,18 +306,26 @@ class TestAccountManager:
         assert events.mock_calls == [
             call.keychain.get_account("work"),
             call.config.validate_access_token(account),
+            call.store.read(),
             call.store.write("work"),
         ]
+        native_session.activate.assert_called_once_with(account)
 
-    def test_set_active_returns_token_missing_without_validation_or_write(self):
+    def test_set_active_returns_token_missing_without_validation_or_write(self, tmp_path):
         keychain = Mock()
         config = Mock()
         active_store = Mock()
+        active_store.read.return_value = None
+        native_session = Mock()
+        native_session.activate.return_value = AuthResult.success()
+        native_session.logout.return_value = AuthResult.success()
         keychain.get_account.return_value = None
         manager = AccountManager(
             keychain=keychain,
             config=config,
             active_store=active_store,
+            native_session=native_session,
+            sync_journal=SessionSyncJournal(tmp_path / "session-sync.json"),
         )
 
         result = manager.set_active("missing")
@@ -257,10 +410,14 @@ class TestAccountManager:
         assert result is rejected
         active_store.write.assert_not_called()
 
-    def test_set_active_maps_active_name_write_failure(self):
+    def test_set_active_maps_active_name_write_failure(self, tmp_path):
         keychain = Mock()
         config = Mock()
         active_store = Mock()
+        active_store.read.return_value = None
+        native_session = Mock()
+        native_session.activate.return_value = AuthResult.success()
+        native_session.logout.return_value = AuthResult.success()
         account = Account(name="work", token=fake_pat("valid_token"))
         keychain.get_account.return_value = account
         config.validate_access_token.return_value = AuthResult.success()
@@ -269,6 +426,8 @@ class TestAccountManager:
             keychain=keychain,
             config=config,
             active_store=active_store,
+            native_session=native_session,
+            sync_journal=SessionSyncJournal(tmp_path / "session-sync.json"),
         )
 
         result = manager.set_active("work")
