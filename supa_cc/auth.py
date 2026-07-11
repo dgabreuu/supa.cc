@@ -212,6 +212,11 @@ def classify_local_failure(error: BaseException) -> AuthResult:
             AuthFailureCode.KEYCHAIN_READ_FAILED,
             "Não foi possível acessar a credencial no armazenamento de credenciais.",
         )
+    if isinstance(error, CredentialAccessError):
+        return AuthResult.failure(
+            AuthFailureCode.KEYCHAIN_READ_FAILED,
+            "Não foi possível acessar a credencial no armazenamento de credenciais.",
+        )
     if isinstance(error, AccountIndexInvalidError):
         return AuthResult.failure(
             AuthFailureCode.INDEX_INVALID,

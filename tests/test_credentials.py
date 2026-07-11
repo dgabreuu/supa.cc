@@ -20,13 +20,23 @@ from helpers import fake_pat
 
 
 class FakeKeyring:
-    def __init__(self):
+    credential_store_test_double = True
+
+    def __init__(self, backend_name="keyring.backends.SecretService.Keyring"):
+        self.credential_store_backend_name = backend_name
         self.passwords = {}
         self.calls = []
+        self.probe_calls = 0
+        self.probe_error = None
         self.get_error = None
         self.set_error = None
         self.delete_error = None
         self.read_back = None
+
+    def credential_store_probe(self):
+        self.probe_calls += 1
+        if self.probe_error is not None:
+            raise self.probe_error
 
     def get_password(self, service, name):
         self.calls.append(("get", service, name))
@@ -72,7 +82,7 @@ def test_linux_selects_only_secret_service_backend(fake_secret_service):
 
 
 def test_darwin_selects_only_macos_backend():
-    fake_macos_keyring = FakeKeyring()
+    fake_macos_keyring = FakeKeyring("keyring.backends.macOS.Keyring")
 
     store = create_credential_store(
         detect_environment(system_name="Darwin"),
@@ -92,6 +102,93 @@ def test_linux_rejects_unavailable_secret_service():
         )
 
     assert "fake backend detail" not in str(raised.value)
+
+
+class UnsafeKeyring:
+    def __init__(self):
+        self.calls = []
+
+    def get_password(self, *_args):
+        self.calls.append("get")
+
+    def set_password(self, *_args):
+        self.calls.append("set")
+
+    def delete_password(self, *_args):
+        self.calls.append("delete")
+
+
+class PlaintextKeyring(UnsafeKeyring):
+    pass
+
+
+class FailKeyring(UnsafeKeyring):
+    pass
+
+
+class AlternativeKeyring(UnsafeKeyring):
+    pass
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [None, PlaintextKeyring(), FailKeyring(), AlternativeKeyring()],
+    ids=["null", "plaintext", "fail", "alternative"],
+)
+def test_linux_rejects_insecure_backends_before_credential_operations(backend):
+    with pytest.raises(CredentialAccessError):
+        create_credential_store(
+            linux_environment(),
+            secret_service_factory=lambda: backend,
+        )
+
+    assert backend is None or backend.calls == []
+
+
+@pytest.mark.parametrize(
+    "probe_error",
+    [RuntimeError("D-Bus provider detail"), KeyringLocked("locked detail")],
+    ids=["provider", "locked"],
+)
+def test_unavailable_secret_service_reports_safe_remediation(
+    fake_secret_service, probe_error
+):
+    fake_secret_service.probe_error = probe_error
+
+    store = create_credential_store(
+        linux_environment(),
+        secret_service_factory=lambda: fake_secret_service,
+    )
+
+    status = store.status()
+
+    assert status.available is False
+    assert "D-Bus" in status.message
+    assert "desbloqueie" in status.message
+    assert "detail" not in status.message
+    assert fake_secret_service.probe_calls == 1
+    assert fake_secret_service.calls == []
+
+
+def test_unavailable_store_blocks_credential_operations(fake_secret_service):
+    fake_secret_service.probe_error = RuntimeError("D-Bus provider detail")
+    store = create_credential_store(
+        linux_environment(),
+        secret_service_factory=lambda: fake_secret_service,
+    )
+    account = Account(name="work", token=fake_pat("unavailable"))
+
+    for operation in (
+        lambda: store.get(account.name),
+        lambda: store.set(account),
+        lambda: store.delete(account.name),
+    ):
+        with pytest.raises(CredentialAccessError) as raised:
+            operation()
+        assert "D-Bus" in str(raised.value)
+        assert "detail" not in str(raised.value)
+
+    assert fake_secret_service.calls == []
 
 
 def test_store_uses_the_selected_fake_for_every_operation(fake_secret_service):
@@ -164,6 +261,7 @@ def test_store_rejects_read_back_mismatch_without_exposing_token(fake_secret_ser
 @pytest.mark.parametrize(
     "failure,expected_code",
     [
+        (CredentialAccessError("fake backend detail"), AuthFailureCode.KEYCHAIN_READ_FAILED),
         (CredentialPermissionDeniedError("fake backend detail"), AuthFailureCode.KEYCHAIN_PERMISSION_DENIED),
         (CredentialReadError("fake backend detail"), AuthFailureCode.KEYCHAIN_READ_FAILED),
     ],
