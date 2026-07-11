@@ -11,6 +11,7 @@ from .auth import (
     ActiveAccountPermissionDeniedError,
     ActiveAccountReadError,
     ActiveAccountWriteError,
+    AccountTransactionError,
     AuthFailureCode,
     AuthResult,
     CommandResult,
@@ -166,8 +167,71 @@ class AccountManager:
             raise InvalidAccessTokenError(
                 "Token inválido: o valor não atende ao formato PAT Supabase."
             )
-        self.keychain.add_account(account)
+        try:
+            active_name = self.active_store.read()
+        except ActiveAccountError:
+            raise AccountTransactionError(
+                "Não foi possível confirmar a conta ativa com segurança."
+            ) from None
+        if active_name != name:
+            self.keychain.add_account(account)
+            return account
+
+        try:
+            with self._sync_lock():
+                self._replace_active_account(account)
+        except AccountTransactionError:
+            raise
+        except Exception:
+            raise AccountTransactionError(
+                "Não foi possível atualizar a conta ativa com segurança."
+            ) from None
         return account
+
+    def _replace_active_account(self, account: Account) -> None:
+        recovery = self._recover_pending_sync_locked()
+        if not recovery.ok:
+            raise AccountTransactionError(recovery.message)
+        previous = self.keychain.get_account(account.name)
+        if previous is None:
+            self.keychain.add_account(account)
+            return
+        try:
+            self.sync_journal.write("activate", account.name, account.name, "intent")
+            self.keychain.add_account(account)
+            self.sync_journal.write(
+                "activate", account.name, account.name, "native_login"
+            )
+            activation = self.native_session.activate(account)
+        except Exception:
+            activation = self._pending_sync_failure()
+        if not activation.ok:
+            try:
+                self.keychain.save_account(previous)
+            except Exception:
+                try:
+                    self.sync_journal.write(
+                        "activate", account.name, account.name, "rollback"
+                    )
+                except (OSError, ValueError):
+                    pass
+                raise AccountTransactionError(
+                    "A atualização falhou e a credencial anterior não pôde ser restaurada."
+                ) from None
+            rollback = self._compensate(account.name, account.name, activation)
+            if rollback.code is AuthFailureCode.SYNC_ROLLBACK_FAILED:
+                raise AccountTransactionError(rollback.message)
+            raise AccountTransactionError(
+                "A conta ativa não pôde ser sincronizada; a sessão anterior foi restaurada."
+            )
+        try:
+            self.sync_journal.write(
+                "activate", account.name, account.name, "native_verified"
+            )
+            self.sync_journal.write("activate", account.name, account.name, "verified")
+            self.sync_journal.clear()
+        except (OSError, ValueError):
+            raise AccountTransactionError(self._pending_sync_failure().message) from None
 
     def list(self) -> List[Account]:
         """Lista todas as contas."""
@@ -181,7 +245,46 @@ class AccountManager:
         """Remove conta."""
         if not is_valid_account_name(name):
             raise InvalidAccountNameError("Nome de conta inválido.")
+        try:
+            active_name = self.active_store.read()
+        except ActiveAccountError:
+            raise AccountTransactionError(
+                "Não foi possível confirmar a conta ativa com segurança."
+            ) from None
+        if active_name != name:
+            self.keychain.remove_account(name)
+            return
+        try:
+            with self._sync_lock():
+                self._remove_active_account(name)
+        except (AccountTransactionError, OSError):
+            raise
+        except Exception:
+            raise AccountTransactionError(
+                "Não foi possível remover a conta ativa com segurança."
+            ) from None
+
+    def _remove_active_account(self, name: str) -> None:
+        recovery = self._recover_pending_sync_locked()
+        if not recovery.ok:
+            raise AccountTransactionError(recovery.message)
+        self.sync_journal.write("logout", None, name, "intent")
+        try:
+            logout = self.native_session.logout()
+        except (OSError, ValueError):
+            logout = self._pending_sync_failure()
+        if not logout.ok:
+            try:
+                self.sync_journal.clear()
+            except (OSError, ValueError):
+                raise AccountTransactionError(self._pending_sync_failure().message) from None
+            raise AccountTransactionError("A sessão nativa não pôde ser encerrada.")
+        self.sync_journal.write("logout", None, name, "native_verified")
+        self.active_store.clear()
+        self.sync_journal.write("logout", None, name, "local_write")
         self.keychain.remove_account(name)
+        self.sync_journal.write("logout", None, name, "verified")
+        self.sync_journal.clear()
 
     def _load_account_for_auth(
         self, name: str
@@ -343,6 +446,8 @@ class AccountManager:
             return self._pending_sync_failure()
         if payload is None:
             return AuthResult.success("Nenhuma sincronização pendente.")
+        if payload["operation"] == "logout":
+            return self._recover_logout(payload)
         if payload["operation"] != "activate":
             return self._pending_sync_failure()
 
@@ -363,6 +468,30 @@ class AccountManager:
             except (OSError, ValueError):
                 return self._pending_sync_failure()
         return result
+
+    def _recover_logout(self, payload) -> AuthResult:
+        if payload["phase"] == "verified":
+            try:
+                self.sync_journal.clear()
+            except (OSError, ValueError):
+                return self._pending_sync_failure()
+            return AuthResult.success("Remoção pendente confirmada.")
+        if payload["phase"] == "intent":
+            try:
+                logout = self.native_session.logout()
+            except (OSError, ValueError):
+                return self._pending_sync_failure()
+            if not logout.ok:
+                return self._pending_sync_failure()
+        try:
+            self.active_store.clear()
+            previous_name = payload["previous_account"]
+            if previous_name is not None:
+                self.keychain.remove_account(previous_name)
+            self.sync_journal.clear()
+        except (ActiveAccountError, OSError, ValueError):
+            return self._pending_sync_failure()
+        return AuthResult.success("Remoção pendente concluída.")
 
     def _recover_activation(self, name: str) -> AuthResult:
         account, failure = self._load_account_for_auth(name)

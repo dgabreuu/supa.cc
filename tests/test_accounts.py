@@ -8,6 +8,7 @@ from unittest.mock import Mock, call, patch
 
 from supa_cc.accounts import AccountManager
 from supa_cc.auth import (
+    AccountTransactionError,
     AuthFailureCode,
     AuthResult,
     CommandResult,
@@ -528,6 +529,36 @@ class TestAccountManager:
             assert account.token == fake_pat()
             add_account.assert_called_once_with(account)
 
+    def test_add_inactive_account_does_not_synchronize_native_session(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+
+        manager.add("work", fake_pat("replacement"))
+
+        manager.native_session.activate.assert_not_called()
+        manager.native_session.logout.assert_not_called()
+
+    def test_add_active_account_resynchronizes_replacement_token(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        replacement = Account(name="work", token=fake_pat("replacement"))
+
+        assert manager.add("work", replacement.token) == replacement
+
+        manager.keychain.add_account.assert_called_once_with(replacement)
+        manager.native_session.activate.assert_called_once_with(replacement)
+
+    def test_add_active_account_restores_old_credential_and_session_on_failure(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        old = manager.keychain.get_account("work")
+        failed = AuthResult.failure(AuthFailureCode.NATIVE_LOGIN_FAILED, "safe")
+        manager.native_session.activate.side_effect = [failed, AuthResult.success()]
+
+        with pytest.raises(AccountTransactionError):
+            manager.add("work", fake_pat("replacement"))
+
+        manager.keychain.save_account.assert_called_once_with(old)
+        assert manager.native_session.activate.call_args_list[-1] == call(old)
+        assert manager.sync_journal.read() is None
+
     def test_add_invalid_token(self):
         manager = AccountManager()
         with pytest.raises(ValueError, match="Token inválido"):
@@ -561,6 +592,61 @@ class TestAccountManager:
         with patch.object(manager.keychain, 'remove_account') as remove_account:
             manager.remove("test")
             remove_account.assert_called_once_with("test")
+
+    def test_remove_inactive_account_does_not_touch_native_session(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+
+        manager.remove("work")
+
+        manager.keychain.remove_account.assert_called_once_with("work")
+        manager.native_session.logout.assert_not_called()
+        assert manager.active_store.name == "old"
+
+    def test_remove_active_account_logs_out_before_clearing_and_deleting(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        events = Mock()
+        events.attach_mock(manager.native_session, "native")
+        manager.active_store.clear = Mock(wraps=manager.active_store.clear)
+        events.attach_mock(manager.active_store.clear, "clear")
+        events.attach_mock(manager.keychain, "keychain")
+
+        manager.remove("work")
+
+        assert events.mock_calls == [
+            call.native.logout(),
+            call.clear(),
+            call.keychain.remove_account("work"),
+        ]
+        assert manager.active_store.name is None
+        assert manager.sync_journal.read() is None
+
+    def test_remove_active_account_logout_failure_preserves_all_local_state(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        manager.native_session.logout.return_value = AuthResult.failure(
+            AuthFailureCode.NATIVE_LOGOUT_FAILED, "safe"
+        )
+
+        with pytest.raises(AccountTransactionError):
+            manager.remove("work")
+
+        assert manager.active_store.name == "work"
+        manager.keychain.remove_account.assert_not_called()
+        assert manager.sync_journal.read() is None
+
+    def test_remove_active_account_retains_recoverable_journal_after_local_failure(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        manager.keychain.remove_account.side_effect = OSError("private")
+
+        with pytest.raises(OSError, match="private"):
+            manager.remove("work")
+
+        assert manager.active_store.name is None
+        assert manager.sync_journal.read() == {
+            "operation": "logout",
+            "target_account": None,
+            "previous_account": "work",
+            "phase": "local_write",
+        }
 
     @pytest.mark.parametrize(
         "name",

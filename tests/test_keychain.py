@@ -224,6 +224,19 @@ def test_add_raises_transaction_error_when_token_rollback_fails(tmp_path, monkey
     assert replacement not in str(raised.value)
 
 
+def test_save_account_replaces_credential_without_changing_index(tmp_path):
+    store = FakeCredentialStore()
+    manager = KeychainManager(
+        index_path=tmp_path / "accounts.json", credential_store=store
+    )
+    manager.update_index(["work", "personal"])
+
+    manager.save_account(Account(name="work", token=fake_pat("previous")))
+
+    assert store.tokens == {"work": fake_pat("previous")}
+    assert [account.name for account in manager.list_accounts()] == ["work", "personal"]
+
+
 def test_update_index_does_not_overwrite_invalid_json(tmp_path):
     path = tmp_path / "accounts.json"
     path.write_text("not-json", encoding="utf-8")
