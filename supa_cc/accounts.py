@@ -219,6 +219,12 @@ class AccountManager:
 
     def set_active(self, name: str) -> AuthResult:
         """Sincroniza a sessão nativa antes de confirmar a seleção local."""
+        if not is_valid_account_name(name):
+            return AuthResult.failure(
+                AuthFailureCode.ACCOUNT_REQUIRED,
+                "Informe um nome de conta válido.",
+                exit_code=2,
+            )
         return self._run_with_sync_lock(lambda: self._set_active_locked(name))
 
     def _set_active_locked(self, name: str) -> AuthResult:

@@ -478,6 +478,46 @@ class TestAccountManager:
         assert result is blocked
         assert manager.active_store.name == "old"
 
+    @pytest.mark.parametrize(
+        "name",
+        [
+            "",
+            "name with space",
+            "work\n",
+            fake_pat("selected_name"),
+            "acct_" + fake_pat("embedded_selected_name"),
+        ],
+        ids=["empty", "space", "newline", "pat", "embedded-pat"],
+    )
+    def test_set_active_rejects_invalid_name_before_transaction_dependencies(
+        self, tmp_path, name
+    ):
+        keychain = Mock()
+        config = Mock()
+        active_store = Mock()
+        native_session = Mock()
+        journal = Mock()
+        journal.path = tmp_path / "session-sync.json"
+        manager = AccountManager(
+            keychain=keychain,
+            config=config,
+            active_store=active_store,
+            native_session=native_session,
+            sync_journal=journal,
+        )
+
+        result = manager.set_active(name)
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.ACCOUNT_REQUIRED
+        assert result.exit_code == 2
+        assert result.message == "Informe um nome de conta válido."
+        assert keychain.method_calls == []
+        assert journal.method_calls == []
+        assert active_store.method_calls == []
+        assert native_session.method_calls == []
+        assert not manager._sync_lock_path.exists()
+
     def test_add_valid_account(self, tmp_path):
         manager = AccountManager()
         manager.keychain.index_path = tmp_path / "accounts.json"
