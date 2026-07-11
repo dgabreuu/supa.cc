@@ -175,28 +175,37 @@ from supa_cc.credentials import CredentialAccessError, create_credential_store
 from supa_cc.environment import detect_environment
 
 
-def test_linux_selects_only_secret_service_backend(fake_secret_service):
+def test_linux_selects_only_secret_service_backend(
+    monkeypatch, fake_secret_service
+):
+    monkeypatch.setattr(
+        "supa_cc.credentials._secret_service_keyring",
+        lambda: fake_secret_service,
+    )
     store = create_credential_store(
-        detect_environment(system_name="Linux", os_release="ID=arch\n"),
-        secret_service_factory=lambda: fake_secret_service,
+        detect_environment(system_name="Linux", os_release="ID=arch\n")
     )
 
     assert store.backend_name == "keyring.backends.SecretService.Keyring"
 
 
-def test_linux_rejects_unavailable_secret_service():
+def test_linux_rejects_unavailable_secret_service(monkeypatch):
+    monkeypatch.setattr(
+        "supa_cc.credentials._secret_service_keyring",
+        lambda: (_ for _ in ()).throw(RuntimeError()),
+    )
     with pytest.raises(CredentialAccessError):
         create_credential_store(
-            detect_environment(system_name="Linux", os_release="ID=debian\n"),
-            secret_service_factory=lambda: (_ for _ in ()).throw(RuntimeError()),
+            detect_environment(system_name="Linux", os_release="ID=debian\n")
         )
 ```
 
-Add fakes that implement `get_password`, `set_password`, and
-`delete_password`; assert the same fake receives every operation. Add cases
-for KeyringLocked, PermissionError, generic KeyringError, a missing delete,
-and a read-back mismatch. Assert no raised public message contains the fake
-token or backend-detail string.
+Patch private concrete-backend constructor helpers in tests rather than expose
+injectable backend factories in the public API. Add fakes that implement
+`get_password`, `set_password`, and `delete_password`; assert the same fake
+receives every operation. Add cases for KeyringLocked, PermissionError,
+generic KeyringError, a missing delete, and a read-back mismatch. Assert no
+raised public message contains the fake token or backend-detail string.
 
 - [ ] **Step 2: Run the tests and confirm they fail**
 
@@ -229,9 +238,12 @@ messages that say `armazenamento de credenciais` rather than `Keychain`.
 Implement `CredentialStore` with `get(name)`, `set(account)`, `delete(name)`,
 `backend_name`, and `status()`. Construct `keyring.backends.macOS.Keyring` for
 Darwin and `keyring.backends.SecretService.Keyring` for supported Linux. Do
-not call `keyring.get_keyring()` for production selection. Normalize known
-permission/locked exceptions, tolerate only recognized missing-item delete
-errors, and use `hmac.compare_digest` to verify writes.
+not call `keyring.get_keyring()` or accept backend factories through the public
+API. Normalize known permission/locked exceptions, tolerate only recognized
+missing-item delete errors, and use `hmac.compare_digest` to verify writes.
+Probe the Linux Secret Service collection with a unique nonexistent lookup so
+status detects both D-Bus availability and an unlocked collection without
+reading a stored token.
 
 - [ ] **Step 4: Run focused credential tests**
 
