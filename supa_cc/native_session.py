@@ -1,5 +1,6 @@
 import json
 import os
+import stat
 import tempfile
 from pathlib import Path
 from typing import Mapping, Optional
@@ -13,6 +14,7 @@ _OPERATIONS = frozenset(("activate", "logout"))
 _PHASES = frozenset(
     ("intent", "native_login", "native_verified", "local_write", "verified", "rollback")
 )
+_LOGOUT_PHASES = _PHASES - {"native_login"}
 
 
 def access_token_fallback_path(env=None, home=None) -> Path:
@@ -30,12 +32,27 @@ class SessionSyncJournal:
         self.path = Path(path)
 
     def read(self):
+        descriptor = None
         try:
-            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(self.path, flags)
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(metadata.st_mode)
+                or metadata.st_uid != os.getuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600
+            ):
+                raise ValueError("O journal de sincronização é inválido.")
+            with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+                descriptor = None
+                payload = json.load(stream)
         except FileNotFoundError:
             return None
         except (OSError, ValueError, TypeError) as error:
             raise ValueError("O journal de sincronização é inválido.") from error
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
         self._validate(payload)
         return payload
 
@@ -70,6 +87,12 @@ class SessionSyncJournal:
                 os.fsync(stream.fileno())
             os.replace(temporary_path, self.path)
             temporary_path = None
+            directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+            directory_descriptor = os.open(self.path.parent, directory_flags)
+            try:
+                os.fsync(directory_descriptor)
+            finally:
+                os.close(directory_descriptor)
         finally:
             if descriptor is not None:
                 os.close(descriptor)
@@ -97,6 +120,13 @@ class SessionSyncJournal:
             value = payload[key]
             if value is not None and not is_valid_account_name(value):
                 raise ValueError("O journal de sincronização é inválido.")
+        if payload["operation"] == "activate" and payload["target_account"] is None:
+            raise ValueError("O journal de sincronização é inválido.")
+        if payload["operation"] == "logout" and (
+            payload["target_account"] is not None
+            or payload["phase"] not in _LOGOUT_PHASES
+        ):
+            raise ValueError("O journal de sincronização é inválido.")
 
 
 class NativeSessionSynchronizer:
@@ -122,17 +152,22 @@ class NativeSessionSynchronizer:
                 AuthFailureCode.ENVIRONMENT_BLOCKED,
                 "Remova SUPABASE_ACCESS_TOKEN do ambiente antes de sincronizar.",
             )
-        if self.fallback_path.exists():
+        try:
+            fallback = self._fallback_metadata()
+        except OSError:
+            return self._fallback_failure()
+        if fallback is not None:
             return self._fallback_failure()
         login = self.config.login_with_access_token(account)
         if not login.ok:
             return login
-        if self.fallback_path.exists():
-            try:
-                self.fallback_path.unlink()
-            except OSError:
-                pass
-            return self._fallback_failure()
+        try:
+            fallback = self._fallback_metadata()
+            if fallback is not None:
+                self._remove_safe_fallback(fallback)
+                return self._fallback_failure()
+        except OSError:
+            return self._cleanup_failure()
         verification = self.config.verify_persisted_session()
         if not verification.ok:
             return verification
@@ -145,6 +180,8 @@ class NativeSessionSynchronizer:
         verification = self.config.verify_persisted_session()
         if not verification.ok and verification.code is AuthFailureCode.TOKEN_MISSING:
             return AuthResult.success("Sessão nativa encerrada.")
+        if not verification.ok:
+            return verification
         return AuthResult.failure(
             AuthFailureCode.NATIVE_VERIFICATION_FAILED,
             "Não foi possível confirmar o encerramento da sessão nativa.",
@@ -155,4 +192,45 @@ class NativeSessionSynchronizer:
         return AuthResult.failure(
             AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED,
             "A Supabase CLI tentou usar um fallback de token em texto simples.",
+        )
+
+    def _fallback_metadata(self):
+        try:
+            return self.fallback_path.lstat()
+        except FileNotFoundError:
+            return None
+
+    def _remove_safe_fallback(self, inspected) -> None:
+        if not stat.S_ISREG(inspected.st_mode) or inspected.st_uid != os.getuid():
+            raise OSError("fallback inseguro")
+
+        descriptor = None
+        try:
+            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            descriptor = os.open(self.fallback_path, flags)
+            opened = os.fstat(descriptor)
+            current = self.fallback_path.lstat()
+            identities = {
+                (inspected.st_dev, inspected.st_ino),
+                (opened.st_dev, opened.st_ino),
+                (current.st_dev, current.st_ino),
+            }
+            if (
+                len(identities) != 1
+                or not stat.S_ISREG(opened.st_mode)
+                or opened.st_uid != os.getuid()
+                or not stat.S_ISREG(current.st_mode)
+                or current.st_uid != os.getuid()
+            ):
+                raise OSError("fallback substituído")
+            self.fallback_path.unlink()
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+    @staticmethod
+    def _cleanup_failure() -> AuthResult:
+        return AuthResult.failure(
+            AuthFailureCode.SYNC_ROLLBACK_FAILED,
+            "O fallback inseguro não pôde ser removido com segurança.",
         )

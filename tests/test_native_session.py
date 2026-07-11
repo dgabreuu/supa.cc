@@ -1,4 +1,5 @@
 import json
+import os
 import stat
 from pathlib import Path
 from unittest.mock import Mock
@@ -19,6 +20,18 @@ def test_access_token_fallback_path_honors_supabase_home(tmp_path):
     path = access_token_fallback_path({"SUPABASE_HOME": str(tmp_path / "home")})
 
     assert path == tmp_path / "home" / "access-token"
+
+
+def test_access_token_fallback_path_uses_explicit_home(tmp_path):
+    assert access_token_fallback_path({}, home=tmp_path) == (
+        tmp_path / ".supabase" / "access-token"
+    )
+
+
+def test_access_token_fallback_path_uses_default_home(tmp_path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    assert access_token_fallback_path({}) == tmp_path / ".supabase" / "access-token"
 
 
 def test_activate_rejects_inherited_access_token_without_login(tmp_path):
@@ -60,6 +73,43 @@ def test_activate_rejects_preexisting_plaintext_fallback(tmp_path):
     assert (supabase_home / "access-token").exists()
 
 
+@pytest.mark.parametrize("entry_kind", ["dangling_symlink", "directory"])
+def test_activate_rejects_any_preexisting_fallback_entry(tmp_path, entry_kind):
+    supabase_home = tmp_path / "supabase"
+    supabase_home.mkdir()
+    fallback = supabase_home / "access-token"
+    if entry_kind == "dangling_symlink":
+        fallback.symlink_to(tmp_path / "missing")
+    else:
+        fallback.mkdir()
+    config = Mock()
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
+
+    result = synchronizer.activate(Account("work", fake_pat("entry")))
+
+    assert result.code is AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED
+    config.login_with_access_token.assert_not_called()
+
+
+def test_activate_rejects_fallback_inspection_error(tmp_path, monkeypatch):
+    fallback = tmp_path / "supabase" / "access-token"
+    config = Mock()
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=fallback.parent)
+    original_lstat = Path.lstat
+
+    def fail_lstat(path):
+        if path == fallback:
+            raise PermissionError("private")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", fail_lstat)
+
+    result = synchronizer.activate(Account("work", fake_pat("stat")))
+
+    assert result.code is AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED
+    config.login_with_access_token.assert_not_called()
+
+
 def test_activate_logs_in_verifies_without_env_and_blocks_created_fallback(tmp_path):
     supabase_home = tmp_path / "supabase"
     supabase_home.mkdir()
@@ -85,6 +135,133 @@ def test_activate_logs_in_verifies_without_env_and_blocks_created_fallback(tmp_p
     assert not (supabase_home / "access-token").exists()
     config.verify_persisted_session.assert_not_called()
     assert account.token not in result.message
+
+
+@pytest.mark.parametrize("failure_kind", ["symlink", "directory", "wrong_owner"])
+def test_activate_refuses_unsafe_post_login_fallback_cleanup(
+    tmp_path, monkeypatch, failure_kind
+):
+    supabase_home = tmp_path / "supabase"
+    supabase_home.mkdir()
+    fallback = supabase_home / "access-token"
+    config = Mock()
+
+    def login(_account):
+        if failure_kind == "symlink":
+            fallback.symlink_to(tmp_path / "missing")
+        elif failure_kind == "directory":
+            fallback.mkdir()
+        else:
+            fallback.write_text("not-read", encoding="utf-8")
+        return AuthResult.success()
+
+    config.login_with_access_token.side_effect = login
+    if failure_kind == "wrong_owner":
+        original_lstat = Path.lstat
+
+        def wrong_owner(path):
+            value = original_lstat(path)
+            if path == fallback:
+                values = list(value)
+                values[4] = os.getuid() + 1
+                return os.stat_result(values)
+            return value
+
+        monkeypatch.setattr(Path, "lstat", wrong_owner)
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
+
+    result = synchronizer.activate(Account("work", fake_pat("unsafe-cleanup")))
+
+    assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
+    config.verify_persisted_session.assert_not_called()
+
+
+def test_activate_detects_fallback_substitution_before_unlink(tmp_path, monkeypatch):
+    supabase_home = tmp_path / "supabase"
+    supabase_home.mkdir()
+    fallback = supabase_home / "access-token"
+    config = Mock()
+
+    def login(_account):
+        fallback.write_text("not-read", encoding="utf-8")
+        return AuthResult.success()
+
+    config.login_with_access_token.side_effect = login
+    original_lstat = Path.lstat
+    calls = 0
+
+    def substitute(path):
+        nonlocal calls
+        value = original_lstat(path)
+        if path == fallback:
+            calls += 1
+            if calls == 2:
+                fallback.unlink()
+                fallback.symlink_to(tmp_path / "missing")
+                value = original_lstat(path)
+        return value
+
+    monkeypatch.setattr(Path, "lstat", substitute)
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
+
+    result = synchronizer.activate(Account("work", fake_pat("substitution")))
+
+    assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
+    assert fallback.is_symlink()
+
+
+def test_activate_reports_post_login_unlink_failure(tmp_path, monkeypatch):
+    supabase_home = tmp_path / "supabase"
+    supabase_home.mkdir()
+    fallback = supabase_home / "access-token"
+    config = Mock()
+
+    def login(_account):
+        fallback.write_text("not-read", encoding="utf-8")
+        return AuthResult.success()
+
+    config.login_with_access_token.side_effect = login
+    original_unlink = Path.unlink
+
+    def fail_unlink(path, *args, **kwargs):
+        if path == fallback:
+            raise PermissionError("private")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_unlink)
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
+
+    result = synchronizer.activate(Account("work", fake_pat("unlink")))
+
+    assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
+    assert fallback.exists()
+
+
+def test_activate_reports_post_login_inspection_failure(tmp_path, monkeypatch):
+    supabase_home = tmp_path / "supabase"
+    fallback = supabase_home / "access-token"
+    config = Mock()
+
+    def login(_account):
+        supabase_home.mkdir()
+        fallback.write_text("not-read", encoding="utf-8")
+        return AuthResult.success()
+
+    config.login_with_access_token.side_effect = login
+    original_lstat = Path.lstat
+
+    def fail_after_login(path):
+        if path == fallback and fallback.parent.exists():
+            raise PermissionError("private")
+        return original_lstat(path)
+
+    monkeypatch.setattr(Path, "lstat", fail_after_login)
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
+
+    result = synchronizer.activate(Account("work", fake_pat("post-stat")))
+
+    assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
+    config.verify_persisted_session.assert_not_called()
 
 
 def test_activate_succeeds_after_login_and_persisted_verification(tmp_path):
@@ -149,6 +326,41 @@ def test_logout_requires_successful_logout_and_failed_verification(tmp_path):
     config.verify_persisted_session.assert_called_once_with()
 
 
+def test_logout_failure_short_circuits_verification(tmp_path):
+    config = Mock()
+    failure = AuthResult.failure(AuthFailureCode.NATIVE_LOGOUT_FAILED, "safe")
+    config.logout_session.return_value = failure
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
+
+    result = synchronizer.logout()
+
+    assert result is failure
+    config.verify_persisted_session.assert_not_called()
+
+
+def test_logout_fails_when_verification_remains_authenticated(tmp_path):
+    config = Mock()
+    config.logout_session.return_value = AuthResult.success()
+    config.verify_persisted_session.return_value = AuthResult.success()
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
+
+    result = synchronizer.logout()
+
+    assert result.code is AuthFailureCode.NATIVE_VERIFICATION_FAILED
+
+
+def test_logout_propagates_unrelated_verification_failure(tmp_path):
+    config = Mock()
+    config.logout_session.return_value = AuthResult.success()
+    failure = AuthResult.failure(AuthFailureCode.NETWORK_FAILURE, "safe")
+    config.verify_persisted_session.return_value = failure
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
+
+    result = synchronizer.logout()
+
+    assert result is failure
+
+
 def test_journal_round_trip_never_stores_tokens(tmp_path):
     path = tmp_path / "session-sync.json"
     journal = SessionSyncJournal(path)
@@ -184,6 +396,66 @@ def test_journal_uses_private_permissions_and_atomic_replacement(tmp_path):
     assert list(path.parent.glob(".session-sync.json.*")) == []
 
 
+def test_journal_write_fsyncs_file_and_containing_directory(tmp_path, monkeypatch):
+    path = tmp_path / "private" / "session-sync.json"
+    calls = []
+    original_fsync = os.fsync
+
+    def record_fsync(descriptor):
+        calls.append(os.fstat(descriptor).st_mode)
+        return original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", record_fsync)
+
+    SessionSyncJournal(path).write("activate", "work", None, "native_login")
+
+    assert any(stat.S_ISREG(mode) for mode in calls)
+    assert any(stat.S_ISDIR(mode) for mode in calls)
+
+
+@pytest.mark.parametrize("unsafe_kind", ["symlink", "directory", "permissive"])
+def test_journal_read_rejects_unsafe_file_metadata(tmp_path, unsafe_kind):
+    path = tmp_path / "session-sync.json"
+    payload = json.dumps(
+        {
+            "operation": "activate",
+            "target_account": "work",
+            "previous_account": None,
+            "phase": "native_login",
+        }
+    )
+    if unsafe_kind == "symlink":
+        target = tmp_path / "target"
+        target.write_text(payload, encoding="utf-8")
+        path.symlink_to(target)
+    elif unsafe_kind == "directory":
+        path.mkdir()
+    else:
+        path.write_text(payload, encoding="utf-8")
+        path.chmod(0o644)
+
+    with pytest.raises(ValueError):
+        SessionSyncJournal(path).read()
+
+
+def test_journal_read_rejects_wrong_owner(tmp_path, monkeypatch):
+    path = tmp_path / "session-sync.json"
+    journal = SessionSyncJournal(path)
+    journal.write("activate", "work", None, "native_login")
+    original_fstat = os.fstat
+
+    def wrong_owner(descriptor):
+        value = original_fstat(descriptor)
+        values = list(value)
+        values[4] = os.getuid() + 1
+        return os.stat_result(values)
+
+    monkeypatch.setattr(os, "fstat", wrong_owner)
+
+    with pytest.raises(ValueError):
+        journal.read()
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -200,6 +472,19 @@ def test_journal_rejects_invalid_names_operations_and_phases(tmp_path, kwargs):
         journal.write(**kwargs)
 
     assert journal.read() is None
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"operation": "activate", "target_account": None, "previous_account": None, "phase": "native_login"},
+        {"operation": "logout", "target_account": "work", "previous_account": None, "phase": "intent"},
+        {"operation": "logout", "target_account": None, "previous_account": "old", "phase": "native_login"},
+    ],
+)
+def test_journal_validates_operation_phase_combinations(tmp_path, kwargs):
+    with pytest.raises(ValueError):
+        SessionSyncJournal(tmp_path / "journal").write(**kwargs)
 
 
 def test_journal_rejects_token_fields_without_exposing_file_contents(tmp_path):
