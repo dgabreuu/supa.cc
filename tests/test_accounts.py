@@ -456,6 +456,46 @@ class TestAccountManager:
         second_thread.join(timeout=2)
         assert second.native_session.activate.called
 
+    @pytest.mark.parametrize("operation", ["add", "remove"])
+    def test_switch_serializes_inactive_mutation_until_recovery_finishes(
+        self, tmp_path, operation
+    ):
+        switcher = self.transactional_manager(tmp_path, previous="old")
+        mutator = self.transactional_manager(tmp_path, previous="old")
+        entered = threading.Event()
+        release = threading.Event()
+
+        def block(_account):
+            entered.set()
+            release.wait(timeout=2)
+            return AuthResult.success()
+
+        switcher.native_session.activate.side_effect = block
+        switch_thread = threading.Thread(target=switcher.set_active, args=("work",))
+        if operation == "add":
+            mutation_thread = threading.Thread(
+                target=mutator.add, args=("new", fake_pat("concurrent-new"))
+            )
+        else:
+            mutation_thread = threading.Thread(target=mutator.remove, args=("old",))
+
+        switch_thread.start()
+        assert entered.wait(timeout=1)
+        mutation_thread.start()
+        time.sleep(0.05)
+        mutator.keychain.add_account.assert_not_called()
+        mutator.keychain.remove_account.assert_not_called()
+        release.set()
+        switch_thread.join(timeout=2)
+        mutation_thread.join(timeout=2)
+
+        assert not switch_thread.is_alive()
+        assert not mutation_thread.is_alive()
+        if operation == "add":
+            mutator.keychain.add_account.assert_called_once()
+        else:
+            mutator.keychain.remove_account.assert_called_once_with("old")
+
     def test_recovery_and_selection_share_sync_lock(self, tmp_path):
         recovery = self.transactional_manager(tmp_path, previous="old")
         selection = self.transactional_manager(tmp_path, previous="old")
@@ -747,6 +787,51 @@ class TestAccountManager:
         manager.keychain.remove_account.assert_not_called()
         assert manager.sync_journal.read() is None
 
+    def test_remove_active_retains_intent_after_post_logout_uncertainty(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        manager.native_session.logout.return_value = AuthResult.failure(
+            AuthFailureCode.SYNC_PENDING, "safe"
+        )
+
+        with pytest.raises(AccountTransactionError):
+            manager.remove("work")
+
+        assert manager.active_store.name == "work"
+        manager.keychain.remove_account.assert_not_called()
+        assert manager.sync_journal.read()["phase"] == "intent"
+
+    def test_logout_recovery_retains_intent_when_preverification_is_inconclusive(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        manager.sync_journal.write("logout", None, "work", "intent")
+        manager.native_session.logout.return_value = AuthResult.failure(
+            AuthFailureCode.NETWORK_FAILURE, "safe"
+        )
+
+        result = manager.recover_pending_sync()
+
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        assert manager.active_store.name == "work"
+        manager.keychain.remove_account.assert_not_called()
+        assert manager.sync_journal.read()["phase"] == "intent"
+
+    def test_inactive_add_runs_pending_recovery_before_mutation(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        manager.sync_journal.write("activate", "missing", "old", "native_verified")
+
+        with pytest.raises(AccountTransactionError):
+            manager.add("new", fake_pat("new"))
+
+        manager.keychain.add_account.assert_not_called()
+
+    def test_inactive_remove_runs_pending_recovery_before_deletion(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        manager.sync_journal.write("activate", "missing", "old", "native_verified")
+
+        with pytest.raises(AccountTransactionError):
+            manager.remove("work")
+
+        manager.keychain.remove_account.assert_not_called()
+
     def test_remove_active_account_retains_recoverable_journal_after_local_failure(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="work")
         manager.keychain.remove_account.side_effect = OSError("private")
@@ -793,6 +878,39 @@ class TestAccountManager:
         assert config.logout_session.call_count == 1
         assert active_store.name is None
         assert restarted.get("work") is None
+
+    @pytest.mark.parametrize(
+        "code",
+        [AuthFailureCode.NETWORK_FAILURE, AuthFailureCode.ENVIRONMENT_BLOCKED, AuthFailureCode.CLI_INCOMPATIBLE],
+    )
+    def test_active_removal_restart_recovers_after_uncertain_post_logout_verification(
+        self, tmp_path, code
+    ):
+        store = FakeCredentialStore()
+        active_store = MemoryActiveAccountStore("work")
+        config = Mock()
+        config.logout_session.return_value = AuthResult.success()
+        config.verify_persisted_session.side_effect = [
+            AuthResult.success(),
+            AuthResult.failure(code, "safe"),
+            AuthResult.failure(AuthFailureCode.TOKEN_MISSING, "safe"),
+        ]
+        native = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path / "home")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(tmp_path, store, active_store, native, durable)
+        manager.keychain.add_account(Account("work", fake_pat("uncertain-remove")))
+
+        with pytest.raises(AccountTransactionError):
+            manager.remove("work")
+
+        assert active_store.name == "work"
+        assert durable.read()["phase"] == "intent"
+        restarted = self.durable_manager(tmp_path, store, active_store, native, durable)
+        assert restarted.recover_pending_sync().ok
+        assert config.logout_session.call_count == 1
+        assert active_store.name is None
+        assert restarted.get("work") is None
+        assert durable.read() is None
 
     @pytest.mark.parametrize(
         "name",

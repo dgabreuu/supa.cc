@@ -3,6 +3,7 @@ import json
 import hashlib
 import threading
 import time
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,7 @@ elif sys.argv[1:] == ['projects', 'list']:
         state_path.write_text(json.dumps(state))
         sys.stderr.write('HTTP 401 Unauthorized\\n')
         sys.exit(1)
+    sys.stdout.write('fingerprint=' + effective + '\\n')
 else:
     state_path.write_text(json.dumps(state))
     sys.exit(2)
@@ -121,14 +123,17 @@ def test_native_sync_first_selection_switch_and_direct_command(tmp_path, monkeyp
 
     assert manager.set_active("work").ok
     assert manager.set_active("personal").ok
-    direct = config.execute_authenticated(
-        Account("personal", personal_token), ["projects", "list"]
+    executable = config.supabase_cli_invoked
+    direct = subprocess.run(
+        [executable, "projects", "list"], capture_output=True, text=True, check=False,
+        env={key: value for key, value in os.environ.items() if key != "SUPABASE_ACCESS_TOKEN"},
     )
 
     state = _fake_state(state_path)
     work_fingerprint = hashlib.sha256(work_token.encode()).hexdigest()
     personal_fingerprint = hashlib.sha256(personal_token.encode()).hexdigest()
-    assert direct.ok
+    assert direct.returncode == 0
+    assert direct.stdout == f"fingerprint={personal_fingerprint}\n"
     assert manager.active_store.read() == "personal"
     assert state["session_fingerprint"] == personal_fingerprint
     assert state["session_fingerprint"] != work_fingerprint
@@ -141,11 +146,8 @@ def test_native_sync_first_selection_switch_and_direct_command(tmp_path, monkeyp
         for event in state["events"]
         if event["argv"] == ["projects", "list"] and not event["has_access_token"]
     ]
-    assert len(persisted_checks) == 2
-    assert any(
-        event["argv"] == ["projects", "list"] and event["has_access_token"]
-        for event in state["events"]
-    )
+    assert len(persisted_checks) == 3
+    assert state["events"][-1] == {"argv": ["projects", "list"], "has_access_token": False}
 
 
 def test_native_sync_failed_switch_rolls_back_previous_session(tmp_path, monkeypatch):

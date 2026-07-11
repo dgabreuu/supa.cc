@@ -114,7 +114,13 @@ class SessionSyncJournal:
         try:
             self.path.unlink()
         except FileNotFoundError:
-            pass
+            return
+        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        directory_descriptor = os.open(self.path.parent, directory_flags)
+        try:
+            os.fsync(directory_descriptor)
+        finally:
+            os.close(directory_descriptor)
 
     @staticmethod
     def _validate(payload) -> None:
@@ -185,6 +191,8 @@ class NativeSessionSynchronizer:
         verification = self.config.verify_persisted_session()
         if not verification.ok and verification.code is AuthFailureCode.TOKEN_MISSING:
             return AuthResult.success("Sessão nativa encerrada.")
+        if not verification.ok:
+            return verification
         result = self.config.logout_session()
         if not result.ok:
             return result
@@ -192,10 +200,14 @@ class NativeSessionSynchronizer:
         if not verification.ok and verification.code is AuthFailureCode.TOKEN_MISSING:
             return AuthResult.success("Sessão nativa encerrada.")
         if not verification.ok:
-            return verification
+            return self._uncertain_logout_failure()
+        return self._uncertain_logout_failure()
+
+    @staticmethod
+    def _uncertain_logout_failure() -> AuthResult:
         return AuthResult.failure(
-            AuthFailureCode.NATIVE_VERIFICATION_FAILED,
-            "Não foi possível confirmar o encerramento da sessão nativa.",
+            AuthFailureCode.SYNC_PENDING,
+            "O logout pode ter sido concluído, mas requer verificação antes de alterar o estado local.",
         )
 
     @staticmethod

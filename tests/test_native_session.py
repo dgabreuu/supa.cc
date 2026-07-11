@@ -364,19 +364,38 @@ def test_logout_fails_when_verification_remains_authenticated(tmp_path):
 
     result = synchronizer.logout()
 
-    assert result.code is AuthFailureCode.NATIVE_VERIFICATION_FAILED
+    assert result.code is AuthFailureCode.SYNC_PENDING
 
 
-def test_logout_propagates_unrelated_verification_failure(tmp_path):
+@pytest.mark.parametrize(
+    "code",
+    [AuthFailureCode.NETWORK_FAILURE, AuthFailureCode.ENVIRONMENT_BLOCKED, AuthFailureCode.CLI_INCOMPATIBLE],
+)
+def test_logout_returns_pending_after_inconclusive_postverification(tmp_path, code):
     config = Mock()
     config.logout_session.return_value = AuthResult.success()
-    failure = AuthResult.failure(AuthFailureCode.NETWORK_FAILURE, "safe")
+    failure = AuthResult.failure(code, "safe")
     config.verify_persisted_session.side_effect = [AuthResult.success(), failure]
     synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
 
     result = synchronizer.logout()
 
-    assert result is failure
+    assert result.code is AuthFailureCode.SYNC_PENDING
+
+
+@pytest.mark.parametrize(
+    "code",
+    [AuthFailureCode.NETWORK_FAILURE, AuthFailureCode.ENVIRONMENT_BLOCKED, AuthFailureCode.CLI_INCOMPATIBLE],
+)
+def test_logout_inconclusive_preverification_never_mutates(tmp_path, code):
+    config = Mock()
+    config.verify_persisted_session.return_value = AuthResult.failure(code, "safe")
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
+
+    result = synchronizer.logout()
+
+    assert result.code is code
+    config.logout_session.assert_not_called()
 
 
 def test_journal_round_trip_never_stores_tokens(tmp_path):
@@ -429,6 +448,41 @@ def test_journal_write_fsyncs_file_and_containing_directory(tmp_path, monkeypatc
 
     assert any(stat.S_ISREG(mode) for mode in calls)
     assert any(stat.S_ISDIR(mode) for mode in calls)
+
+
+def test_journal_clear_fsyncs_containing_directory(tmp_path, monkeypatch):
+    path = tmp_path / "private" / "session-sync.json"
+    journal = SessionSyncJournal(path)
+    journal.write("activate", "work", None, "verified")
+    calls = []
+    original_fsync = os.fsync
+
+    def record_fsync(descriptor):
+        calls.append(os.fstat(descriptor).st_mode)
+        return original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", record_fsync)
+    journal.clear()
+
+    assert any(stat.S_ISDIR(mode) for mode in calls)
+
+
+def test_journal_clear_reports_directory_fsync_failure_after_unlink(tmp_path, monkeypatch):
+    path = tmp_path / "private" / "session-sync.json"
+    journal = SessionSyncJournal(path)
+    journal.write("activate", "work", None, "verified")
+    original_fsync = os.fsync
+
+    def fail_directory_fsync(descriptor):
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise OSError("private")
+        return original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", fail_directory_fsync)
+    with pytest.raises(OSError):
+        journal.clear()
+
+    assert not path.exists()
 
 
 @pytest.mark.parametrize("unsafe_kind", ["symlink", "directory", "permissive"])

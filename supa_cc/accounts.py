@@ -168,19 +168,11 @@ class AccountManager:
                 "Token inválido: o valor não atende ao formato PAT Supabase."
             )
         try:
-            active_name = self.active_store.read()
-        except ActiveAccountError:
-            raise AccountTransactionError(
-                "Não foi possível confirmar a conta ativa com segurança."
-            ) from None
-        if active_name != name:
-            self.keychain.add_account(account)
-            return account
-
-        try:
             with self._sync_lock():
-                self._replace_active_account(account)
+                self._add_locked(account)
         except AccountTransactionError:
+            raise
+        except OSError:
             raise
         except Exception:
             raise AccountTransactionError(
@@ -188,10 +180,22 @@ class AccountManager:
             ) from None
         return account
 
-    def _replace_active_account(self, account: Account) -> None:
+    def _add_locked(self, account: Account) -> None:
         recovery = self._recover_pending_sync_locked()
         if not recovery.ok:
             raise AccountTransactionError(recovery.message)
+        try:
+            active_name = self.active_store.read()
+        except ActiveAccountError:
+            raise AccountTransactionError(
+                "Não foi possível confirmar a conta ativa com segurança."
+            ) from None
+        if active_name != account.name:
+            self.keychain.add_account(account)
+            return
+        self._replace_active_account(account)
+
+    def _replace_active_account(self, account: Account) -> None:
         previous = self.keychain.get_account(account.name)
         if previous is None:
             self.keychain.add_account(account)
@@ -262,6 +266,20 @@ class AccountManager:
         if not is_valid_account_name(name):
             raise InvalidAccountNameError("Nome de conta inválido.")
         try:
+            with self._sync_lock():
+                self._remove_locked(name)
+        except (AccountTransactionError, OSError):
+            raise
+        except Exception:
+            raise AccountTransactionError(
+                "Não foi possível remover a conta ativa com segurança."
+            ) from None
+
+    def _remove_locked(self, name: str) -> None:
+        recovery = self._recover_pending_sync_locked()
+        if not recovery.ok:
+            raise AccountTransactionError(recovery.message)
+        try:
             active_name = self.active_store.read()
         except ActiveAccountError:
             raise AccountTransactionError(
@@ -270,26 +288,17 @@ class AccountManager:
         if active_name != name:
             self.keychain.remove_account(name)
             return
-        try:
-            with self._sync_lock():
-                self._remove_active_account(name)
-        except (AccountTransactionError, OSError):
-            raise
-        except Exception:
-            raise AccountTransactionError(
-                "Não foi possível remover a conta ativa com segurança."
-            ) from None
+        self._remove_active_account(name)
 
     def _remove_active_account(self, name: str) -> None:
-        recovery = self._recover_pending_sync_locked()
-        if not recovery.ok:
-            raise AccountTransactionError(recovery.message)
         self.sync_journal.write("logout", None, name, "intent")
         try:
             logout = self.native_session.logout()
         except (OSError, ValueError):
             logout = self._pending_sync_failure()
         if not logout.ok:
+            if logout.code is AuthFailureCode.SYNC_PENDING:
+                raise AccountTransactionError(logout.message)
             try:
                 self.sync_journal.clear()
             except (OSError, ValueError):
