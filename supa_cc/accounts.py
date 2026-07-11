@@ -27,6 +27,14 @@ from .keychain import KeychainManager
 from .native_session import NativeSessionSynchronizer, SessionSyncJournal
 
 
+class _SyncUnlockError(OSError):
+    pass
+
+
+class _SyncCloseError(OSError):
+    pass
+
+
 class AccountManager:
     def __init__(
         self,
@@ -70,6 +78,9 @@ class AccountManager:
         flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(self._sync_lock_path, flags, 0o600)
         locked = False
+        body_error = None
+        unlock_failed = False
+        close_failed = False
         try:
             opened = os.fstat(descriptor)
             current = self._sync_lock_path.lstat()
@@ -93,16 +104,49 @@ class AccountManager:
                 or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
             ):
                 raise ValueError("O lock de sincronização é inválido.")
-            yield
+            try:
+                yield
+            except BaseException as error:
+                body_error = error
         finally:
-            if locked:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
-            os.close(descriptor)
+            try:
+                if locked:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+            except OSError:
+                unlock_failed = True
+            finally:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    close_failed = True
+        if body_error is not None:
+            raise body_error
+        if unlock_failed:
+            raise _SyncUnlockError()
+        if close_failed:
+            raise _SyncCloseError()
 
     def _run_with_sync_lock(self, operation: Callable[[], AuthResult]) -> AuthResult:
+        result = None
         try:
             with self._sync_lock():
-                return operation()
+                result = operation()
+            return result
+        except _SyncCloseError:
+            if result is not None:
+                return result
+            return self._pending_sync_failure()
+        except _SyncUnlockError:
+            try:
+                pending = self.sync_journal.read() is not None
+            except (OSError, ValueError):
+                pending = True
+            if pending:
+                return self._pending_sync_failure()
+            return AuthResult.failure(
+                AuthFailureCode.ENVIRONMENT_BLOCKED,
+                "A operação foi concluída, mas o lock de sincronização não pôde ser finalizado.",
+            )
         except (OSError, ValueError):
             return self._pending_sync_failure()
 

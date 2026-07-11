@@ -302,27 +302,100 @@ class TestAccountManager:
         assert not result.ok
         manager.native_session.activate.assert_not_called()
 
-    @pytest.mark.parametrize("failure", ["unlock", "close"])
-    def test_sync_lock_release_failures_are_sanitized(self, tmp_path, failure):
+    def release_failure_patches(self, fail_unlock=False, fail_close=False):
+        real_flock = __import__("fcntl").flock
+        real_open = __import__("os").open
+        real_close = __import__("os").close
+        descriptors = []
+        lock_descriptors = set()
+
+        def open_lock(path, flags, mode=0o777):
+            descriptor = real_open(path, flags, mode)
+            if str(path).endswith(".session-sync.lock"):
+                lock_descriptors.add(descriptor)
+            return descriptor
+
+        def flock(descriptor, operation):
+            if operation == __import__("fcntl").LOCK_UN and fail_unlock:
+                real_flock(descriptor, operation)
+                raise OSError("private unlock path")
+            return real_flock(descriptor, operation)
+
+        def close(descriptor):
+            is_lock = descriptor in lock_descriptors
+            if is_lock:
+                descriptors.append(descriptor)
+            real_close(descriptor)
+            if is_lock and fail_close:
+                raise OSError("private close path")
+
+        return (
+            patch("supa_cc.accounts.fcntl.flock", side_effect=flock),
+            patch("supa_cc.accounts.os.open", side_effect=open_lock),
+            patch("supa_cc.accounts.os.close", side_effect=close),
+            descriptors,
+        )
+
+    def test_unlock_failure_closes_descriptor_and_reports_committed_cleanup(self, tmp_path):
         manager = self.transactional_manager(tmp_path)
-        if failure == "unlock":
-            real_flock = __import__("fcntl").flock
+        flock_patch, open_patch, close_patch, descriptors = self.release_failure_patches(
+            fail_unlock=True
+        )
 
-            def fail_unlock(descriptor, operation):
-                if operation == __import__("fcntl").LOCK_UN:
-                    raise OSError("private unlock path")
-                return real_flock(descriptor, operation)
+        with flock_patch, open_patch, close_patch:
+            result = manager.set_active("work")
 
-            patched = patch("supa_cc.accounts.fcntl.flock", side_effect=fail_unlock)
-        else:
-            patched = patch("supa_cc.accounts.os.close", side_effect=OSError("private close path"))
+        assert not result.ok
+        assert result.code is AuthFailureCode.ENVIRONMENT_BLOCKED
+        assert "private" not in result.message
+        assert manager.sync_journal.read() is None
+        assert len(descriptors) == 1
+        with pytest.raises(OSError):
+            __import__("os").fstat(descriptors[0])
 
-        with patched:
+    def test_close_failure_after_successful_unlock_preserves_committed_result(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        flock_patch, open_patch, close_patch, descriptors = self.release_failure_patches(
+            fail_close=True
+        )
+
+        with flock_patch, open_patch, close_patch:
+            result = manager.set_active("work")
+
+        assert result.ok
+        assert manager.sync_journal.read() is None
+        with pytest.raises(OSError):
+            __import__("os").fstat(descriptors[0])
+
+    def test_combined_unlock_and_close_failure_still_closes_descriptor(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        flock_patch, open_patch, close_patch, descriptors = self.release_failure_patches(
+            fail_unlock=True, fail_close=True
+        )
+
+        with flock_patch, open_patch, close_patch:
+            result = manager.set_active("work")
+
+        assert not result.ok
+        assert result.code is AuthFailureCode.ENVIRONMENT_BLOCKED
+        assert manager.sync_journal.read() is None
+        with pytest.raises(OSError):
+            __import__("os").fstat(descriptors[0])
+
+    def test_unlock_failure_retains_unresolved_journal_as_pending(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        durable = manager.sync_journal
+        manager.sync_journal = FaultInjectingJournal(durable, "clear", 1)
+        flock_patch, open_patch, close_patch, _descriptors = self.release_failure_patches(
+            fail_unlock=True
+        )
+
+        with flock_patch, open_patch, close_patch:
             result = manager.set_active("work")
 
         assert not result.ok
         assert result.code is AuthFailureCode.SYNC_PENDING
-        assert "private" not in result.message
+        assert durable.read()["phase"] == "verified"
 
     def test_concurrent_set_active_calls_are_serialized(self, tmp_path):
         first = self.transactional_manager(tmp_path)
