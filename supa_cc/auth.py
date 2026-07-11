@@ -71,6 +71,12 @@ class AuthFailureCode(str, Enum):
     ACTIVE_ACCOUNT_INVALID = "active_account_invalid"
     INVALID_INPUT = "invalid_input"
     COMMAND_FAILED = "command_failed"
+    PLAINTEXT_FALLBACK_BLOCKED = "plaintext_fallback_blocked"
+    NATIVE_LOGIN_FAILED = "native_login_failed"
+    NATIVE_LOGOUT_FAILED = "native_logout_failed"
+    NATIVE_VERIFICATION_FAILED = "native_verification_failed"
+    SYNC_PENDING = "sync_pending"
+    SYNC_ROLLBACK_FAILED = "sync_rollback_failed"
 
 
 class CredentialAccessError(RuntimeError):
@@ -407,3 +413,17 @@ class ActiveAccountStore:
                     os.unlink(temporary_path)
                 except FileNotFoundError:
                     pass
+
+    def clear(self) -> None:
+        try:
+            self.path.unlink()
+        except FileNotFoundError:
+            return
+        except PermissionError:
+            raise ActiveAccountPermissionDeniedError(
+                "Acesso ao arquivo de conta ativa não autorizado."
+            ) from None
+        except OSError:
+            raise ActiveAccountWriteError(
+                "Não foi possível remover o arquivo de conta ativa."
+            ) from None

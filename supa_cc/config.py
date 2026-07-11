@@ -297,6 +297,53 @@ class SupabaseConfig:
             exit_code=result.exit_code,
         )
 
+    def login_with_access_token(self, account: Account) -> AuthResult:
+        result = self.execute_authenticated(
+            account, ["login"], timeout_seconds=self.validation_timeout_seconds
+        )
+        return self._native_auth_result(
+            result, AuthFailureCode.NATIVE_LOGIN_FAILED, "Sessão nativa autenticada."
+        )
+
+    def verify_persisted_session(self) -> AuthResult:
+        result = self._execute_without_access_token(["projects", "list"])
+        return self._native_auth_result(
+            result,
+            AuthFailureCode.NATIVE_VERIFICATION_FAILED,
+            "Sessão nativa verificada.",
+        )
+
+    def logout_session(self) -> AuthResult:
+        result = self._execute_without_access_token(["logout", "--yes"])
+        return self._native_auth_result(
+            result, AuthFailureCode.NATIVE_LOGOUT_FAILED, "Sessão nativa encerrada."
+        )
+
+    @staticmethod
+    def _native_auth_result(
+        result: CommandResult, fallback_code: AuthFailureCode, success_message: str
+    ) -> AuthResult:
+        if result.ok:
+            return AuthResult.success(success_message)
+        code = fallback_code if result.code is AuthFailureCode.COMMAND_FAILED else result.code
+        return AuthResult.failure(code, result.message, exit_code=result.exit_code)
+
+    def _execute_without_access_token(self, arguments: Sequence[str]) -> CommandResult:
+        if self.supabase_cli is None:
+            return CommandResult.failure(
+                AuthFailureCode.CLI_NOT_FOUND, "Supabase CLI não encontrada."
+            )
+        env = os.environ.copy()
+        env.pop("SUPABASE_ACCESS_TOKEN", None)
+        return self._execute_engine(
+            [self.supabase_cli, *arguments],
+            env,
+            stdout_sink=lambda _chunk: None,
+            stderr_sink=lambda _chunk: None,
+            sample_limit=STREAM_SAMPLE_LIMIT,
+            timeout_seconds=self.validation_timeout_seconds,
+        )
+
     def execute_authenticated(
         self,
         account: Account,
@@ -386,6 +433,20 @@ class SupabaseConfig:
         if failure is not None:
             return failure
         assert argv is not None and env is not None
+
+        return self._execute_engine(
+            argv, env, stdout_sink, stderr_sink, sample_limit, timeout_seconds
+        )
+
+    def _execute_engine(
+        self,
+        argv: Sequence[str],
+        env: dict,
+        stdout_sink: OutputSink,
+        stderr_sink: OutputSink,
+        sample_limit: int,
+        timeout_seconds: Optional[float],
+    ) -> CommandResult:
 
         try:
             process = subprocess.Popen(

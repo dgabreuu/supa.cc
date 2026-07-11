@@ -275,6 +275,36 @@ def test_active_account_store_returns_none_when_missing(tmp_path):
     assert ActiveAccountStore(path=tmp_path / "missing").read() is None
 
 
+def test_active_account_store_clear_is_idempotent(tmp_path):
+    path = tmp_path / "active-account"
+    path.write_text("work\n", encoding="utf-8")
+    store = ActiveAccountStore(path=path)
+
+    store.clear()
+    store.clear()
+
+    assert path.exists() is False
+
+
+@pytest.mark.parametrize(
+    "failure,expected_exception",
+    [
+        (PermissionError("private path"), ActiveAccountPermissionDeniedError),
+        (OSError("private path"), ActiveAccountWriteError),
+    ],
+)
+def test_active_account_store_clear_maps_unlink_failures(
+    tmp_path, monkeypatch, failure, expected_exception
+):
+    store = ActiveAccountStore(path=tmp_path / "active-account")
+    monkeypatch.setattr(Path, "unlink", lambda *_args, **_kwargs: (_ for _ in ()).throw(failure))
+
+    with pytest.raises(expected_exception) as raised:
+        store.clear()
+
+    assert "private" not in str(raised.value)
+
+
 @pytest.mark.parametrize(
     "failure,expected_exception",
     [

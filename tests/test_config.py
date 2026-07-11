@@ -78,6 +78,55 @@ def test_validate_access_token_uses_projects_list_and_copied_environment(tmp_pat
     assert token not in popen.call_args.args[0]
 
 
+def test_login_passes_token_only_in_child_environment(tmp_path):
+    token = fake_pat("native-login")
+    binary = str(tmp_path / "supabase")
+    config = SupabaseConfig(binary_resolver=lambda _: binary)
+    account = Account(name="work", token=token)
+
+    with patch.dict(
+        "supa_cc.config.os.environ", {"PARENT": "yes"}, clear=True
+    ), patch(
+        "supa_cc.config.subprocess.Popen", return_value=_process()
+    ) as popen:
+        result = config.login_with_access_token(account)
+
+    assert popen.call_args.args[0] == [os.path.realpath(binary), "login"]
+    assert token not in popen.call_args.args[0]
+    assert popen.call_args.kwargs["env"] == {
+        "PARENT": "yes",
+        "SUPABASE_ACCESS_TOKEN": token,
+    }
+    assert result.ok is True
+
+
+@pytest.mark.parametrize(
+    "method,arguments",
+    [
+        ("verify_persisted_session", ["projects", "list"]),
+        ("logout_session", ["logout", "--yes"]),
+    ],
+)
+def test_native_commands_remove_inherited_environment_override(
+    tmp_path, method, arguments
+):
+    binary = str(tmp_path / "supabase")
+    config = SupabaseConfig(binary_resolver=lambda _: binary)
+
+    with patch.dict(
+        "supa_cc.config.os.environ",
+        {"PARENT": "yes", "SUPABASE_ACCESS_TOKEN": fake_pat("inherited")},
+        clear=True,
+    ), patch(
+        "supa_cc.config.subprocess.Popen", return_value=_process()
+    ) as popen:
+        result = getattr(config, method)()
+
+    assert popen.call_args.args[0] == [os.path.realpath(binary), *arguments]
+    assert popen.call_args.kwargs["env"] == {"PARENT": "yes"}
+    assert result.ok is True
+
+
 def test_validate_access_token_does_not_run_when_token_is_missing(tmp_path):
     config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
 
