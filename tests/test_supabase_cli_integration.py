@@ -1,15 +1,20 @@
 import os
+import json
+import hashlib
 import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from supa_cc.auth import AuthFailureCode
+from supa_cc.auth import ActiveAccountStore, AuthFailureCode
+from supa_cc.accounts import AccountManager
 from supa_cc.config import SupabaseConfig
+from supa_cc.keychain import KeychainManager
 from supa_cc.models import Account
+from supa_cc.native_session import NativeSessionSynchronizer, SessionSyncJournal
 
-from helpers import fake_pat
+from helpers import FakeCredentialStore, fake_pat
 
 
 def _fake_cli(tmp_path: Path, body: str, name: str = "supabase") -> Path:
@@ -23,6 +28,196 @@ def _fake_cli(tmp_path: Path, body: str, name: str = "supabase") -> Path:
     )
     executable.chmod(0o700)
     return executable
+
+
+def _stateful_fake_cli(tmp_path: Path) -> tuple[Path, Path, Path]:
+    state_path = tmp_path / "fake-cli-state.json"
+    control_path = tmp_path / "fake-cli-control.json"
+    control_path.write_text("{}", encoding="utf-8")
+    executable = _fake_cli(
+        tmp_path,
+        """
+import hashlib, json
+from pathlib import Path
+
+state_path = Path(os.environ['FAKE_SUPABASE_STATE'])
+control_path = Path(os.environ['FAKE_SUPABASE_CONTROL'])
+state = json.loads(state_path.read_text()) if state_path.exists() else {'events': []}
+control = json.loads(control_path.read_text())
+token = os.environ.get('SUPABASE_ACCESS_TOKEN')
+fingerprint = hashlib.sha256(token.encode()).hexdigest() if token else None
+event = {'argv': sys.argv[1:], 'has_access_token': token is not None}
+state['events'].append(event)
+
+if sys.argv[1:] == ['login']:
+    if not token or control.get('fail_login_fingerprint') == fingerprint:
+        state_path.write_text(json.dumps(state))
+        sys.exit(1)
+    state['session_fingerprint'] = fingerprint
+    if control.get('force_plaintext_fallback'):
+        fallback = Path(os.environ['SUPABASE_HOME']) / 'access-token'
+        fallback.parent.mkdir(parents=True, exist_ok=True)
+        fallback.write_text('synthetic-fallback')
+elif sys.argv[1:] == ['logout', '--yes']:
+    state.pop('session_fingerprint', None)
+elif sys.argv[1:] == ['projects', 'list']:
+    effective = fingerprint or state.get('session_fingerprint')
+    if not effective:
+        state_path.write_text(json.dumps(state))
+        sys.stderr.write('access token not provided\\n')
+        sys.exit(1)
+    if not token and control.get('fail_verify_fingerprint') == effective:
+        state_path.write_text(json.dumps(state))
+        sys.stderr.write('HTTP 401 Unauthorized\\n')
+        sys.exit(1)
+else:
+    state_path.write_text(json.dumps(state))
+    sys.exit(2)
+
+state_path.write_text(json.dumps(state))
+""",
+    )
+    return executable, state_path, control_path
+
+
+def _integration_manager(tmp_path, monkeypatch):
+    executable, state_path, control_path = _stateful_fake_cli(tmp_path)
+    supabase_home = tmp_path / "supabase-home"
+    monkeypatch.setenv("FAKE_SUPABASE_STATE", str(state_path))
+    monkeypatch.setenv("FAKE_SUPABASE_CONTROL", str(control_path))
+    monkeypatch.setenv("SUPABASE_HOME", str(supabase_home))
+    monkeypatch.delenv("SUPABASE_ACCESS_TOKEN", raising=False)
+    config = SupabaseConfig(binary_resolver=lambda _: str(executable))
+    journal = SessionSyncJournal(tmp_path / "config" / "session-sync.json")
+    manager = AccountManager(
+        keychain=KeychainManager(
+            index_path=tmp_path / "config" / "accounts.json",
+            credential_store=FakeCredentialStore(),
+        ),
+        config=config,
+        active_store=ActiveAccountStore(tmp_path / "config" / "active-account"),
+        native_session=NativeSessionSynchronizer(
+            config, env={}, supabase_home=supabase_home, journal=journal
+        ),
+        sync_journal=journal,
+    )
+    return manager, config, state_path, control_path, supabase_home
+
+
+def _fake_state(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _set_fake_control(path, **values):
+    path.write_text(json.dumps(values), encoding="utf-8")
+
+
+def test_native_sync_first_selection_switch_and_direct_command(tmp_path, monkeypatch):
+    manager, config, state_path, _, _ = _integration_manager(tmp_path, monkeypatch)
+    work_token = fake_pat("native-work")
+    personal_token = fake_pat("native-personal")
+    manager.add("work", work_token)
+    manager.add("personal", personal_token)
+
+    assert manager.set_active("work").ok
+    assert manager.set_active("personal").ok
+    direct = config.execute_authenticated(
+        Account("personal", personal_token), ["projects", "list"]
+    )
+
+    state = _fake_state(state_path)
+    assert direct.ok
+    assert manager.active_store.read() == "personal"
+    assert state["session_fingerprint"] != work_token
+    login_events = [event for event in state["events"] if event["argv"] == ["login"]]
+    assert len(login_events) == 2
+    assert all(work_token not in event["argv"] for event in state["events"])
+    assert all(personal_token not in event["argv"] for event in state["events"])
+    persisted_checks = [
+        event
+        for event in state["events"]
+        if event["argv"] == ["projects", "list"] and not event["has_access_token"]
+    ]
+    assert len(persisted_checks) == 2
+    assert any(
+        event["argv"] == ["projects", "list"] and event["has_access_token"]
+        for event in state["events"]
+    )
+
+
+def test_native_sync_failed_switch_rolls_back_previous_session(tmp_path, monkeypatch):
+    manager, _, state_path, control_path, _ = _integration_manager(tmp_path, monkeypatch)
+    old_token = fake_pat("rollback-old")
+    target_token = fake_pat("rollback-target")
+    manager.add("old", old_token)
+    manager.add("target", target_token)
+    assert manager.set_active("old").ok
+    _set_fake_control(
+        control_path,
+        fail_verify_fingerprint=hashlib.sha256(target_token.encode()).hexdigest(),
+    )
+
+    result = manager.set_active("target")
+
+    state = _fake_state(state_path)
+    assert not result.ok
+    assert manager.active_store.read() == "old"
+    assert state["session_fingerprint"] == hashlib.sha256(old_token.encode()).hexdigest()
+    assert [event["argv"] for event in state["events"]].count(["login"]) == 3
+    assert manager.sync_journal.read() is None
+
+
+def test_native_sync_active_removal_logs_out_and_clears_selection(tmp_path, monkeypatch):
+    manager, _, state_path, _, _ = _integration_manager(tmp_path, monkeypatch)
+    manager.add("work", fake_pat("remove-active"))
+    assert manager.set_active("work").ok
+
+    manager.remove("work")
+
+    state = _fake_state(state_path)
+    assert manager.active_store.read() is None
+    assert manager.get("work") is None
+    assert "session_fingerprint" not in state
+    assert ["logout", "--yes"] in [event["argv"] for event in state["events"]]
+
+
+def test_native_sync_crash_recovery_completes_verified_activation(tmp_path, monkeypatch):
+    manager, _, state_path, _, _ = _integration_manager(tmp_path, monkeypatch)
+    manager.add("old", fake_pat("recovery-old"))
+    manager.add("target", fake_pat("recovery-target"))
+    assert manager.set_active("old").ok
+    target = manager.get("target")
+    assert target is not None
+    assert manager.native_session.activate(target).ok
+    manager.sync_journal.write("activate", "target", "old", "native_verified")
+
+    result = manager.recover_pending_sync()
+
+    assert result.ok
+    assert manager.active_store.read() == "target"
+    assert manager.sync_journal.read() is None
+    assert _fake_state(state_path)["events"][-1] == {
+        "argv": ["projects", "list"],
+        "has_access_token": False,
+    }
+
+
+def test_native_sync_blocks_and_removes_forced_plaintext_fallback(tmp_path, monkeypatch):
+    manager, _, state_path, control_path, supabase_home = _integration_manager(
+        tmp_path, monkeypatch
+    )
+    token = fake_pat("forced-plaintext")
+    manager.add("work", token)
+    _set_fake_control(control_path, force_plaintext_fallback=True)
+
+    result = manager.set_active("work")
+
+    assert result.code is AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED
+    assert manager.active_store.read() is None
+    assert not (supabase_home / "access-token").exists()
+    state = _fake_state(state_path)
+    assert token not in state_path.read_text(encoding="utf-8")
+    assert all(token not in event["argv"] for event in state["events"])
 
 
 @pytest.mark.parametrize(

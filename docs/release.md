@@ -31,6 +31,7 @@ Em seguida execute:
 
 ```bash
 python3 -m pip install -e ".[dev]"
+python3 -m pytest tests/test_supabase_cli_integration.py -v
 python3 -m pytest
 python3 -m pytest -m "not real_keychain and not real_secret_service"
 SUPA_CC_REAL_SECRET_SERVICE=1 python3 -m pytest -m real_secret_service -v
@@ -39,6 +40,8 @@ ls dist/
 ```
 
 Valide também que a versão mínima suportada do Supabase CLI oferece os comandos públicos `login`, `logout --yes` e `projects list`. O fluxo de sincronização depende dessas capacidades e deve bloquear fallback de token plaintext.
+
+A suíte de integração usa somente uma Supabase CLI falsa e PATs sintéticos. Antes da release, confirme que ela cobre seleção inicial, troca e rollback de conta, remoção da conta ativa, recuperação após interrupção e fallback plaintext forçado; o token de `login` não pode aparecer em `argv`, e a verificação direta de `projects list` não pode receber `SUPABASE_ACCESS_TOKEN`.
 
 `python3 -m build` deve gerar uma wheel e um sdist em `dist/`. Execute os jobs de teste em Linux suportado (Debian/Ubuntu, Arch Linux e Fedora) além do macOS antes da release. Os smoke tests de Keychain e Secret Service são opt-in e não entram no job padrão sem um serviço real e consentimento explícito. O smoke de Secret Service pula com segurança caso o serviço não esteja disponível.
 
