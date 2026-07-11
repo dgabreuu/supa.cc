@@ -111,14 +111,20 @@ def create_credential_store(
 def _create_backend(backend_name: str):
     try:
         if backend_name == _MACOS_BACKEND_NAME:
-            return _create_macos_backend()
-        if backend_name == _SECRET_SERVICE_BACKEND_NAME:
-            return _create_secret_service_backend()
+            backend = _create_macos_backend()
+            expected_backend_type = macOS.Keyring
+        elif backend_name == _SECRET_SERVICE_BACKEND_NAME:
+            backend = _create_secret_service_backend()
+            expected_backend_type = SecretService.Keyring
+        else:
+            raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
     except Exception:
         raise CredentialAccessError(
             _CREDENTIAL_STORE_UNAVAILABLE_MESSAGE
         ) from None
-    raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
+    if not isinstance(backend, expected_backend_type):
+        raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
+    return backend
 
 
 def _create_macos_backend():

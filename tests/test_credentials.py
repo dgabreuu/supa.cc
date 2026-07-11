@@ -23,13 +23,18 @@ from helpers import fake_pat
 
 
 class FakeKeyring:
+    priority = 5
+    instances = []
+    next_get_error = None
+
     def __init__(self):
         self.passwords = {}
         self.calls = []
-        self.get_error = None
+        self.get_error = type(self).next_get_error
         self.set_error = None
         self.delete_error = None
         self.read_back = None
+        type(self).instances.append(self)
 
     def get_password(self, service, name):
         self.calls.append(("get", service, name))
@@ -52,20 +57,26 @@ class FakeKeyring:
         self.passwords.pop((service, name), None)
 
 
+class FakeSecretServiceKeyring(FakeKeyring):
+    instances = []
+    next_get_error = None
+
+
+class FakeMacOSKeyring(FakeKeyring):
+    instances = []
+    next_get_error = None
+
+
 @pytest.fixture
 def fake_secret_service(monkeypatch):
-    fake = FakeKeyring()
+    FakeSecretServiceKeyring.instances.clear()
+    FakeSecretServiceKeyring.next_get_error = None
     monkeypatch.setattr(
-        credentials,
-        "_create_secret_service_backend",
-        lambda: fake,
+        credentials.SecretService,
+        "Keyring",
+        FakeSecretServiceKeyring,
     )
-    monkeypatch.setattr(
-        credentials,
-        "_probe_secret_service_provider",
-        lambda: None,
-    )
-    return fake
+    return FakeSecretServiceKeyring
 
 
 def linux_environment():
@@ -74,14 +85,16 @@ def linux_environment():
 
 def test_linux_selects_only_secret_service_backend(fake_secret_service):
     store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
 
     assert store.backend_name == "keyring.backends.SecretService.Keyring"
+    assert isinstance(store._backend, credentials.SecretService.Keyring)
     assert store.status() == CredentialStoreStatus(
         backend_name="keyring.backends.SecretService.Keyring",
         available=True,
     )
-    assert len(fake_secret_service.calls) == 1
-    operation, service, name = fake_secret_service.calls[0]
+    assert len(fake.calls) == 1
+    operation, service, name = fake.calls[0]
     assert operation == "get"
     assert service != "supa.cc.supabase.accounts.v2"
     assert service.startswith("supa.cc.probe.")
@@ -89,23 +102,40 @@ def test_linux_selects_only_secret_service_backend(fake_secret_service):
 
 
 def test_darwin_selects_only_macos_backend(monkeypatch):
-    fake_macos_keyring = FakeKeyring()
+    FakeMacOSKeyring.instances.clear()
     monkeypatch.setattr(
-        credentials,
-        "_create_macos_backend",
-        lambda: fake_macos_keyring,
+        credentials.macOS,
+        "Keyring",
+        FakeMacOSKeyring,
     )
 
     store = create_credential_store(detect_environment(system_name="Darwin"))
+    fake = FakeMacOSKeyring.instances[0]
+    account = Account(name="mac", token=fake_pat("mac-routing"))
 
     assert store.backend_name == "keyring.backends.macOS.Keyring"
+    assert isinstance(store._backend, credentials.macOS.Keyring)
+    assert store.status().available is True
+    store.set(account)
+    assert store.get(account.name) == account.token
+    store.delete(account.name)
+    assert fake.calls == [
+        ("set", "supa.cc.supabase.accounts.v2", account.name, account.token),
+        ("get", "supa.cc.supabase.accounts.v2", account.name),
+        ("get", "supa.cc.supabase.accounts.v2", account.name),
+        ("delete", "supa.cc.supabase.accounts.v2", account.name),
+    ]
 
 
 def test_linux_rejects_unavailable_secret_service(monkeypatch):
+    class RaisingSecretServiceKeyring:
+        def __init__(self):
+            raise RuntimeError("fake backend detail")
+
     monkeypatch.setattr(
-        credentials,
-        "_create_secret_service_backend",
-        lambda: (_ for _ in ()).throw(RuntimeError("fake backend detail")),
+        credentials.SecretService,
+        "Keyring",
+        RaisingSecretServiceKeyring,
     )
 
     with pytest.raises(CredentialAccessError) as raised:
@@ -120,6 +150,48 @@ def test_credential_store_factory_has_no_backend_injection_parameters():
     assert list(inspect.signature(create_credential_store).parameters) == ["environment"]
 
 
+class PlaintextBackend:
+    def __init__(self):
+        self.calls = []
+
+    def get_password(self, *_args):
+        self.calls.append("get")
+
+    def set_password(self, *_args):
+        self.calls.append("set")
+
+
+class FailBackend(PlaintextBackend):
+    pass
+
+
+class AlternativeBackend(PlaintextBackend):
+    pass
+
+
+@pytest.mark.parametrize(
+    "backend",
+    [None, PlaintextBackend(), FailBackend(), AlternativeBackend()],
+    ids=["null", "plaintext", "fail", "alternative"],
+)
+def test_linux_rejects_invalid_private_construction_results(monkeypatch, backend):
+    monkeypatch.setattr(
+        credentials,
+        "_create_secret_service_backend",
+        lambda: backend,
+    )
+    monkeypatch.setattr(
+        credentials,
+        "_probe_secret_service_provider",
+        lambda: None,
+    )
+
+    with pytest.raises(CredentialAccessError):
+        create_credential_store(linux_environment())
+
+    assert backend is None or backend.calls == []
+
+
 def test_unavailable_provider_reports_safe_remediation(
     fake_secret_service, monkeypatch
 ):
@@ -130,6 +202,7 @@ def test_unavailable_provider_reports_safe_remediation(
     )
 
     store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
 
     status = store.status()
 
@@ -137,7 +210,7 @@ def test_unavailable_provider_reports_safe_remediation(
     assert "D-Bus" in status.message
     assert "desbloqueie" in status.message
     assert "detail" not in status.message
-    assert fake_secret_service.calls == []
+    assert fake.calls == []
 
 
 @pytest.mark.parametrize(
@@ -148,9 +221,10 @@ def test_unavailable_provider_reports_safe_remediation(
 def test_unavailable_collection_reports_safe_remediation(
     fake_secret_service, probe_error
 ):
-    fake_secret_service.get_error = probe_error
+    fake_secret_service.next_get_error = probe_error
 
     store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
 
     status = store.status()
 
@@ -158,13 +232,14 @@ def test_unavailable_collection_reports_safe_remediation(
     assert "D-Bus" in status.message
     assert "desbloqueie" in status.message
     assert "detail" not in status.message
-    assert len(fake_secret_service.calls) == 1
-    assert fake_secret_service.calls[0][1] != "supa.cc.supabase.accounts.v2"
+    assert len(fake.calls) == 1
+    assert fake.calls[0][1] != "supa.cc.supabase.accounts.v2"
 
 
 def test_unavailable_store_blocks_writes_before_token_access(fake_secret_service):
-    fake_secret_service.get_error = PermissionError("permission detail")
+    fake_secret_service.next_get_error = PermissionError("permission detail")
     store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
     account = Account(name="work", token=fake_pat("unavailable"))
 
     with pytest.raises(CredentialAccessError) as raised:
@@ -172,19 +247,20 @@ def test_unavailable_store_blocks_writes_before_token_access(fake_secret_service
 
     assert "D-Bus" in str(raised.value)
     assert account.token not in str(raised.value)
-    assert [call[0] for call in fake_secret_service.calls] == ["get"]
+    assert [call[0] for call in fake.calls] == ["get"]
 
 
 def test_store_uses_the_selected_fake_for_every_operation(fake_secret_service):
     store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
     account = Account(name="work", token=fake_pat("credential-store"))
 
-    fake_secret_service.calls.clear()
+    fake.calls.clear()
     store.set(account)
     assert store.get(account.name) == account.token
     store.delete(account.name)
 
-    assert fake_secret_service.calls == [
+    assert fake.calls == [
         ("set", "supa.cc.supabase.accounts.v2", account.name, account.token),
         ("get", "supa.cc.supabase.accounts.v2", account.name),
         ("get", "supa.cc.supabase.accounts.v2", account.name),
@@ -205,8 +281,9 @@ def test_store_normalizes_read_errors_without_backend_details(
     fake_secret_service, failure, expected_exception
 ):
     store = create_credential_store(linux_environment())
-    fake_secret_service.calls.clear()
-    fake_secret_service.get_error = failure
+    fake = fake_secret_service.instances[0]
+    fake.calls.clear()
+    fake.get_error = failure
 
     with pytest.raises(expected_exception) as raised:
         store.get("work")
@@ -216,8 +293,9 @@ def test_store_normalizes_read_errors_without_backend_details(
 
 def test_store_tolerates_only_a_recognized_missing_delete(fake_secret_service):
     store = create_credential_store(linux_environment())
-    fake_secret_service.calls.clear()
-    fake_secret_service.delete_error = PasswordDeleteError("Item not found")
+    fake = fake_secret_service.instances[0]
+    fake.calls.clear()
+    fake.delete_error = PasswordDeleteError("Item not found")
 
     store.delete("missing")
 
@@ -225,8 +303,9 @@ def test_store_tolerates_only_a_recognized_missing_delete(fake_secret_service):
 def test_store_rejects_read_back_mismatch_without_exposing_token(fake_secret_service):
     account = Account(name="work", token=fake_pat("expected-token"))
     store = create_credential_store(linux_environment())
-    fake_secret_service.calls.clear()
-    fake_secret_service.read_back = fake_pat("other-token")
+    fake = fake_secret_service.instances[0]
+    fake.calls.clear()
+    fake.read_back = fake_pat("other-token")
 
     with pytest.raises(CredentialReadError) as raised:
         store.set(account)
