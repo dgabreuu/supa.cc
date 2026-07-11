@@ -85,6 +85,16 @@ class CredentialReadError(CredentialAccessError):
     """The credential could not be read or verified."""
 
 
+class SecretServiceUnavailableError(CredentialAccessError):
+    """Linux Secret Service cannot be used for the requested operation."""
+
+    def __init__(self):
+        super().__init__(
+            "O Secret Service não está disponível. Verifique o D-Bus e "
+            "desbloqueie o Secret Service."
+        )
+
+
 class KeychainAccessError(CredentialAccessError):
     """Base segura para falhas de acesso ao Keychain."""
 
@@ -211,6 +221,11 @@ def classify_local_failure(error: BaseException) -> AuthResult:
         return AuthResult.failure(
             AuthFailureCode.KEYCHAIN_READ_FAILED,
             "Não foi possível acessar a credencial no armazenamento de credenciais.",
+        )
+    if isinstance(error, SecretServiceUnavailableError):
+        return AuthResult.failure(
+            AuthFailureCode.KEYCHAIN_READ_FAILED,
+            str(error),
         )
     if isinstance(error, CredentialAccessError):
         return AuthResult.failure(

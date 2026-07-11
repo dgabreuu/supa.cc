@@ -10,6 +10,7 @@ from supa_cc.auth import (
     CredentialAccessError,
     CredentialPermissionDeniedError,
     CredentialReadError,
+    SecretServiceUnavailableError,
 )
 from supa_cc.environment import Environment, OperatingSystem
 from supa_cc.models import Account
@@ -61,7 +62,7 @@ class CredentialStore:
         try:
             return self._backend.get_password(self.service, name)
         except Exception as error:
-            _raise_credential_operation_error(error)
+            _raise_credential_operation_error(error, self.backend_name)
 
     def set(self, account: Account) -> None:
         self._require_available()
@@ -73,7 +74,7 @@ class CredentialStore:
             )
             saved_token = self._backend.get_password(self.service, account.name)
         except Exception as error:
-            _raise_credential_operation_error(error)
+            _raise_credential_operation_error(error, self.backend_name)
 
         if not isinstance(saved_token, str) or not hmac.compare_digest(
             account.token,
@@ -90,7 +91,7 @@ class CredentialStore:
         except Exception as error:
             if _is_missing_credential(error):
                 return
-            _raise_credential_operation_error(error)
+            _raise_credential_operation_error(error, self.backend_name)
 
     def _require_available(self) -> None:
         if not self._status.available:
@@ -169,7 +170,12 @@ def _unavailable_message(backend_name: str) -> str:
     return _CREDENTIAL_STORE_UNAVAILABLE_MESSAGE
 
 
-def _raise_credential_operation_error(error: BaseException) -> None:
+def _raise_credential_operation_error(
+    error: BaseException,
+    backend_name: str,
+) -> None:
+    if backend_name == _SECRET_SERVICE_BACKEND_NAME:
+        raise SecretServiceUnavailableError() from None
     message = str(error).lower()
     if isinstance(error, (KeyringLocked, PermissionError)) or any(
         marker in message for marker in _PERMISSION_ERROR_MARKERS

@@ -326,26 +326,86 @@ def test_store_routes_operations_to_an_explicit_service(fake_secret_service):
 
 
 @pytest.mark.parametrize(
-    "failure,expected_exception",
+    "failure",
     [
-        (KeyringLocked("fake backend detail"), StorePermissionDeniedError),
-        (PermissionError("fake backend detail"), StorePermissionDeniedError),
-        (KeyringError("fake backend detail"), CredentialReadError),
+        KeyringLocked("fake backend detail"),
+        PermissionError("fake backend detail"),
+        KeyringError("fake backend detail"),
     ],
     ids=["locked", "permission", "keyring"],
 )
 def test_store_normalizes_read_errors_without_backend_details(
-    fake_secret_service, failure, expected_exception
+    fake_secret_service, failure
 ):
     store = create_credential_store(linux_environment())
     fake = fake_secret_service.instances[0]
     fake.calls.clear()
     fake.get_error = failure
 
-    with pytest.raises(expected_exception) as raised:
+    with pytest.raises(CredentialAccessError) as raised:
         store.get("work")
 
     assert "fake backend detail" not in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "operation,failure",
+    [
+        ("get", KeyringError("D-Bus disconnected backend detail")),
+        ("set", KeyringLocked("locked backend detail")),
+        ("delete", PermissionError("permission backend detail")),
+    ],
+    ids=["get-disconnected", "set-locked", "delete-permission"],
+)
+def test_linux_post_probe_failures_keep_secret_service_remediation_public(
+    fake_secret_service, operation, failure
+):
+    store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
+    account = Account(name="work", token=fake_pat("post-probe"))
+
+    fake.calls.clear()
+    setattr(fake, f"{operation}_error", failure)
+
+    with pytest.raises(CredentialAccessError) as raised:
+        if operation == "get":
+            store.get(account.name)
+        elif operation == "set":
+            store.set(account)
+        else:
+            store.delete(account.name)
+
+    result = classify_local_failure(raised.value)
+    expected_message = (
+        "O Secret Service não está disponível. Verifique o D-Bus e desbloqueie "
+        "o Secret Service."
+    )
+
+    assert str(raised.value) == expected_message
+    assert result.code is AuthFailureCode.KEYCHAIN_READ_FAILED
+    assert result.message == expected_message
+    assert "D-Bus" in result.message
+    assert "desbloqueie" in result.message
+    assert "backend detail" not in result.message
+    assert account.token not in result.message
+
+
+def test_macos_operation_failures_keep_neutral_credential_message(monkeypatch):
+    FakeMacOSKeyring.instances.clear()
+    monkeypatch.setattr(credentials.macOS, "Keyring", FakeMacOSKeyring)
+    store = create_credential_store(detect_environment(system_name="Darwin"))
+    fake = FakeMacOSKeyring.instances[0]
+    fake.get_error = KeyringLocked("locked backend detail")
+
+    with pytest.raises(StorePermissionDeniedError) as raised:
+        store.get("work")
+
+    result = classify_local_failure(raised.value)
+
+    assert result.code is AuthFailureCode.KEYCHAIN_PERMISSION_DENIED
+    assert result.message == "Acesso ao armazenamento de credenciais não autorizado."
+    assert "D-Bus" not in result.message
+    assert "backend detail" not in result.message
 
 
 def test_store_tolerates_only_a_recognized_missing_delete(fake_secret_service):
