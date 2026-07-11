@@ -126,9 +126,12 @@ def test_native_sync_first_selection_switch_and_direct_command(tmp_path, monkeyp
     )
 
     state = _fake_state(state_path)
+    work_fingerprint = hashlib.sha256(work_token.encode()).hexdigest()
+    personal_fingerprint = hashlib.sha256(personal_token.encode()).hexdigest()
     assert direct.ok
     assert manager.active_store.read() == "personal"
-    assert state["session_fingerprint"] != work_token
+    assert state["session_fingerprint"] == personal_fingerprint
+    assert state["session_fingerprint"] != work_fingerprint
     login_events = [event for event in state["events"] if event["argv"] == ["login"]]
     assert len(login_events) == 2
     assert all(work_token not in event["argv"] for event in state["events"])
