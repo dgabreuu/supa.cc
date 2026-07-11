@@ -12,9 +12,17 @@ from .models import Account
 
 _OPERATIONS = frozenset(("activate", "logout"))
 _PHASES = frozenset(
-    ("intent", "native_login", "native_verified", "local_write", "verified", "rollback")
+    (
+        "intent",
+        "credential_backup",
+        "native_login",
+        "native_verified",
+        "local_write",
+        "verified",
+        "rollback",
+    )
 )
-_LOGOUT_PHASES = _PHASES - {"native_login"}
+_LOGOUT_PHASES = _PHASES - {"credential_backup", "native_login"}
 
 
 def access_token_fallback_path(env=None, home=None) -> Path:
@@ -174,6 +182,9 @@ class NativeSessionSynchronizer:
         return AuthResult.success("Conta ativada e sessão nativa sincronizada.")
 
     def logout(self) -> AuthResult:
+        verification = self.config.verify_persisted_session()
+        if not verification.ok and verification.code is AuthFailureCode.TOKEN_MISSING:
+            return AuthResult.success("Sessão nativa encerrada.")
         result = self.config.logout_session()
         if not result.ok:
             return result

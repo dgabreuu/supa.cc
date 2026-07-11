@@ -198,6 +198,10 @@ class AccountManager:
             return
         try:
             self.sync_journal.write("activate", account.name, account.name, "intent")
+            self.keychain.create_account_backup(account.name)
+            self.sync_journal.write(
+                "activate", account.name, account.name, "credential_backup"
+            )
             self.keychain.add_account(account)
             self.sync_journal.write(
                 "activate", account.name, account.name, "native_login"
@@ -206,20 +210,8 @@ class AccountManager:
         except Exception:
             activation = self._pending_sync_failure()
         if not activation.ok:
-            try:
-                self.keychain.save_account(previous)
-            except Exception:
-                try:
-                    self.sync_journal.write(
-                        "activate", account.name, account.name, "rollback"
-                    )
-                except (OSError, ValueError):
-                    pass
-                raise AccountTransactionError(
-                    "A atualização falhou e a credencial anterior não pôde ser restaurada."
-                ) from None
-            rollback = self._compensate(account.name, account.name, activation)
-            if rollback.code is AuthFailureCode.SYNC_ROLLBACK_FAILED:
+            rollback = self._rollback_active_replacement(account.name)
+            if not rollback.ok:
                 raise AccountTransactionError(rollback.message)
             raise AccountTransactionError(
                 "A conta ativa não pôde ser sincronizada; a sessão anterior foi restaurada."
@@ -229,9 +221,33 @@ class AccountManager:
                 "activate", account.name, account.name, "native_verified"
             )
             self.sync_journal.write("activate", account.name, account.name, "verified")
+            self.keychain.delete_account_backup(account.name)
             self.sync_journal.clear()
-        except (OSError, ValueError):
+        except Exception:
             raise AccountTransactionError(self._pending_sync_failure().message) from None
+
+    def _rollback_active_replacement(self, name: str) -> AuthResult:
+        try:
+            self.sync_journal.write("activate", name, name, "rollback")
+            self.keychain.restore_account_backup(name)
+            previous = self.keychain.read_account_backup(name)
+            if previous is None:
+                return self._pending_sync_failure()
+            activation = self.native_session.activate(previous)
+            if not activation.ok:
+                return AuthResult.failure(
+                    AuthFailureCode.SYNC_ROLLBACK_FAILED,
+                    "A sincronização falhou e a sessão anterior não pôde ser restaurada.",
+                )
+            self.active_store.write(name)
+            self.keychain.delete_account_backup(name)
+            self.sync_journal.clear()
+        except Exception:
+            return AuthResult.failure(
+                AuthFailureCode.SYNC_ROLLBACK_FAILED,
+                "A sincronização falhou e a sessão anterior não pôde ser restaurada.",
+            )
+        return AuthResult.success("A credencial e a sessão anteriores foram restauradas.")
 
     def list(self) -> List[Account]:
         """Lista todas as contas."""
@@ -452,6 +468,26 @@ class AccountManager:
             return self._pending_sync_failure()
 
         phase = payload["phase"]
+        if payload["target_account"] == payload["previous_account"]:
+            try:
+                backup = self.keychain.read_account_backup(payload["target_account"])
+            except Exception:
+                return self._pending_sync_failure()
+            if phase == "verified":
+                try:
+                    self.keychain.delete_account_backup(payload["target_account"])
+                    self.sync_journal.clear()
+                except Exception:
+                    return self._pending_sync_failure()
+                return AuthResult.success("Atualização pendente confirmada.")
+            if backup is not None:
+                return self._rollback_active_replacement(payload["target_account"])
+            if phase == "intent":
+                try:
+                    self.sync_journal.clear()
+                except (OSError, ValueError):
+                    return self._pending_sync_failure()
+                return AuthResult.success("Atualização pendente cancelada.")
         if phase == "verified":
             try:
                 self.sync_journal.clear()

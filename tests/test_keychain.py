@@ -237,6 +237,52 @@ def test_save_account_replaces_credential_without_changing_index(tmp_path):
     assert [account.name for account in manager.list_accounts()] == ["work", "personal"]
 
 
+def test_secure_backup_round_trip_does_not_touch_index_or_cache_backup_name(tmp_path):
+    old = fake_pat("old")
+    replacement = fake_pat("replacement")
+    store = FakeCredentialStore()
+    store.tokens["work"] = old
+    manager = KeychainManager(
+        index_path=tmp_path / "accounts.json", credential_store=store
+    )
+    manager.update_index(["work"])
+
+    manager.create_account_backup("work")
+    store.tokens["work"] = replacement
+    manager.restore_account_backup("work")
+    manager.delete_account_backup("work")
+
+    assert store.tokens == {"work": old}
+    assert [account.name for account in manager.list_accounts()] == ["work"]
+    backup_names = {operation.split(":", 1)[1] for operation in store.operations if ":" in operation} - {"work"}
+    assert len(backup_names) == 1
+    assert all(not keychain.is_valid_account_name(name) for name in backup_names)
+    assert not any(name in manager._token_cache for name in backup_names)
+
+
+def test_backup_write_is_read_back_verified_and_failure_is_sanitized(tmp_path):
+    old = fake_pat("old_secret")
+    store = FakeCredentialStore()
+    store.tokens["work"] = old
+    manager = KeychainManager(
+        index_path=tmp_path / "accounts.json", credential_store=store
+    )
+    manager.update_index(["work"])
+    original_set = store.set
+
+    def discard_backup(account):
+        if account.name == "work":
+            original_set(account)
+
+    store.set = discard_backup
+
+    with pytest.raises(AccountTransactionError) as raised:
+        manager.create_account_backup("work")
+
+    assert old not in str(raised.value)
+    assert "work" not in str(raised.value)
+
+
 def test_update_index_does_not_overwrite_invalid_json(tmp_path):
     path = tmp_path / "accounts.json"
     path.write_text("not-json", encoding="utf-8")

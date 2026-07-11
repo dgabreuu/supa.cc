@@ -1,4 +1,5 @@
 import fcntl
+import hashlib
 import json
 import os
 import tempfile
@@ -151,6 +152,64 @@ class KeychainManager:
 
     def _delete_token(self, name: str) -> None:
         self.credential_store.delete(name)
+
+    @staticmethod
+    def _backup_name(name: str) -> str:
+        digest = hashlib.sha256(name.encode("utf-8")).hexdigest()
+        return f"!supa.cc-backup!{digest}"
+
+    def _backup_failure(self) -> AccountTransactionError:
+        return AccountTransactionError(
+            "A credencial temporária da transação não pôde ser confirmada com segurança."
+        )
+
+    def create_account_backup(self, name: str) -> None:
+        """Copia a credencial para armazenamento seguro fora do índice público."""
+        backup_name = self._backup_name(name)
+        try:
+            token = self._read_token_uncached(name)
+            if token is None:
+                raise self._backup_failure()
+            self._write_token_verified(Account(name=backup_name, token=token))
+            if self._read_token_uncached(backup_name) != token:
+                raise self._backup_failure()
+        except AccountTransactionError:
+            raise
+        except Exception:
+            raise self._backup_failure() from None
+
+    def read_account_backup(self, name: str) -> Optional[Account]:
+        try:
+            token = self._read_token_uncached(self._backup_name(name))
+        except Exception:
+            raise self._backup_failure() from None
+        return Account(name=name, token=token) if token is not None else None
+
+    def restore_account_backup(self, name: str) -> None:
+        backup = self.read_account_backup(name)
+        if backup is None:
+            raise self._backup_failure()
+        try:
+            self._token_cache.pop(name, None)
+            self._write_token_verified(backup)
+            if self._read_token_uncached(name) != backup.token:
+                raise self._backup_failure()
+            self._cache_token(name, backup.token)
+        except AccountTransactionError:
+            raise
+        except Exception:
+            raise self._backup_failure() from None
+
+    def delete_account_backup(self, name: str) -> None:
+        backup_name = self._backup_name(name)
+        try:
+            self._delete_token(backup_name)
+            if self._read_token_uncached(backup_name) is not None:
+                raise self._backup_failure()
+        except AccountTransactionError:
+            raise
+        except Exception:
+            raise self._backup_failure() from None
 
     def _cache_token(self, name: str, token: str) -> None:
         self._token_cache[name] = (token, self._clock())

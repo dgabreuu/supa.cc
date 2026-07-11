@@ -31,6 +31,27 @@ from helpers import (
     fake_pat,
 )
 from supa_cc.native_session import SessionSyncJournal
+from supa_cc.native_session import NativeSessionSynchronizer
+
+
+class InterruptingJournal:
+    def __init__(self, journal, write_call):
+        self.journal = journal
+        self.path = journal.path
+        self.write_call = write_call
+        self.calls = 0
+
+    def read(self):
+        return self.journal.read()
+
+    def write(self, *args):
+        self.calls += 1
+        if self.calls == self.write_call:
+            raise KeyboardInterrupt()
+        self.journal.write(*args)
+
+    def clear(self):
+        self.journal.clear()
 
 
 def test_default_stores_use_one_detected_environment(monkeypatch):
@@ -64,6 +85,18 @@ def test_default_stores_use_one_detected_environment(monkeypatch):
 
 
 class TestAccountManager:
+    def durable_manager(self, tmp_path, store, active_store, native_session, journal=None):
+        keychain = KeychainManager(
+            index_path=tmp_path / "accounts.json", credential_store=store
+        )
+        return AccountManager(
+            keychain=keychain,
+            config=Mock(),
+            active_store=active_store,
+            native_session=native_session,
+            sync_journal=journal or SessionSyncJournal(tmp_path / "session-sync.json"),
+        )
+
     def transactional_manager(self, tmp_path, previous=None):
         keychain = Mock()
         config = Mock()
@@ -77,6 +110,7 @@ class TestAccountManager:
             "old": Account(name="old", token=fake_pat("old")),
         }
         keychain.get_account.side_effect = accounts.get
+        keychain.read_account_backup.side_effect = accounts.get
         config.validate_access_token.return_value = AuthResult.success()
         manager = AccountManager(
             keychain=keychain,
@@ -555,8 +589,88 @@ class TestAccountManager:
         with pytest.raises(AccountTransactionError):
             manager.add("work", fake_pat("replacement"))
 
-        manager.keychain.save_account.assert_called_once_with(old)
+        manager.keychain.create_account_backup.assert_called_once_with("work")
+        manager.keychain.restore_account_backup.assert_called_once_with("work")
         assert manager.native_session.activate.call_args_list[-1] == call(old)
+        assert manager.sync_journal.read() is None
+
+    @pytest.mark.parametrize("write_call", [1, 2, 3, 4, 5])
+    def test_active_overwrite_restart_restores_old_pat_from_secure_backup(
+        self, tmp_path, write_call
+    ):
+        old = fake_pat("durable_old")
+        replacement = fake_pat("durable_replacement")
+        store = FakeCredentialStore()
+        active_store = MemoryActiveAccountStore("work")
+        native = Mock()
+        native.activate.return_value = AuthResult.success()
+        native.logout.return_value = AuthResult.success()
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(tmp_path, store, active_store, native, durable)
+        manager.keychain.add_account(Account("work", old))
+        manager.sync_journal = InterruptingJournal(durable, write_call=write_call)
+
+        with pytest.raises(KeyboardInterrupt):
+            manager.add("work", replacement)
+
+        restarted_native = Mock()
+        restarted_native.activate.return_value = AuthResult.success()
+        restarted = self.durable_manager(
+            tmp_path, store, active_store, restarted_native, durable
+        )
+        result = restarted.recover_pending_sync()
+
+        assert result.ok
+        assert restarted.get("work").token == old
+        if write_call == 1:
+            restarted_native.activate.assert_not_called()
+        else:
+            restarted_native.activate.assert_called_once_with(Account("work", old))
+        assert set(store.tokens) == {"work"}
+        assert not durable.path.exists()
+
+    def test_active_overwrite_restart_after_native_activation_restores_old_pat(self, tmp_path):
+        old = fake_pat("activation_old")
+        replacement = fake_pat("activation_replacement")
+        store = FakeCredentialStore()
+        active_store = MemoryActiveAccountStore("work")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        native = Mock()
+
+        def interrupt(account):
+            assert account.token == replacement
+            raise KeyboardInterrupt()
+
+        native.activate.side_effect = interrupt
+        manager = self.durable_manager(tmp_path, store, active_store, native, durable)
+        manager.keychain.add_account(Account("work", old))
+
+        with pytest.raises(KeyboardInterrupt):
+            manager.add("work", replacement)
+
+        restarted_native = Mock()
+        restarted_native.activate.return_value = AuthResult.success()
+        restarted = self.durable_manager(
+            tmp_path, store, active_store, restarted_native, durable
+        )
+        assert restarted.recover_pending_sync().ok
+        assert restarted.get("work").token == old
+        restarted_native.activate.assert_called_once_with(Account("work", old))
+        assert set(store.tokens) == {"work"}
+
+    def test_active_overwrite_success_removes_secure_backup(self, tmp_path):
+        store = FakeCredentialStore()
+        active_store = MemoryActiveAccountStore("work")
+        native = Mock()
+        native.activate.return_value = AuthResult.success()
+        manager = self.durable_manager(tmp_path, store, active_store, native)
+        manager.keychain.add_account(Account("work", fake_pat("old")))
+        replacement = fake_pat("committed")
+
+        manager.add("work", replacement)
+
+        assert manager.get("work").token == replacement
+        assert set(store.tokens) == {"work"}
         assert manager.sync_journal.read() is None
 
     def test_add_invalid_token(self):
@@ -647,6 +761,38 @@ class TestAccountManager:
             "previous_account": "work",
             "phase": "local_write",
         }
+
+    def test_active_removal_restart_after_logout_does_not_logout_twice(self, tmp_path):
+        store = FakeCredentialStore()
+        active_store = MemoryActiveAccountStore("work")
+        config = Mock()
+        session_present = [True]
+
+        def verify():
+            if session_present[0]:
+                return AuthResult.success()
+            return AuthResult.failure(AuthFailureCode.TOKEN_MISSING, "safe")
+
+        def logout():
+            session_present[0] = False
+            return AuthResult.success()
+
+        config.verify_persisted_session.side_effect = verify
+        config.logout_session.side_effect = logout
+        native = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path / "home")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(tmp_path, store, active_store, native, durable)
+        manager.keychain.add_account(Account("work", fake_pat("remove")))
+        manager.sync_journal = InterruptingJournal(durable, write_call=2)
+
+        with pytest.raises(KeyboardInterrupt):
+            manager.remove("work")
+
+        restarted = self.durable_manager(tmp_path, store, active_store, native, durable)
+        assert restarted.recover_pending_sync().ok
+        assert config.logout_session.call_count == 1
+        assert active_store.name is None
+        assert restarted.get("work") is None
 
     @pytest.mark.parametrize(
         "name",

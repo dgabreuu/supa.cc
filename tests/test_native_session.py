@@ -308,10 +308,13 @@ def test_activate_propagates_login_failure_without_verification(tmp_path):
 def test_logout_requires_successful_logout_and_failed_verification(tmp_path):
     config = Mock()
     config.logout_session.return_value = AuthResult.success("logout ok")
-    config.verify_persisted_session.return_value = AuthResult.failure(
-        AuthFailureCode.TOKEN_MISSING,
-        "Token de acesso não foi fornecido à Supabase CLI.",
-    )
+    config.verify_persisted_session.side_effect = [
+        AuthResult.success("active"),
+        AuthResult.failure(
+            AuthFailureCode.TOKEN_MISSING,
+            "Token de acesso não foi fornecido à Supabase CLI.",
+        ),
+    ]
     synchronizer = NativeSessionSynchronizer(
         config=config,
         env={},
@@ -323,11 +326,26 @@ def test_logout_requires_successful_logout_and_failed_verification(tmp_path):
 
     assert result.ok is True
     config.logout_session.assert_called_once_with()
+    assert config.verify_persisted_session.call_count == 2
+
+
+def test_logout_returns_success_without_destructive_call_when_already_logged_out(tmp_path):
+    config = Mock()
+    config.verify_persisted_session.return_value = AuthResult.failure(
+        AuthFailureCode.TOKEN_MISSING, "safe"
+    )
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
+
+    result = synchronizer.logout()
+
+    assert result.ok
+    config.logout_session.assert_not_called()
     config.verify_persisted_session.assert_called_once_with()
 
 
 def test_logout_failure_short_circuits_verification(tmp_path):
     config = Mock()
+    config.verify_persisted_session.return_value = AuthResult.success()
     failure = AuthResult.failure(AuthFailureCode.NATIVE_LOGOUT_FAILED, "safe")
     config.logout_session.return_value = failure
     synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
@@ -335,7 +353,7 @@ def test_logout_failure_short_circuits_verification(tmp_path):
     result = synchronizer.logout()
 
     assert result is failure
-    config.verify_persisted_session.assert_not_called()
+    config.verify_persisted_session.assert_called_once_with()
 
 
 def test_logout_fails_when_verification_remains_authenticated(tmp_path):
@@ -353,7 +371,7 @@ def test_logout_propagates_unrelated_verification_failure(tmp_path):
     config = Mock()
     config.logout_session.return_value = AuthResult.success()
     failure = AuthResult.failure(AuthFailureCode.NETWORK_FAILURE, "safe")
-    config.verify_persisted_session.return_value = failure
+    config.verify_persisted_session.side_effect = [AuthResult.success(), failure]
     synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
 
     result = synchronizer.logout()
