@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from supa_cc.environment import (
     LinuxDistribution,
     OperatingSystem,
@@ -38,11 +40,36 @@ def test_detect_environment_marks_missing_or_malformed_linux_release_unknown():
 
 
 def test_detect_environment_marks_other_operating_systems_unsupported():
-    environment = detect_environment(system_name="Windows")
+    environment = detect_environment(system_name="FreeBSD")
 
     assert environment.operating_system is OperatingSystem.UNSUPPORTED
     assert environment.distribution is None
     assert environment.is_supported is False
+
+
+def test_detect_environment_recognizes_windows():
+    environment = detect_environment(system_name="Windows")
+
+    assert environment.operating_system is OperatingSystem.WINDOWS
+    assert environment.distribution is None
+    assert environment.is_supported is True
+
+
+def test_windows_config_directory_uses_absolute_appdata(tmp_path):
+    environment = detect_environment(system_name="Windows")
+
+    assert environment.config_directory({"APPDATA": str(tmp_path)}) == (
+        tmp_path / "supa.cc"
+    )
+
+
+@pytest.mark.parametrize("appdata", [None, "", "relative/path"])
+def test_windows_config_directory_rejects_untrusted_appdata(appdata):
+    environment = detect_environment(system_name="Windows")
+    values = {} if appdata is None else {"APPDATA": appdata}
+
+    with pytest.raises(OSError, match="APPDATA"):
+        environment.config_directory(values)
 
 
 def test_linux_config_directory_honors_xdg_config_home(tmp_path):

@@ -6,19 +6,27 @@ from pathlib import Path
 from typing import Any, Optional
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 def ensure_parent(path: Path) -> Path:
     parent = Path(path).parent
     parent.mkdir(parents=True, exist_ok=True)
-    parent.chmod(0o700)
+    if not _is_windows():
+        parent.chmod(0o700)
     return parent
 
 
 def _validate_file(descriptor: int, max_bytes: Optional[int] = None):
     metadata = os.fstat(descriptor)
+    unsafe_posix_metadata = not _is_windows() and (
+        metadata.st_uid != os.getuid()
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+    )
     if (
         not stat.S_ISREG(metadata.st_mode)
-        or metadata.st_uid != os.getuid()
-        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or unsafe_posix_metadata
         or (max_bytes is not None and metadata.st_size > max_bytes)
     ):
         raise OSError("unsafe state file")
@@ -26,12 +34,18 @@ def _validate_file(descriptor: int, max_bytes: Optional[int] = None):
 
 
 def read_text(path: Path, max_bytes: int) -> Optional[str]:
+    path = Path(path)
     descriptor = None
     try:
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError("unsafe state file")
         descriptor = os.open(
-            Path(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         )
-        _validate_file(descriptor, max_bytes)
+        opened = _validate_file(descriptor, max_bytes)
+        if not os.path.samestat(opened, before):
+            raise OSError("unsafe state file")
         contents = os.read(descriptor, max_bytes + 1)
         if len(contents) > max_bytes:
             raise OSError("state file is too large")
@@ -70,7 +84,8 @@ def atomic_write_text(path: Path, contents: str) -> None:
         descriptor, temporary_path = tempfile.mkstemp(
             prefix=f".{path.name}.", dir=parent
         )
-        os.fchmod(descriptor, 0o600)
+        if not _is_windows():
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
             descriptor = None
             stream.write(contents)
@@ -78,7 +93,8 @@ def atomic_write_text(path: Path, contents: str) -> None:
             os.fsync(stream.fileno())
         os.replace(temporary_path, path)
         temporary_path = None
-        _fsync_directory(parent)
+        if not _is_windows():
+            _fsync_directory(parent)
     finally:
         if descriptor is not None:
             os.close(descriptor)
@@ -98,12 +114,17 @@ def secure_remove(path: Path) -> None:
     path = Path(path)
     descriptor = None
     try:
+        before = path.lstat()
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError("unsafe state file")
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         opened = _validate_file(descriptor)
         current = path.lstat()
+        wrong_owner = not _is_windows() and current.st_uid != os.getuid()
         if (
             not stat.S_ISREG(current.st_mode)
-            or current.st_uid != os.getuid()
+            or wrong_owner
+            or not os.path.samestat(opened, before)
             or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
         ):
             raise OSError("unsafe state file")
@@ -113,4 +134,5 @@ def secure_remove(path: Path) -> None:
     finally:
         if descriptor is not None:
             os.close(descriptor)
-    _fsync_directory(path.parent)
+    if not _is_windows():
+        _fsync_directory(path.parent)

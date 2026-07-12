@@ -10,6 +10,7 @@ from supa_cc.installation import installation_guidance
     ("system_name", "os_release", "command"),
     [
         ("Darwin", None, "brew install supa-cc"),
+        ("Windows", None, "pipx install"),
         ("Linux", "ID=debian\n", "sudo apt install python3 python3-venv pipx gnome-keyring libsecret-tools"),
         ("Linux", "ID=ubuntu\n", "sudo apt install python3 python3-venv pipx gnome-keyring libsecret-tools"),
         ("Linux", "ID=arch\n", "sudo pacman -S python python-pipx gnome-keyring libsecret"),

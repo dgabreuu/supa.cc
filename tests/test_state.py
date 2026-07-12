@@ -1,8 +1,10 @@
 import os
 import stat
+from unittest.mock import Mock
 
 import pytest
 
+import supa_cc.state as state
 from supa_cc.state import atomic_write_text, read_text, secure_remove
 
 
@@ -88,3 +90,34 @@ def test_secure_remove_fsyncs_directory(tmp_path, monkeypatch):
 
     assert directory_fsyncs == 1
     assert not path.exists()
+
+
+def test_windows_state_validation_does_not_require_posix_mode(tmp_path, monkeypatch):
+    path = tmp_path / "state"
+    path.write_text("state\n", encoding="utf-8")
+    path.chmod(0o644)
+    monkeypatch.setattr(state, "_is_windows", lambda: True)
+
+    assert read_text(path, max_bytes=32) == "state\n"
+
+
+def test_windows_state_validation_rejects_symlink(tmp_path, monkeypatch):
+    target = tmp_path / "target"
+    target.write_text("state\n", encoding="utf-8")
+    path = tmp_path / "state"
+    path.symlink_to(target)
+    monkeypatch.setattr(state, "_is_windows", lambda: True)
+
+    with pytest.raises(OSError):
+        read_text(path, max_bytes=32)
+
+
+def test_windows_atomic_write_skips_directory_fsync(tmp_path, monkeypatch):
+    path = tmp_path / "state"
+    monkeypatch.setattr(state, "_is_windows", lambda: True)
+    directory_sync = Mock()
+    monkeypatch.setattr(state, "_fsync_directory", directory_sync)
+
+    atomic_write_text(path, "state\n")
+
+    directory_sync.assert_not_called()

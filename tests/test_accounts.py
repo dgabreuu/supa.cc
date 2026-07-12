@@ -425,14 +425,14 @@ class TestAccountManager:
         assert "private" not in result.message
         assert durable.read() is not None
 
-    @pytest.mark.parametrize("operation", ["mkdir", "chmod", "open", "flock"])
+    @pytest.mark.parametrize("operation", ["mkdir", "chmod", "open", "lock"])
     def test_set_active_sanitizes_sync_lock_failures(self, tmp_path, operation):
         manager = self.transactional_manager(tmp_path)
         target = {
             "mkdir": "pathlib.Path.mkdir",
             "chmod": "pathlib.Path.chmod",
             "open": "supa_cc.accounts.os.open",
-            "flock": "supa_cc.accounts.fcntl.flock",
+            "lock": "supa_cc.accounts.acquire_file_lock",
         }[operation]
         with patch(target, side_effect=OSError("private lock path")):
             result = manager.set_active("work")
@@ -487,7 +487,7 @@ class TestAccountManager:
         manager.native_session.activate.assert_not_called()
 
     def release_failure_patches(self, fail_unlock=False, fail_close=False):
-        real_flock = __import__("fcntl").flock
+        fcntl = __import__("fcntl")
         real_open = __import__("os").open
         real_close = __import__("os").close
         descriptors = []
@@ -499,11 +499,10 @@ class TestAccountManager:
                 lock_descriptors.add(descriptor)
             return descriptor
 
-        def flock(descriptor, operation):
-            if operation == __import__("fcntl").LOCK_UN and fail_unlock:
-                real_flock(descriptor, operation)
+        def release(descriptor):
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+            if fail_unlock:
                 raise OSError("private unlock path")
-            return real_flock(descriptor, operation)
 
         def close(descriptor):
             is_lock = descriptor in lock_descriptors
@@ -514,7 +513,7 @@ class TestAccountManager:
                 raise OSError("private close path")
 
         return (
-            patch("supa_cc.accounts.fcntl.flock", side_effect=flock),
+            patch("supa_cc.accounts.release_file_lock", side_effect=release),
             patch("supa_cc.accounts.os.open", side_effect=open_lock),
             patch("supa_cc.accounts.os.close", side_effect=close),
             descriptors,

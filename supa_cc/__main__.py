@@ -38,7 +38,7 @@ def _check_for_updates():
         if remote_hash != local_hash:
             return f"Nova versão disponível! (local: {local_hash} → remoto: {remote_hash})"
         return "Você está na versão mais recente."
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return f"Não foi possível verificar atualizações. Verifique sua conexão ou execute: {update_hint}"
     except FileNotFoundError:
         return f"Git não encontrado. Para atualizar, execute: {update_hint}"

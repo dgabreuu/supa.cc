@@ -9,6 +9,7 @@ from typing import Mapping, Optional
 class OperatingSystem(str, Enum):
     MACOS = "macos"
     LINUX = "linux"
+    WINDOWS = "windows"
     UNSUPPORTED = "unsupported"
 
 
@@ -35,7 +36,10 @@ class Environment:
 
     @property
     def is_supported(self) -> bool:
-        return self.operating_system is OperatingSystem.MACOS or (
+        return self.operating_system in {
+            OperatingSystem.MACOS,
+            OperatingSystem.WINDOWS,
+        } or (
             self.operating_system is OperatingSystem.LINUX
             and self.distribution not in {None, LinuxDistribution.UNKNOWN}
         )
@@ -45,6 +49,11 @@ class Environment:
     ) -> Path:
         values = os.environ if environ is None else environ
         user_home = Path.home() if home is None else Path(home)
+        if self.operating_system is OperatingSystem.WINDOWS:
+            appdata = values.get("APPDATA")
+            if not appdata or not Path(appdata).is_absolute():
+                raise OSError("APPDATA não define um diretório absoluto confiável.")
+            return Path(appdata) / "supa.cc"
         if self.operating_system is OperatingSystem.LINUX:
             xdg_home = values.get("XDG_CONFIG_HOME")
             if xdg_home and Path(xdg_home).is_absolute():
@@ -99,6 +108,8 @@ def detect_environment(
     if name == "Linux":
         release = _read_os_release() if os_release is _UNSET else os_release
         return Environment(OperatingSystem.LINUX, _linux_distribution(release))
+    if name == "Windows":
+        return Environment(OperatingSystem.WINDOWS)
     return Environment(OperatingSystem.UNSUPPORTED)
 
 

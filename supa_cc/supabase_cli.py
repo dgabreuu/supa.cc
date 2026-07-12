@@ -9,6 +9,11 @@ from .auth import (ACCESS_TOKEN_PREFIX, AuthFailureCode, AuthResult, CommandResu
 from .models import Account
 from .process import OutputSink, ProcessState, STREAM_SAMPLE_LIMIT, run_process
 
+
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 BinaryResolver = Callable[[str], Optional[str]]
 AUTH_VALIDATION_TIMEOUT_SECONDS = 30
 MINIMUM_VERSION = (2, 109, 1)
@@ -133,6 +138,29 @@ class SupabaseCLI:
     def _open_binary(self):
         if self.supabase_cli is None:
             return None, CommandResult.failure(AuthFailureCode.CLI_NOT_FOUND, "Supabase CLI não encontrada.")
+        if _is_windows():
+            descriptor = None
+            try:
+                resolved = os.path.realpath(self.supabase_cli)
+                before = os.stat(resolved, follow_symlinks=False)
+                descriptor = os.open(resolved, os.O_RDONLY)
+                opened = os.fstat(descriptor)
+                current = os.stat(resolved, follow_symlinks=False)
+                if (
+                    not stat.S_ISREG(before.st_mode)
+                    or not stat.S_ISREG(opened.st_mode)
+                    or not os.path.samestat(before, opened)
+                    or not os.path.samestat(opened, current)
+                ):
+                    raise PermissionError
+                return (descriptor, resolved), None
+            except (FileNotFoundError, PermissionError, OSError):
+                if descriptor is not None:
+                    os.close(descriptor)
+                return None, CommandResult.failure(
+                    AuthFailureCode.ENVIRONMENT_BLOCKED,
+                    _MESSAGES[AuthFailureCode.ENVIRONMENT_BLOCKED],
+                )
         if os.name != "posix":
             return None, CommandResult.failure(AuthFailureCode.ENVIRONMENT_BLOCKED, _MESSAGES[AuthFailureCode.ENVIRONMENT_BLOCKED])
         flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -176,7 +204,10 @@ class SupabaseCLI:
                 [descriptor_path, *arguments], env,
                 lambda chunk: publish("stdout", stdout_redactor, stdout_sink, chunk),
                 lambda chunk: publish("stderr", stderr_redactor, stderr_sink, chunk),
-                sample_limit, timeout_seconds, pass_fds=(descriptor,),
+                sample_limit, timeout_seconds,
+                pass_fds=(descriptor,)
+                if descriptor is not None and not _is_windows()
+                else (),
             )
             stdout_tail, stderr_tail = stdout_redactor.feed("", final=True), stderr_redactor.feed("", final=True)
             if stdout_tail:
@@ -185,7 +216,8 @@ class SupabaseCLI:
                 stderr_sink(stderr_tail)
             return self._command_result(process_result, observer.result())
         finally:
-            os.close(descriptor)
+            if descriptor is not None:
+                os.close(descriptor)
 
     @staticmethod
     def _command_result(result, observed_code=None):

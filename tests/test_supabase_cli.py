@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
+import supa_cc.supabase_cli as supabase_cli
 from supa_cc.auth import AuthFailureCode, CommandResult
 from supa_cc.models import Account
 from supa_cc.supabase_cli import SupabaseCLI
@@ -15,6 +16,24 @@ def _executable(tmp_path, content="#!/bin/sh\nexit 0\n"):
     binary.write_text(content, encoding="utf-8")
     binary.chmod(0o700)
     return binary
+
+
+def test_windows_executes_verified_absolute_binary_path(tmp_path, monkeypatch):
+    binary = _executable(tmp_path)
+    cli = SupabaseCLI(binary_resolver=lambda _: str(binary))
+    monkeypatch.setattr(supabase_cli, "_is_windows", lambda: True)
+
+    with patch(
+        "supa_cc.supabase_cli.run_process", return_value=CommandResult.success()
+    ) as run:
+        result = cli.execute_authenticated(
+            Account("work", fake_pat("windows-binary")), ["projects", "list"]
+        )
+
+    assert result.ok
+    assert run.call_args.args[0][0] == str(binary.resolve())
+    assert run.call_args.kwargs["pass_fds"] == ()
+    assert not run.call_args.args[0][0].startswith(("/proc/self/fd", "/dev/fd"))
 
 
 @pytest.mark.parametrize("mode", [0o600, 0o722, 0o702])

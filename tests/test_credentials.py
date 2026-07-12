@@ -69,6 +69,11 @@ class FakeMacOSKeyring(FakeKeyring):
     next_get_error = None
 
 
+class FakeWindowsKeyring(FakeKeyring):
+    instances = []
+    next_get_error = None
+
+
 @pytest.fixture
 def fake_secret_service(monkeypatch):
     FakeSecretServiceKeyring.instances.clear()
@@ -83,6 +88,55 @@ def fake_secret_service(monkeypatch):
 
 def linux_environment():
     return detect_environment(system_name="Linux", os_release="ID=arch\n")
+
+
+@pytest.fixture
+def fake_windows_keyring(monkeypatch):
+    FakeWindowsKeyring.instances.clear()
+    FakeWindowsKeyring.next_get_error = None
+    monkeypatch.setattr(
+        credentials.Windows,
+        "WinVaultKeyring",
+        FakeWindowsKeyring,
+    )
+    return FakeWindowsKeyring
+
+
+def windows_environment():
+    return detect_environment(system_name="Windows")
+
+
+def test_windows_selects_only_win_vault_backend(fake_windows_keyring):
+    store = create_credential_store(windows_environment())
+    fake = fake_windows_keyring.instances[0]
+    account = Account(name="windows", token=fake_pat("windows-routing"))
+
+    assert store.backend_name == "keyring.backends.Windows.WinVaultKeyring"
+    assert type(store._backend) is credentials.Windows.WinVaultKeyring
+    assert fake.calls == []
+
+    store.set(account)
+    assert store.get(account.name) == account.token
+    store.delete(account.name)
+
+
+def test_windows_probe_reads_only_an_isolated_namespace(fake_windows_keyring):
+    store = create_credential_store(windows_environment())
+    fake = fake_windows_keyring.instances[0]
+
+    status = store.probe()
+
+    assert status.available is True
+    assert status.live_probed is True
+    assert len(fake.calls) == 1
+    operation, service, name = fake.calls[0]
+    assert operation == "get"
+    assert service.startswith("supa.cc.probe.")
+    assert name.startswith("probe-")
+    assert service not in {
+        "supa.cc.supabase.accounts.v2",
+        credentials.SUPABASE_CLI_CREDENTIAL_SERVICE,
+    }
 
 
 def test_linux_selects_only_secret_service_backend(fake_secret_service):

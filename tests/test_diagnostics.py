@@ -699,7 +699,7 @@ def test_doctor_blocks_unknown_linux_without_constructing_account_manager(
 def test_doctor_blocks_unsupported_os_without_constructing_account_manager(
     tmp_path, monkeypatch
 ):
-    environment = detect_environment(system_name="Windows")
+    environment = detect_environment(system_name="FreeBSD")
     monkeypatch.setattr(
         "supa_cc.diagnostic_collectors.AccountManager",
         Mock(side_effect=AssertionError("must not construct manager")),

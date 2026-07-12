@@ -30,6 +30,16 @@ def installation_guidance(environment: Environment) -> InstallationGuidance:
             remediation="Verifique se o armazenamento de credenciais do macOS está disponível.",
         )
 
+    if environment.operating_system is OperatingSystem.WINDOWS:
+        return InstallationGuidance(
+            install_hint=VCS_INSTALL,
+            update_hint=VCS_UPDATE,
+            remediation=(
+                "Verifique se o Windows Credential Manager está disponível "
+                "para a sessão do usuário."
+            ),
+        )
+
     commands = {
         LinuxDistribution.DEBIAN: DEBIAN,
         LinuxDistribution.UBUNTU: DEBIAN,

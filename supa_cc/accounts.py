@@ -1,4 +1,3 @@
-import fcntl
 import os
 import stat
 from contextlib import contextmanager
@@ -21,6 +20,7 @@ from .auth import (
 from .environment import detect_environment
 from .models import Account, AccountSummary
 from .native_session import NativeSessionSynchronizer, SessionSyncJournal
+from .file_lock import acquire_file_lock, release_file_lock
 from .supabase_cli import SupabaseCLI
 from .transactions import AccountTransactionCoordinator, pending_sync_failure
 
@@ -31,6 +31,10 @@ class _SyncUnlockError(OSError):
 
 class _SyncCloseError(OSError):
     pass
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
 
 
 class AccountManager:
@@ -80,7 +84,8 @@ class AccountManager:
     @contextmanager
     def _sync_lock(self) -> Iterator[None]:
         self._sync_lock_path.parent.mkdir(parents=True, exist_ok=True)
-        self._sync_lock_path.parent.chmod(0o700)
+        if not _is_windows():
+            self._sync_lock_path.parent.chmod(0o700)
         flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
         descriptor = os.open(self._sync_lock_path, flags, 0o600)
         locked = False
@@ -90,23 +95,29 @@ class AccountManager:
         try:
             opened = os.fstat(descriptor)
             current = self._sync_lock_path.lstat()
-            if (
-                not stat.S_ISREG(opened.st_mode)
-                or opened.st_uid != os.getuid()
+            unsafe_posix_metadata = not _is_windows() and (
+                opened.st_uid != os.getuid()
                 or stat.S_IMODE(opened.st_mode) != 0o600
-                or not stat.S_ISREG(current.st_mode)
                 or current.st_uid != os.getuid()
                 or stat.S_IMODE(current.st_mode) != 0o600
+            )
+            if (
+                not stat.S_ISREG(opened.st_mode)
+                or not stat.S_ISREG(current.st_mode)
+                or unsafe_posix_metadata
                 or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
             ):
                 raise ValueError("O lock de sincronização é inválido.")
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            acquire_file_lock(descriptor)
             locked = True
             current = self._sync_lock_path.lstat()
+            unsafe_posix_metadata = not _is_windows() and (
+                current.st_uid != os.getuid()
+                or stat.S_IMODE(current.st_mode) != 0o600
+            )
             if (
                 not stat.S_ISREG(current.st_mode)
-                or current.st_uid != os.getuid()
-                or stat.S_IMODE(current.st_mode) != 0o600
+                or unsafe_posix_metadata
                 or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
             ):
                 raise ValueError("O lock de sincronização é inválido.")
@@ -117,7 +128,7 @@ class AccountManager:
         finally:
             try:
                 if locked:
-                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+                    release_file_lock(descriptor)
             except OSError:
                 unlock_failed = True
             finally:

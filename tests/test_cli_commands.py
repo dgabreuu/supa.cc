@@ -1,3 +1,4 @@
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -65,6 +66,15 @@ class TestCLICommands:
         assert 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"' in message
         assert "pipx upgrade supa.cc" not in message
         assert "brew" not in message
+
+    def test_update_check_tolerates_network_timeout(self):
+        with patch("os.path.isdir", return_value=True), patch(
+            "supa_cc.__main__.subprocess.run",
+            side_effect=subprocess.TimeoutExpired("git", 5),
+        ):
+            message = _check_for_updates()
+
+        assert "Não foi possível verificar atualizações" in message
 
     def test_list_empty_accounts(self):
         runner = CliRunner()

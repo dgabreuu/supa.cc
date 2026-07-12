@@ -1,10 +1,26 @@
 import hmac
+import sys
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Optional
 from uuid import uuid4
 
-from keyring.backends import SecretService, macOS
 from keyring.errors import KeyringLocked, PasswordDeleteError
+
+from keyring.backends import Windows
+
+if sys.platform.startswith("linux"):
+    from keyring.backends import SecretService
+else:  # Keep simulated-platform tests independent of Linux-only dependencies.
+    SecretService = SimpleNamespace(Keyring=type("UnavailableSecretService", (), {}))
+
+if sys.platform == "darwin":
+    from keyring.backends import macOS
+else:
+    try:
+        from keyring.backends import macOS
+    except ImportError:  # pragma: no cover - exercised on Windows CI
+        macOS = SimpleNamespace(Keyring=type("UnavailableMacOSKeyring", (), {}))
 
 from supa_cc.auth import (
     CredentialAccessError,
@@ -21,6 +37,7 @@ SUPABASE_CLI_CREDENTIAL_SERVICE = "Supabase CLI"
 SUPABASE_CLI_CREDENTIAL_NAME = "supabase"
 _MACOS_BACKEND_NAME = "keyring.backends.macOS.Keyring"
 _SECRET_SERVICE_BACKEND_NAME = "keyring.backends.SecretService.Keyring"
+_WINDOWS_BACKEND_NAME = "keyring.backends.Windows.WinVaultKeyring"
 _MACOS_KEYCHAIN_ITEM_NOT_FOUND = "-25300"
 _PERMISSION_ERROR_MARKERS = (
     "permission denied",
@@ -62,7 +79,8 @@ class CredentialStore:
         return self._status
 
     def probe(self) -> CredentialStoreStatus:
-        return _probe_backend(self._backend, self.backend_name)
+        self._status = _probe_backend(self._backend, self.backend_name)
+        return self._status
 
     def get(self, name: str) -> Optional[str]:
         try:
@@ -110,6 +128,8 @@ def create_credential_store(
         return CredentialStore(_MACOS_BACKEND_NAME, service=service)
     if environment.operating_system is OperatingSystem.LINUX and environment.is_supported:
         return CredentialStore(_SECRET_SERVICE_BACKEND_NAME, service=service)
+    if environment.operating_system is OperatingSystem.WINDOWS:
+        return CredentialStore(_WINDOWS_BACKEND_NAME, service=service)
     raise CredentialAccessError(
         "O armazenamento de credenciais não está disponível neste ambiente."
     )
@@ -132,6 +152,9 @@ def _create_backend(backend_name: str):
         elif backend_name == _SECRET_SERVICE_BACKEND_NAME:
             backend = _create_secret_service_backend()
             expected_backend_type = SecretService.Keyring
+        elif backend_name == _WINDOWS_BACKEND_NAME:
+            backend = _create_windows_backend()
+            expected_backend_type = Windows.WinVaultKeyring
         else:
             raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
     except Exception:
@@ -151,6 +174,10 @@ def _create_secret_service_backend():
     return SecretService.Keyring()
 
 
+def _create_windows_backend():
+    return Windows.WinVaultKeyring()
+
+
 def _probe_secret_service_provider() -> None:
     SecretService.Keyring.priority
 
@@ -166,6 +193,12 @@ def _probe_backend(backend, backend_name: str) -> CredentialStoreStatus:
             )
         elif backend_name == _MACOS_BACKEND_NAME:
             macOS.Keyring.priority
+        elif backend_name == _WINDOWS_BACKEND_NAME:
+            suffix = uuid4().hex
+            backend.get_password(
+                f"supa.cc.probe.{suffix}",
+                f"probe-{suffix}",
+            )
         else:
             raise CredentialAccessError(_CREDENTIAL_STORE_UNAVAILABLE_MESSAGE)
     except Exception:

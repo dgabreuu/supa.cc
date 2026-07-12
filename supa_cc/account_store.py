@@ -1,7 +1,7 @@
-import fcntl
 import hashlib
 import json
 import os
+import stat
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, List, Optional
@@ -14,12 +14,17 @@ from .auth import (
 )
 from .credentials import CredentialStore, create_credential_store
 from .environment import Environment, detect_environment
+from .file_lock import acquire_file_lock, release_file_lock
 from .models import Account, AccountSummary
 from .state import atomic_write_text, read_text
 
 
 KEYCHAIN_SERVICE = "supa.cc.supabase.accounts.v2"
 _INDEX_MAX_BYTES = 1024 * 1024
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
 
 
 def _validated_unique_names(names: List[str]) -> List[str]:
@@ -89,7 +94,8 @@ class AccountStore:
 
     def _ensure_index_parent(self) -> None:
         self.index_path.parent.mkdir(parents=True, exist_ok=True)
-        self.index_path.parent.chmod(0o700)
+        if not _is_windows():
+            self.index_path.parent.chmod(0o700)
 
     @contextmanager
     def _index_lock(self) -> Iterator[None]:
@@ -98,13 +104,14 @@ class AccountStore:
         descriptor = os.open(self.index_lock_path, flags, 0o600)
         locked = False
         try:
-            os.fchmod(descriptor, 0o600)
-            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            if not _is_windows():
+                os.fchmod(descriptor, 0o600)
+            acquire_file_lock(descriptor)
             locked = True
             yield
         finally:
             if locked:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
+                release_file_lock(descriptor)
             os.close(descriptor)
 
     def _read_index_locked(self) -> List[str]:
