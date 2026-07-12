@@ -27,6 +27,18 @@ jobs:
         run: brew audit --strict --formula dgabreuu/supa-cc/supa-cc
       - name: Install formula from source
         run: brew install --build-from-source dgabreuu/supa-cc/supa-cc
+      - name: Verify supported Supabase CLI
+        run: |
+          minimum_version="2.109.1"
+          supabase_version_output="$(supabase --version)"
+          ruby -rrubygems -e '
+            output, minimum = ARGV
+            match = output.match(/(?<!\d)(\d+\.\d+\.\d+(?:[-.][0-9A-Za-z]+)*)(?!\d)/)
+            abort "Could not parse Supabase CLI version" unless match
+            installed = Gem::Version.new(match[1])
+            puts "Installed Supabase CLI version: #{installed}"
+            abort "Supabase CLI #{installed} is older than required #{minimum}" if installed < Gem::Version.new(minimum)
+          ' "$supabase_version_output" "$minimum_version"
       - name: Verify installed version
         run: |
           test "$(supa.cc --version)" = "supa.cc, version 0.3.0"

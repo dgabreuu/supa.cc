@@ -147,6 +147,24 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
         assert prohibited not in workflow_text
 
 
+def test_homebrew_workflow_requires_supported_supabase_cli_before_supa_cc_checks():
+    workflow_text = Path(".github/workflows/homebrew.yml").read_text(encoding="utf-8")
+
+    install = workflow_text.index("brew install --build-from-source dgabreuu/supa-cc/supa-cc")
+    supabase_check = workflow_text.index("supabase --version")
+    supa_cc_check = workflow_text.index("supa.cc --version")
+
+    assert install < supabase_check < supa_cc_check
+    assert 'minimum_version="2.109.1"' in workflow_text
+    assert "Gem::Version" in workflow_text
+    assert 'puts "Installed Supabase CLI version: #{installed}"' in workflow_text
+    assert "abort" in workflow_text
+    assert "permissions: {}" in workflow_text
+    assert "contents: read" in workflow_text
+    assert "secrets" not in workflow_text.lower()
+    assert "id-token" not in workflow_text.lower()
+
+
 def test_ci_has_least_privilege_cross_platform_build_and_security_jobs():
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
