@@ -105,6 +105,24 @@ def test_ci_has_least_privilege_cross_platform_build_and_security_jobs():
     assert "pip check" in workflow
     assert "python scripts/runtime_requirements.py runtime-requirements.txt" in workflow
     assert "pip-audit --requirement runtime-requirements.txt" in workflow
+    assert "pip-audit --skip-editable" in workflow
+    assert "matrix.python-version == '3.9'" in workflow
+    for vulnerability in (
+        "PYSEC-2026-1375",
+        "PYSEC-2026-1374",
+        "GHSA-6v7p-g79w-8964",
+        "PYSEC-2026-196",
+        "GHSA-58qw-9mgm-455v",
+        "GHSA-jp4c-xjxw-mgf9",
+        "PYSEC-2026-1845",
+        "GHSA-gc5v-m9x4-r6x2",
+        "PYSEC-2026-142",
+        "PYSEC-2026-141",
+    ):
+        assert workflow.count(f"--ignore-vuln {vulnerability}") == 1
+    assert "PYSEC-2022-43012" not in workflow
+    assert "PYSEC-2025-49" not in workflow
+    assert "PYSEC-2026-1918" not in workflow
     assert "python -m build" in workflow
     assert "artifact" in workflow.lower()
     assert re.search(r"^jobs:", workflow, re.MULTILINE)
@@ -129,6 +147,7 @@ def test_release_uses_the_same_audit_and_artifact_inspection_commands_as_ci():
 
     assert "python scripts/runtime_requirements.py runtime-requirements.txt" in release
     assert "pip-audit --requirement runtime-requirements.txt" in release
+    assert "pip-audit --skip-editable" in release
     assert "scripts/inspect_artifacts.py dist" in release
 
 

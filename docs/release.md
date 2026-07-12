@@ -13,11 +13,20 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
 python3 -m pip check
+pip-audit --skip-editable
 python scripts/runtime_requirements.py runtime-requirements.txt
 pip-audit --requirement runtime-requirements.txt
 rm -rf dist
 python3 -m build
 python3 scripts/inspect_artifacts.py dist
+```
+
+No Python 3.9, execute a auditoria do ambiente com as exceções abaixo. As
+versões corrigidas exigem Python 3.10 ou superior; não adicione exceções para
+outros jobs nem para a auditoria separada das dependências de runtime:
+
+```bash
+pip-audit --skip-editable --ignore-vuln PYSEC-2026-1375 --ignore-vuln PYSEC-2026-1374 --ignore-vuln GHSA-6v7p-g79w-8964 --ignore-vuln PYSEC-2026-196 --ignore-vuln GHSA-58qw-9mgm-455v --ignore-vuln GHSA-jp4c-xjxw-mgf9 --ignore-vuln PYSEC-2026-1845 --ignore-vuln GHSA-gc5v-m9x4-r6x2 --ignore-vuln PYSEC-2026-142 --ignore-vuln PYSEC-2026-141
 ```
 
 O inspetor exige exatamente uma wheel e um sdist em `dist/`, valida os caminhos dos membros e procura referências privadas e caminhos absolutos locais. Instale também a wheel em um ambiente virtual descartável, execute `pip check`, `supa.cc --version` e `supa.cc version`, e confirme `0.3.0`.

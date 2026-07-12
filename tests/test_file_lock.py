@@ -1,4 +1,6 @@
+import ctypes
 import os
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -93,4 +95,39 @@ def test_windows_file_identity_rejects_path_replacement(monkeypatch):
     monkeypatch.setattr(file_lock.os, "close", close)
 
     assert file_lock._same_file(8, "lock", Mock(), Mock()) is False
+    close.assert_called_once_with(9)
+
+
+def test_windows_file_identity_reads_native_volume_and_file_index(monkeypatch):
+    backend = Mock()
+    backend.get_osfhandle.return_value = 123
+
+    def get_information(handle, pointer):
+        assert handle.value == 123
+        information = pointer._obj
+        information.volume_serial = 7
+        information.file_index_high = 2
+        information.file_index_low = 3
+        return 1
+
+    kernel32 = Mock(GetFileInformationByHandle=Mock(side_effect=get_information))
+    monkeypatch.setattr(file_lock, "_msvcrt", backend)
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=kernel32), raising=False
+    )
+
+    assert file_lock._windows_file_identity(8) == (7, (2 << 32) | 3)
+
+
+def test_windows_same_file_accepts_matching_native_identities(monkeypatch):
+    monkeypatch.setattr(file_lock, "_is_windows", lambda: True)
+    monkeypatch.setattr(file_lock.os, "name", "nt")
+    identity = Mock(side_effect=[(7, 11), (7, 11)])
+    monkeypatch.setattr(file_lock, "_windows_file_identity", identity)
+    monkeypatch.setattr(file_lock.os, "open", Mock(return_value=9))
+    close = Mock()
+    monkeypatch.setattr(file_lock.os, "close", close)
+
+    assert file_lock._same_file(8, "lock", Mock(), Mock()) is True
+    assert identity.call_args_list == [((8,),), ((9,),)]
     close.assert_called_once_with(9)

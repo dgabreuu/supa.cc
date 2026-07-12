@@ -48,8 +48,13 @@ def test_macos_executes_verified_absolute_binary_path(tmp_path, monkeypatch):
     cli = SupabaseCLI(binary_resolver=lambda _: str(binary))
     monkeypatch.setattr(sys, "platform", "darwin")
 
-    with patch(
-        "supa_cc.supabase_cli.run_process", return_value=CommandResult.success()
+    def run_at_spawn(argv, _env, *_args, **kwargs):
+        assert argv[0] == str(binary.resolve())
+        kwargs["pre_spawn_check"]()
+        return CommandResult.success()
+
+    with patch.object(cli, "_require_same_binary") as revalidate, patch(
+        "supa_cc.supabase_cli.run_process", side_effect=run_at_spawn
     ) as run:
         result = cli.execute_authenticated(
             Account("work", fake_pat("macos-binary")), ["projects", "list"]
@@ -58,7 +63,9 @@ def test_macos_executes_verified_absolute_binary_path(tmp_path, monkeypatch):
     assert result.ok
     assert run.call_args.args[0][0] == str(binary.resolve())
     assert run.call_args.kwargs["pass_fds"] == ()
-    assert run.call_args.kwargs["pre_spawn_check"] is not None
+    descriptor, path = revalidate.call_args.args
+    assert isinstance(descriptor, int)
+    assert path == str(binary.resolve())
 
 
 def test_windows_revalidates_binary_at_process_spawn_boundary(tmp_path, monkeypatch):
