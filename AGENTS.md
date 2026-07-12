@@ -1,88 +1,37 @@
-# Instruções para Agentes
+# Instruções para agentes
 
-Este arquivo orienta agentes, LLMs e contribuidores externos que trabalham com o repositório Supa.cc. Ele reúne convenções e fluxos públicos e específicos do projeto. Mantenha todo o conteúdo genérico e seguro para um projeto open source público.
+Mantenha toda contribuição genérica e segura para este repositório open source público.
 
-## Visão geral do projeto
+## Estrutura
 
-Supa.cc é uma ferramenta de linha de comando local para gerenciar múltiplas contas do Supabase no macOS e em Debian/Ubuntu, Arch Linux e Fedora, com derivados em caráter best-effort. Ela armazena tokens com segurança no Keychain do macOS ou no Secret Service do Linux e integra-se ao perfil oficial do Supabase CLI >= 2.109.1.
+| Caminho | Responsabilidade |
+| --- | --- |
+| `supa_cc/` | Código-fonte Python |
+| `tests/` | Suíte `pytest` |
+| `docs/` | Instalação, uso, segurança, remediação e release |
+| `Formula/` | Fórmula Homebrew |
+| `pyproject.toml` | Metadados, dependências, build e ferramentas |
+| `README.md` | Apresentação pública concisa |
+| `SKILL.md` | Invariantes operacionais para agentes |
 
-- **Nome:** supa.cc
-- **Versão:** 0.3.0
-- **Linguagem:** Python 3.9+
-- **Licença:** MIT
-- **Repositório:** https://github.com/dgabreuu/supa.cc.git
+## Convenções
 
-## Estrutura do repositório
+- Python 3.9+, build com `hatchling` e console script `supa.cc`.
+- Siga os padrões existentes em `supa_cc/`, mantenha arquivos focados e cubra mudanças de comportamento em `tests/`.
+- Dependências de runtime: `click`, `questionary`, `rich` e `keyring`. Dependências de desenvolvimento são declaradas em `pyproject.toml`.
+- Execute `python3 -m pytest`; veja [Como contribuir](CONTRIBUTING.md) para preparação do ambiente, build e smokes nativos.
+- Atualize o documento canônico correspondente: [Instalação](docs/installation.md), [Uso](docs/usage.md), [Segurança](docs/security.md) ou [Solução de problemas](docs/troubleshooting.md).
 
-| Caminho | Finalidade |
-|------|---------|
-| `supa_cc/` | Código-fonte principal do pacote. |
-| `tests/` | Suíte de testes com `pytest`. |
-| `docs/` | Documentação adicional (`installation.md`, `release.md`). |
-| `Formula/` | Definições da fórmula Homebrew. |
-| `pyproject.toml` | Metadados do projeto, dependências, sistema de build e config de ferramentas. |
-| `README.md` | Visão geral pública, instalação e uso rápido. |
-| `SKILL.md` | Referência operacional para agentes e LLMs que usam o Supa.cc. |
-| `LICENSE` | Texto da licença MIT. |
+## GitHub
 
-## Convenções e dependências
+- O repositório oficial é `https://github.com/dgabreuu/supa.cc.git`.
+- Operações no GitHub assumem a conta `dgabreuu`; não sugira outra conta, chave SSH ou remote.
+- Use mensagens de commit concisas e alinhadas ao histórico.
 
-- **Sistema de build:** `hatchling`.
-- **Ponto de entrada:** `supa.cc` é definido como console script em `pyproject.toml`.
-- **Dependências de runtime:** `click`, `questionary`, `rich`, `keyring`.
-- **Dependências de desenvolvimento:** `pytest`, `build`, `pip-audit`, `tomli` (para Python < 3.11).
-- **Estilo de código:** Siga os padrões existentes em `supa_cc/`. Mantenha arquivos focados em uma única responsabilidade.
-- **Testes:** Adicione ou atualize testes em `tests/` para novos comportamentos.
+## Segurança pública
 
-## Git e GitHub
-
-- O repositório público oficial é `https://github.com/dgabreuu/supa.cc.git`.
-- Todas as operações no GitHub (commits, pull requests, issues, releases) devem assumir a conta `dgabreuu`.
-- Não sugira, configure ou mencione outra conta do GitHub, chave SSH ou remote.
-- Mantenha mensagens de commit claras e concisas, alinhadas ao estilo do histórico do repositório.
-
-## Diretrizes de segurança
-
-- **Nunca exponha tokens reais do Supabase** em código, testes, logs, documentação, prompts ou transcripts.
-- Tokens devem começar com `sbp_` e são validados antes do armazenamento.
-- Nenhum arquivo local contém PAT. `accounts.json` e `active-account` contêm nomes; `session-sync.json`, `.session-sync.lock` e `.accounts.json.lock` contêm somente metadados de recuperação/coordenação. Backups temporários de rollback ficam apenas no Keychain ou Secret Service.
-- No Linux, use somente Debian/Ubuntu, Arch Linux ou Fedora com D-Bus de usuário e Secret Service desbloqueado. Um ambiente headless sem esses serviços deve falhar com orientação segura; nunca habilite fallback plaintext, `keyrings.alt` ou outro keyring alternativo.
-- Ao ativar uma conta, o token é passado via `SUPABASE_ACCESS_TOKEN`, nunca como flag de linha de comando do Supabase CLI.
-- Use somente o perfil oficial `supabase`. Verifique a confiança do executável e a credencial nativa exata; rollback e recuperação devem ser mutation-aware. A trava não coordena comandos `supabase` externos concorrentes.
-- `doctor` é não-live por padrão e não abre token; somente `doctor --account <nome> --live` realiza validação autenticada explícita.
-- Não inclua detalhes do ambiente local como caminhos absolutos, e-mails pessoais, nomes de usuário ou remotes privados em qualquer arquivo público.
-- Antes de publicar, revise o histórico, arquivos ignorados, logs, caches, ambientes virtuais, fixtures e capturas de tela em busca de segredos.
-
-## Desenvolvimento e testes
-
-Instale o pacote em modo editável de desenvolvimento:
-
-```bash
-python3 -m pip install -e ".[dev]"
-```
-
-Execute a suíte de testes:
-
-```bash
-pytest
-```
-
-Comandos úteis de validação local após a instalação:
-
-```bash
-supa.cc --version
-supa.cc version
-supa.cc list
-supa.cc doctor
-```
-
-## Documentação
-
-- `README.md` — visão geral do projeto, instalação e uso rápido.
-- `SKILL.md` — referência operacional detalhada para agentes e LLMs.
-- `docs/installation.md` — instruções estendidas de instalação.
-- `docs/release.md` — checklist de release e atualização da fórmula Homebrew.
-
-## Licença
-
-Este projeto é licenciado sob a Licença MIT. Veja `LICENSE` para o texto completo.
+- Nunca exponha PATs reais em código, testes, logs, documentação, prompts ou transcripts. Os formatos aceitos começam com `sbp_` ou `sbp_oauth_` e são validados antes do armazenamento; não publique exemplos com aparência de credencial.
+- Não publique caminhos locais absolutos, e-mails pessoais, nomes de usuário, remotes privados, dumps completos de ambiente ou conteúdo do armazenamento nativo.
+- Não introduza fallback plaintext, `keyrings.alt` ou backends não suportados. Preserve as invariantes detalhadas em [SKILL.md](SKILL.md) e no [modelo de segurança](docs/security.md).
+- Preserve os backends nativos: Keychain no macOS, Secret Service no Linux e Windows Credential Manager por `WinVaultKeyring` no Windows.
+- Antes de publicar, revise histórico, arquivos ignorados, logs, caches, ambientes virtuais, fixtures e capturas de tela em busca de segredos.

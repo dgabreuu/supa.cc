@@ -1,0 +1,80 @@
+name: Problema de instalação
+description: Peça ajuda para instalar, atualizar ou iniciar o Supa.cc.
+title: "[Instalação]: "
+labels: [installation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Para bugs após uma instalação concluída, use o formulário de bug.
+        **Nunca inclua PATs, tokens, dumps de credenciais, itens do armazenamento nativo ou dumps completos de ambiente.**
+  - type: input
+    id: os
+    attributes:
+      label: Sistema operacional
+      placeholder: Inclua distribuição e versão, quando aplicável.
+    validations:
+      required: true
+  - type: input
+    id: supa_cc_version
+    attributes:
+      label: Versão do Supa.cc
+      description: Informe a saída de `supa.cc --version`, ou "não disponível" se o comando não inicia.
+    validations:
+      required: true
+  - type: input
+    id: python_version
+    attributes:
+      label: Versão do Python
+    validations:
+      required: true
+  - type: input
+    id: supabase_cli_version
+    attributes:
+      label: Versão do Supabase CLI
+    validations:
+      required: true
+  - type: dropdown
+    id: installation_method
+    attributes:
+      label: Método de instalação
+      options:
+        - Homebrew
+        - pipx
+        - Instalação de desenvolvimento
+        - Outro
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Como reproduzir
+      description: Inclua o comando de instalação e os passos executados.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Comportamento atual
+      description: Inclua a mensagem de erro completa depois de remover segredos e caminhos pessoais.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Saída sanitizada de `supa.cc doctor --json`
+      description: Se o comando estiver disponível, remova nomes de contas, caminhos pessoais e dados identificáveis. Nunca use `--live` para este diagnóstico.
+      render: json
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Confirmação de segurança
+      options:
+        - label: Revisei o relato e removi PATs, tokens, dumps de credenciais e outros segredos.
+          required: true

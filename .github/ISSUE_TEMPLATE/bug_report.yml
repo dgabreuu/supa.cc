@@ -1,0 +1,81 @@
+name: Relatar um bug
+description: Informe um comportamento incorreto após uma instalação concluída.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use o formulário de instalação se o Supa.cc não foi instalado corretamente.
+        **Nunca inclua PATs, tokens, dumps de credenciais, itens do armazenamento nativo ou dumps completos de ambiente.**
+  - type: input
+    id: os
+    attributes:
+      label: Sistema operacional
+      placeholder: Ex. macOS 15, Ubuntu 24.04 ou Windows 11
+    validations:
+      required: true
+  - type: input
+    id: supa_cc_version
+    attributes:
+      label: Versão do Supa.cc
+      description: Saída de `supa.cc --version`.
+    validations:
+      required: true
+  - type: input
+    id: python_version
+    attributes:
+      label: Versão do Python
+      description: Saída de `python3 --version` ou `python --version`.
+    validations:
+      required: true
+  - type: input
+    id: supabase_cli_version
+    attributes:
+      label: Versão do Supabase CLI
+      description: Saída de `supabase --version`.
+    validations:
+      required: true
+  - type: dropdown
+    id: installation_method
+    attributes:
+      label: Método de instalação
+      options:
+        - Homebrew
+        - pipx
+        - Instalação de desenvolvimento
+        - Outro
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Como reproduzir
+      description: Liste os comandos e passos mínimos, sem segredos.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportamento esperado
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Comportamento atual
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Saída sanitizada de `supa.cc doctor --json`
+      description: Remova nomes de contas, caminhos pessoais e outros dados identificáveis. Nunca execute o modo `--live` para preencher este campo.
+      render: json
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Confirmação de segurança
+      options:
+        - label: Revisei o relato e removi PATs, tokens, dumps de credenciais e outros segredos.
+          required: true

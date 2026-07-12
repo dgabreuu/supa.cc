@@ -1,0 +1,31 @@
+name: Sugerir uma funcionalidade
+description: Proponha uma melhoria ou novo comportamento para o Supa.cc.
+title: "[Funcionalidade]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use os formulários específicos para bugs e problemas de instalação.
+        **Nunca inclua PATs, tokens, dumps de credenciais, itens do armazenamento nativo ou dumps completos de ambiente.**
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema ou necessidade
+      description: Explique o caso de uso sem incluir dados sensíveis.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Solução proposta
+      description: Descreva o comportamento desejado e alternativas consideradas.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Confirmação de segurança
+      options:
+        - label: Revisei a proposta e removi PATs, tokens, dumps de credenciais e outros segredos.
+          required: true
