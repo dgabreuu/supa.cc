@@ -2,14 +2,11 @@ import fcntl
 import hashlib
 import json
 import os
-import tempfile
-import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Iterator, List, Optional
+from typing import Iterator, List, Optional
 
 from .auth import (
-    AccountIndexError,
     AccountIndexInvalidError,
     AccountIndexReadError,
     AccountTransactionError,
@@ -17,21 +14,24 @@ from .auth import (
 )
 from .credentials import CredentialStore, create_credential_store
 from .environment import Environment, detect_environment
-from .models import Account
+from .models import Account, AccountSummary
+from .state import atomic_write_text, read_text
 
 
 KEYCHAIN_SERVICE = "supa.cc.supabase.accounts.v2"
-DEFAULT_TOKEN_CACHE_TTL_SECONDS = 5.0
+_INDEX_MAX_BYTES = 1024 * 1024
 
 
 def _validated_unique_names(names: List[str]) -> List[str]:
     unique_names = []
+    seen = set()
     for name in names:
         if not is_valid_account_name(name):
             raise AccountIndexInvalidError(
                 "O índice local de contas contém um nome inválido."
             )
-        if name not in unique_names:
+        if name not in seen:
+            seen.add(name)
             unique_names.append(name)
     return unique_names
 
@@ -39,13 +39,13 @@ def _validated_unique_names(names: List[str]) -> List[str]:
 def safe_load_json_index(path: Path) -> Optional[List[str]]:
     """Lê o índice; None significa exclusivamente que ele não existe."""
     try:
-        contents = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return None
+        contents = read_text(path, _INDEX_MAX_BYTES)
     except OSError:
         raise AccountIndexReadError(
             "Não foi possível ler o índice local de contas."
         ) from None
+    if contents is None:
+        return None
 
     try:
         data = json.loads(contents)
@@ -61,15 +61,13 @@ def safe_load_json_index(path: Path) -> Optional[List[str]]:
     return _validated_unique_names(data["accounts"])
 
 
-class KeychainManager:
+class AccountStore:
     def __init__(
         self,
         index_path: Optional[Path] = None,
         service: str = KEYCHAIN_SERVICE,
         credential_store: Optional[CredentialStore] = None,
         environment: Optional[Environment] = None,
-        cache_ttl_seconds: float = DEFAULT_TOKEN_CACHE_TTL_SECONDS,
-        clock: Optional[Callable[[], float]] = None,
     ):
         environment = environment if environment is not None else detect_environment()
         self.index_path = (
@@ -84,9 +82,6 @@ class KeychainManager:
         )
         stored_service = getattr(self.credential_store, "service", None)
         self.service = stored_service if isinstance(stored_service, str) else service
-        self._cache_ttl_seconds = max(0.0, cache_ttl_seconds)
-        self._clock = clock if clock is not None else time.monotonic
-        self._token_cache: dict[str, tuple[str, float]] = {}
 
     @property
     def index_lock_path(self) -> Path:
@@ -120,29 +115,7 @@ class KeychainManager:
         unique_names = _validated_unique_names(names)
         self._ensure_index_parent()
         data = json.dumps({"accounts": unique_names}, indent=2)
-        descriptor = None
-        temporary_path = None
-        try:
-            descriptor, temporary_path = tempfile.mkstemp(
-                prefix=f".{self.index_path.name}.",
-                dir=self.index_path.parent,
-            )
-            os.fchmod(descriptor, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                descriptor = None
-                stream.write(data)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary_path, self.index_path)
-            temporary_path = None
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            if temporary_path is not None:
-                try:
-                    os.unlink(temporary_path)
-                except FileNotFoundError:
-                    pass
+        atomic_write_text(self.index_path, data)
 
     def _read_token_uncached(self, name: str) -> Optional[str]:
         return self.credential_store.get(name)
@@ -190,11 +163,9 @@ class KeychainManager:
         if backup is None:
             raise self._backup_failure()
         try:
-            self._token_cache.pop(name, None)
             self._write_token_verified(backup)
             if self._read_token_uncached(name) != backup.token:
                 raise self._backup_failure()
-            self._cache_token(name, backup.token)
         except AccountTransactionError:
             raise
         except Exception:
@@ -211,9 +182,6 @@ class KeychainManager:
         except Exception:
             raise self._backup_failure() from None
 
-    def _cache_token(self, name: str, token: str) -> None:
-        self._token_cache[name] = (token, self._clock())
-
     def _restore_token_best_effort(self, name: str, token: Optional[str]) -> bool:
         try:
             if token is None:
@@ -222,8 +190,6 @@ class KeychainManager:
                 self._write_token_verified(Account(name=name, token=token))
         except Exception:
             return False
-        finally:
-            self._token_cache.pop(name, None)
         return True
 
     def _ensure_initialized(self) -> None:
@@ -232,36 +198,22 @@ class KeychainManager:
     def save_account(self, account: Account) -> None:
         """Salva e confirma uma credencial sem alterar nomes do índice."""
         self._ensure_initialized()
-        self._token_cache.pop(account.name, None)
         self._write_token_verified(account)
-        self._cache_token(account.name, account.token)
 
     def get_account(self, name: str) -> Optional[Account]:
-        """Recupera uma credencial com cache positivo de curta duração."""
-        cached = self._token_cache.get(name)
-        if cached is not None:
-            token, cached_at = cached
-            if (
-                self._cache_ttl_seconds > 0
-                and self._clock() - cached_at < self._cache_ttl_seconds
-            ):
-                return Account(name=name, token=token)
-            self._token_cache.pop(name, None)
-
+        """Recupera uma credencial diretamente do armazenamento autoritativo."""
         token = self._read_token_uncached(name)
         if token:
-            self._cache_token(name, token)
             return Account(name=name, token=token)
         return None
 
-    def list_accounts(self) -> List[Account]:
+    def list_accounts(self) -> List[AccountSummary]:
         """Lista nomes sem recuperar tokens do Keychain."""
-        return [Account(name=name, token="") for name in self._read_index()]
+        return [AccountSummary(name=name) for name in self._read_index()]
 
     def delete_account(self, name: str) -> None:
         """Remove uma credencial sem alterar nomes do índice."""
         self._ensure_initialized()
-        self._token_cache.pop(name, None)
         self._delete_token(name)
 
     def update_index(self, names: List[str]) -> None:
@@ -276,7 +228,6 @@ class KeychainManager:
         with self._index_lock():
             names = self._read_index_locked()
             previous_token = self._read_token_uncached(account.name)
-            self._token_cache.pop(account.name, None)
             try:
                 self._write_token_verified(account)
                 if account.name not in names:
@@ -291,14 +242,12 @@ class KeychainManager:
                         "A operação falhou e não pôde ser revertida com segurança."
                     ) from None
                 raise
-            self._cache_token(account.name, account.token)
 
     def remove_account(self, name: str) -> None:
         """Remove credencial e nome com rollback best-effort sob lock."""
         with self._index_lock():
             names = self._read_index_locked()
             previous_token = self._read_token_uncached(name)
-            self._token_cache.pop(name, None)
             try:
                 self._delete_token(name)
                 names = [existing for existing in names if existing != name]
@@ -324,6 +273,3 @@ class KeychainManager:
                 names = []
                 self._write_index_locked(names)
             return names
-
-    def _read_file_index(self) -> List[str]:
-        return self._read_index()

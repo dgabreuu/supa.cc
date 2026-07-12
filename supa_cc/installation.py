@@ -8,6 +8,8 @@ DEBIAN = (
 )
 ARCH = "sudo pacman -S python python-pipx gnome-keyring libsecret"
 FEDORA = "sudo dnf install python3 pipx gnome-keyring libsecret"
+VCS_INSTALL = 'pipx install "git+https://github.com/dgabreuu/supa.cc.git"'
+VCS_UPDATE = 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"'
 
 
 @dataclass(frozen=True)
@@ -20,10 +22,10 @@ class InstallationGuidance:
 def installation_guidance(environment: Environment) -> InstallationGuidance:
     if environment.operating_system is OperatingSystem.MACOS:
         return InstallationGuidance(
-            install_hint="brew install supa-cc; ou pipx install supa.cc",
+            install_hint=f"brew install supa-cc; ou {VCS_INSTALL}",
             update_hint=(
                 "brew upgrade supa-cc ou brew upgrade --fetch-HEAD supa-cc; "
-                "para pipx: pipx upgrade supa.cc"
+                f"para pipx: {VCS_UPDATE}"
             ),
             remediation="Verifique se o armazenamento de credenciais do macOS está disponível.",
         )
@@ -37,8 +39,8 @@ def installation_guidance(environment: Environment) -> InstallationGuidance:
     command = commands.get(environment.distribution)
     if command is not None:
         return InstallationGuidance(
-            install_hint=f"Pré-requisitos (apenas informativo): {command}; pipx install supa.cc",
-            update_hint="pipx upgrade supa.cc",
+            install_hint=f"Pré-requisitos (apenas informativo): {command}; {VCS_INSTALL}",
+            update_hint=VCS_UPDATE,
             remediation=(
                 "Instale os pré-requisitos indicados e verifique se o Secret "
                 "Service está disponível e desbloqueado."
@@ -47,6 +49,6 @@ def installation_guidance(environment: Environment) -> InstallationGuidance:
 
     return InstallationGuidance(
         install_hint="Este sistema Linux não é suportado para instalação automática.",
-        update_hint="pipx upgrade supa.cc",
+        update_hint=VCS_UPDATE,
         remediation="Use uma distribuição Linux suportada e configure um armazenamento de credenciais compatível.",
     )

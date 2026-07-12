@@ -10,7 +10,7 @@ from .animations import loading
 from .navigation import DEFAULT_POINTER, choices_with_back
 from .render import UIRenderer
 from .state import MenuAction, NavigationState, PageId
-from .strings import UIStrings as Textos
+from ..strings import UIStrings as Textos
 from .theme import QUESTIONARY_STYLE
 
 
@@ -48,7 +48,7 @@ class TUIScreens:
 
     def _select(self, message: str, choices: List) -> Any:
         # No default: avoids "selected" highlight on first option.
-        # Standard » pointer for normal items; Voltar always renders ← via navigation patch.
+        # Standard pointer for normal items; Voltar carries its arrow in its formatted title.
         return self._ask(
             self.prompts.select(
                 message,
@@ -99,7 +99,6 @@ class TUIScreens:
             state.set_message(Textos.MSG_UNKNOWN_OPTION, "error")
             return
 
-        state.last_action = action
         state.open(page)
 
     def add_account(self, state: NavigationState) -> None:

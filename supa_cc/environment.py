@@ -47,7 +47,7 @@ class Environment:
         user_home = Path.home() if home is None else Path(home)
         if self.operating_system is OperatingSystem.LINUX:
             xdg_home = values.get("XDG_CONFIG_HOME")
-            if xdg_home:
+            if xdg_home and Path(xdg_home).is_absolute():
                 return Path(xdg_home) / "supa.cc"
         return user_home / ".config" / "supa.cc"
 

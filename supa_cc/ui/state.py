@@ -30,7 +30,6 @@ class UIMessage:
 class NavigationState:
     running: bool = True
     current_page: PageId = PageId.HOME
-    last_action: Optional[MenuAction] = None
     last_message: Optional[UIMessage] = None
     exit_code: int = 0
 
@@ -50,6 +49,3 @@ class NavigationState:
 
     def set_message(self, text: str, level: str = "info") -> None:
         self.last_message = UIMessage(text=text, level=level)
-
-    def clear_message(self) -> None:
-        self.last_message = None

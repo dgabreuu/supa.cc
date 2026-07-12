@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import keyring
 import pytest
 
-from supa_cc.keychain import KEYCHAIN_SERVICE, KeychainManager
+from supa_cc.account_store import KEYCHAIN_SERVICE, AccountStore as KeychainManager
 from supa_cc.models import Account
 
 

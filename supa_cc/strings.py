@@ -27,11 +27,13 @@ class UIStrings(CommonStrings):
     MENU_LIST = "Listar contas"
     MENU_SWITCH = "Alternar conta ativa"
     MENU_REMOVE = "Remover conta"
+    MENU_BACK = "Voltar"
     MENU_EXIT = "Sair"
 
     # Prompts
     PROMPT_ACCOUNT_NAME = "Nome da conta:"
     PROMPT_ACCESS_TOKEN = "Token de acesso:"
+    PROMPT_LIST_ACCOUNTS = "Contas cadastradas:"
     PROMPT_SELECT_ACCOUNT = "Selecione a conta:"
     PROMPT_SELECT_REMOVE = "Selecione a conta para remover:"
     PROMPT_CONFIRM_REMOVE = "Remover conta '{}'?"
@@ -47,16 +49,9 @@ class UIStrings(CommonStrings):
     MSG_UNKNOWN_OPTION = "Opção de menu desconhecida."
     MSG_GOODBYE = "Até logo!"
 
-    # Tabela de contas
-    TABLE_TITLE = "Contas cadastradas"
-    TABLE_STATUS = "Status"
-    TABLE_ACCOUNT = "Conta"
-    STATUS_ACTIVE = "Ativa"
-    STATUS_AVAILABLE = "Disponível"
+    # Loading
+    LOADING_SWITCH_ACCOUNT = "Ativando conta..."
 
-    # Sufixos
-    ACCOUNT_SUFFIX_ONE = "conta"
-    ACCOUNT_SUFFIX_MANY = "contas"
 
 
 class CLIStrings(CommonStrings):

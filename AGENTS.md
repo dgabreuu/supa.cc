@@ -4,10 +4,10 @@ Este arquivo orienta agentes, LLMs e contribuidores externos que trabalham com o
 
 ## Visão geral do projeto
 
-Supa.cc é uma ferramenta de linha de comando local para gerenciar múltiplas contas do Supabase no macOS e em Debian/Ubuntu, Arch Linux e Fedora. Ela armazena tokens com segurança no Keychain do macOS ou no Secret Service do Linux, mantém apenas nomes de contas em um índice local e integra-se ao Supabase CLI para alternar contas ativas sem login manual repetido.
+Supa.cc é uma ferramenta de linha de comando local para gerenciar múltiplas contas do Supabase no macOS e em Debian/Ubuntu, Arch Linux e Fedora, com derivados em caráter best-effort. Ela armazena tokens com segurança no Keychain do macOS ou no Secret Service do Linux e integra-se ao perfil oficial do Supabase CLI >= 2.109.1.
 
 - **Nome:** supa.cc
-- **Versão:** 0.2.0
+- **Versão:** 0.3.0
 - **Linguagem:** Python 3.9+
 - **Licença:** MIT
 - **Repositório:** https://github.com/dgabreuu/supa.cc.git
@@ -30,7 +30,7 @@ Supa.cc é uma ferramenta de linha de comando local para gerenciar múltiplas co
 - **Sistema de build:** `hatchling`.
 - **Ponto de entrada:** `supa.cc` é definido como console script em `pyproject.toml`.
 - **Dependências de runtime:** `click`, `questionary`, `rich`, `keyring`.
-- **Dependências de desenvolvimento:** `pytest`, `build`, `tomli` (para Python < 3.11).
+- **Dependências de desenvolvimento:** `pytest`, `build`, `pip-audit`, `tomli` (para Python < 3.11).
 - **Estilo de código:** Siga os padrões existentes em `supa_cc/`. Mantenha arquivos focados em uma única responsabilidade.
 - **Testes:** Adicione ou atualize testes em `tests/` para novos comportamentos.
 
@@ -45,9 +45,11 @@ Supa.cc é uma ferramenta de linha de comando local para gerenciar múltiplas co
 
 - **Nunca exponha tokens reais do Supabase** em código, testes, logs, documentação, prompts ou transcripts.
 - Tokens devem começar com `sbp_` e são validados antes do armazenamento.
-- O Supa.cc armazena apenas nomes de contas em `~/.config/supa.cc/accounts.json` no macOS e em `$XDG_CONFIG_HOME/supa.cc/accounts.json` no Linux (ou `~/.config/supa.cc/accounts.json` sem `XDG_CONFIG_HOME`). Os tokens ficam no Keychain do macOS ou no Secret Service do Linux.
+- Nenhum arquivo local contém PAT. `accounts.json` e `active-account` contêm nomes; `session-sync.json`, `.session-sync.lock` e `.accounts.json.lock` contêm somente metadados de recuperação/coordenação. Backups temporários de rollback ficam apenas no Keychain ou Secret Service.
 - No Linux, use somente Debian/Ubuntu, Arch Linux ou Fedora com D-Bus de usuário e Secret Service desbloqueado. Um ambiente headless sem esses serviços deve falhar com orientação segura; nunca habilite fallback plaintext, `keyrings.alt` ou outro keyring alternativo.
 - Ao ativar uma conta, o token é passado via `SUPABASE_ACCESS_TOKEN`, nunca como flag de linha de comando do Supabase CLI.
+- Use somente o perfil oficial `supabase`. Verifique a confiança do executável e a credencial nativa exata; rollback e recuperação devem ser mutation-aware. A trava não coordena comandos `supabase` externos concorrentes.
+- `doctor` é não-live por padrão e não abre token; somente `doctor --account <nome> --live` realiza validação autenticada explícita.
 - Não inclua detalhes do ambiente local como caminhos absolutos, e-mails pessoais, nomes de usuário ou remotes privados em qualquer arquivo público.
 - Antes de publicar, revise o histórico, arquivos ignorados, logs, caches, ambientes virtuais, fixtures e capturas de tela em busca de segredos.
 

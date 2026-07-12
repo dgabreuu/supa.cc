@@ -1,12 +1,8 @@
 from rich.console import Console
 
-from supa_cc.models import Account
 from supa_cc.ui.render import UIRenderer
 from supa_cc.ui.state import NavigationState
 from supa_cc.ui.theme import BANNER_MEDIUM, BANNER_COMPACT
-
-from helpers import fake_pat
-
 
 def test_stylized_banner_uses_project_name():
     expected = r"""
@@ -51,19 +47,3 @@ def test_home_screen_renders_compact_banner_in_narrow_terminal():
     assert "1 conta salva" in output
     for line in BANNER_COMPACT.splitlines():
         assert line.strip() in output or line.lstrip() in output
-
-
-
-def test_accounts_table_renders_account_names():
-    console = Console(record=True, width=100)
-    renderer = UIRenderer(console=console)
-    accounts = [
-        Account(name="example_alpha", token=fake_pat("token_alpha")),
-        Account(name="example_beta", token=fake_pat("token_beta")),
-    ]
-
-    renderer.show_accounts(accounts)
-
-    output = console.export_text()
-    assert "example_alpha" in output
-    assert "example_beta" in output

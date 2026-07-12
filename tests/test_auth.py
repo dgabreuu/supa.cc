@@ -266,6 +266,7 @@ def test_active_account_store_preserves_previous_value_on_write_failure(
 def test_active_account_store_classifies_empty_or_unsafe_names(tmp_path, contents):
     path = tmp_path / "active-account"
     path.write_text(contents, encoding="utf-8")
+    path.chmod(0o600)
 
     with pytest.raises(ActiveAccountInvalidError):
         ActiveAccountStore(path=path).read()
@@ -275,9 +276,37 @@ def test_active_account_store_returns_none_when_missing(tmp_path):
     assert ActiveAccountStore(path=tmp_path / "missing").read() is None
 
 
+@pytest.mark.parametrize("unsafe_kind", ["symlink", "directory", "permissive"])
+def test_active_account_store_rejects_unsafe_state_file(tmp_path, unsafe_kind):
+    path = tmp_path / "active-account"
+    if unsafe_kind == "symlink":
+        target = tmp_path / "target"
+        target.write_text("work\n", encoding="utf-8")
+        target.chmod(0o600)
+        path.symlink_to(target)
+    elif unsafe_kind == "directory":
+        path.mkdir()
+    else:
+        path.write_text("work\n", encoding="utf-8")
+        path.chmod(0o644)
+
+    with pytest.raises(ActiveAccountReadError):
+        ActiveAccountStore(path=path).read()
+
+
+def test_active_account_store_rejects_oversized_state_file(tmp_path):
+    path = tmp_path / "active-account"
+    path.write_text("x" * 257, encoding="utf-8")
+    path.chmod(0o600)
+
+    with pytest.raises(ActiveAccountReadError):
+        ActiveAccountStore(path=path).read()
+
+
 def test_active_account_store_clear_is_idempotent(tmp_path):
     path = tmp_path / "active-account"
     path.write_text("work\n", encoding="utf-8")
+    path.chmod(0o600)
     store = ActiveAccountStore(path=path)
 
     store.clear()
@@ -296,7 +325,10 @@ def test_active_account_store_clear_is_idempotent(tmp_path):
 def test_active_account_store_clear_maps_unlink_failures(
     tmp_path, monkeypatch, failure, expected_exception
 ):
-    store = ActiveAccountStore(path=tmp_path / "active-account")
+    path = tmp_path / "active-account"
+    path.write_text("work\n", encoding="utf-8")
+    path.chmod(0o600)
+    store = ActiveAccountStore(path=path)
     monkeypatch.setattr(Path, "unlink", lambda *_args, **_kwargs: (_ for _ in ()).throw(failure))
 
     with pytest.raises(expected_exception) as raised:
@@ -317,7 +349,8 @@ def test_active_account_store_distinguishes_read_failures(
 ):
     path = tmp_path / "active-account"
     path.write_text("work\n", encoding="utf-8")
-    monkeypatch.setattr(Path, "read_text", lambda *_args, **_kwargs: (_ for _ in ()).throw(failure))
+    path.chmod(0o600)
+    monkeypatch.setattr(auth, "read_text", lambda *_args, **_kwargs: (_ for _ in ()).throw(failure))
 
     with pytest.raises(expected_exception) as raised:
         ActiveAccountStore(path=path).read()
@@ -328,6 +361,7 @@ def test_active_account_store_distinguishes_read_failures(
 def test_active_account_store_rejects_invalid_contents_with_domain_error(tmp_path):
     path = tmp_path / "active-account"
     path.write_text("../unsafe\n", encoding="utf-8")
+    path.chmod(0o600)
 
     with pytest.raises(ActiveAccountInvalidError):
         ActiveAccountStore(path=path).read()

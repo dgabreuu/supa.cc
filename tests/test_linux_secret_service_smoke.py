@@ -13,13 +13,11 @@ from supa_cc.environment import detect_environment
 from supa_cc.models import Account
 
 
-pytestmark = pytest.mark.skipif(
+@pytest.mark.real_secret_service
+@pytest.mark.skipif(
     os.environ.get("SUPA_CC_REAL_SECRET_SERVICE") != "1",
     reason="requires explicit SUPA_CC_REAL_SECRET_SERVICE=1 opt-in",
 )
-
-
-@pytest.mark.real_secret_service
 def test_secret_service_round_trip_uses_an_isolated_entry():
     if platform.system() != "Linux":
         pytest.skip("requires Linux")

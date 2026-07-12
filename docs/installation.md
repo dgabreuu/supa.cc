@@ -1,6 +1,6 @@
 # Instalação
 
-Supa.cc é uma CLI para macOS e para Debian/Ubuntu, Arch Linux e Fedora. Ela espera que o Supabase CLI esteja disponível como `supabase` no `PATH`. No macOS os tokens ficam no Keychain; no Linux ficam exclusivamente no Secret Service.
+Supa.cc é uma CLI para macOS e para Debian/Ubuntu, Arch Linux e Fedora; derivados são best-effort. Ela requer o [Supabase CLI oficial](https://supabase.com/docs/guides/local-development/cli/getting-started) >= 2.109.1 disponível como `supabase` no `PATH`. No macOS os tokens ficam no Keychain; no Linux ficam exclusivamente no Secret Service.
 
 ## Homebrew (somente macOS)
 
@@ -74,9 +74,11 @@ python3 -m pip install -e ".[dev]"
 - Um Supabase Personal Access Token para cada conta local.
 - Em Linux, D-Bus de usuário e Secret Service desbloqueado.
 
-## Configuração no Linux
+## Estado e segurança
 
-No Linux, o índice e a conta ativa ficam em `$XDG_CONFIG_HOME/supa.cc/` quando `XDG_CONFIG_HOME` está definido; caso contrário ficam em `~/.config/supa.cc/`. Esses arquivos guardam somente nomes de conta. O PAT fica no Secret Service e nunca em texto puro.
+No Linux, o estado fica em `$XDG_CONFIG_HOME/supa.cc/` quando `XDG_CONFIG_HOME` está definido; caso contrário fica em `~/.config/supa.cc/`. Nenhum arquivo local contém PAT: `accounts.json` e `active-account` guardam nomes; `session-sync.json`, `.session-sync.lock` e `.accounts.json.lock` guardam metadados sem segredo. Backups temporários usados por rollback ficam somente no Secret Service ou Keychain.
+
+O Supa.cc aceita somente o perfil oficial `supabase`, verifica a confiança do executável resolvido e confirma a credencial nativa exata após o login. Rollback e recuperação são mutation-aware: a fase do journal determina se a mutação deve ser concluída ou se a credencial anterior deve ser restaurada do backup seguro. A trava coordena processos Supa.cc, mas não comandos `supabase` externos concorrentes.
 
 ## Verificação após instalar
 
@@ -90,6 +92,8 @@ supa.cc run -- projects list
 ```
 
 `add` solicita o PAT em prompt oculto. `switch` valida o PAT, executa `login` e `projects list` pelo CLI oficial e só então guarda o nome ativo. Depois do sucesso, `supabase ...` direto usa essa sessão; `supa.cc run -- ...` é opcional. `doctor` sem `--live` não abre token. Para uma verificação online explícita, use `supa.cc doctor --account work --live`.
+
+No diagnóstico padrão, o backend é configurado, mas não verificado: essa execução não testa o D-Bus nem confirma que o Secret Service ou Keychain esteja disponível e desbloqueado.
 
 Remova qualquer `SUPABASE_ACCESS_TOKEN` herdado antes do `switch`, pois esse override bloqueia a sincronização. Um fallback `access-token` plaintext também é bloqueado e nunca é lido. Operações interrompidas deixam um journal sem token para recuperação pelo próximo comando mutável; a trava coordena apenas processos Supa.cc, não comandos `supabase` externos concorrentes. Remover a conta ativa chama `logout --yes`, que pode remover credenciais auxiliares de projeto mantidas pelo CLI oficial.
 

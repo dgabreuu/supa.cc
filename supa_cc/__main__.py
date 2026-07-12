@@ -50,7 +50,10 @@ def _check_for_updates():
 def main(ctx):
     """Gerenciador de Contas Supabase"""
     if ctx.invoked_subcommand is None:
-        exit_code = run_tui()
+        try:
+            exit_code = run_tui()
+        except Exception as error:
+            _exit_with_local_failure(error)
         if exit_code:
             ctx.exit(normalize_exit_code(exit_code) or 1)
 

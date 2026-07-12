@@ -1,4 +1,5 @@
 import json
+import inspect
 import os
 from pathlib import Path
 from unittest.mock import Mock
@@ -12,12 +13,16 @@ from supa_cc.auth import (
     AuthFailureCode,
     AuthResult,
 )
-from supa_cc.config import SupabaseConfig
+from supa_cc.supabase_cli import SupabaseCLI as SupabaseConfig
 from supa_cc.credentials import CredentialStoreStatus
 from supa_cc.diagnostics import DiagnosticService
+from supa_cc.diagnostic_collectors import collect_activation_consistency
+import supa_cc.diagnostic_collectors as diagnostic_collectors
+import supa_cc.diagnostic_renderers as diagnostic_renderers
+import supa_cc.diagnostics as diagnostics_facade
 from supa_cc.environment import detect_environment
 from supa_cc.installation import installation_guidance
-from supa_cc.keychain import KEYCHAIN_SERVICE
+from supa_cc.account_store import KEYCHAIN_SERVICE
 from supa_cc.native_session import NativeSessionSynchronizer, SessionSyncJournal
 
 from helpers import fake_pat
@@ -218,7 +223,12 @@ def test_doctor_reports_sync_metadata_by_presence_without_reading_contents(tmp_p
     manager.config = SupabaseConfig(binary_resolver=lambda _: None)
     manager.sync_journal = Mock()
     manager.sync_journal.path = tmp_path / "session-sync.json"
-    manager.sync_journal.read.side_effect = AssertionError("must not read journal")
+    manager.sync_journal.read.return_value = {
+        "operation": "activate",
+        "target_account": "work",
+        "previous_account": None,
+        "phase": "native_login",
+    }
     manager.native_session = Mock()
     manager.native_session.fallback_path = tmp_path / ".supabase" / "access-token"
     manager.native_session.fallback_path.parent.mkdir()
@@ -242,11 +252,126 @@ def test_doctor_reports_sync_metadata_by_presence_without_reading_contents(tmp_p
         "plaintext_fallback_state": "present",
         "parent_override_present": True,
     }
-    manager.sync_journal.read.assert_not_called()
+    manager.sync_journal.read.assert_called_once_with()
     manager.get.assert_not_called()
     rendered = report.to_json()
     assert "private journal" not in rendered
     assert "private token" not in rendered
+
+
+def test_activation_collector_reports_read_only_consistency_findings(tmp_path):
+    journal = SessionSyncJournal(tmp_path / "session-sync.json")
+    journal.write("activate", "work", None, "native_login")
+    native_session = NativeSessionSynchronizer(
+        Mock(), env={"SUPABASE_HOME": str(tmp_path / "custom-home")}
+    )
+    native_session.fallback_path.parent.mkdir()
+    native_session.fallback_path.write_text("private token", encoding="utf-8")
+    profile_path = native_session.fallback_path.parent / "profile"
+    profile_path.write_text(
+        "other", encoding="utf-8"
+    )
+    profile_path.chmod(0o600)
+
+    activation, codes = collect_activation_consistency(
+        journal=journal,
+        native_session=native_session,
+        env={},
+    )
+
+    assert activation["journal_state"] == "present"
+    assert activation["plaintext_fallback_state"] == "present"
+    assert activation["profile"] == "unsupported"
+    assert AuthFailureCode.SYNC_PENDING.value in codes
+    assert AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED.value in codes
+    assert AuthFailureCode.PROFILE_MISMATCH.value in codes
+
+
+def test_profile_inspection_failure_is_not_reported_as_profile_mismatch(
+    tmp_path, monkeypatch
+):
+    native_session = NativeSessionSynchronizer(
+        Mock(), env={}, supabase_home=tmp_path / ".supabase"
+    )
+    monkeypatch.setattr(
+        diagnostic_collectors,
+        "read_text",
+        Mock(side_effect=PermissionError("private path")),
+    )
+
+    activation, codes = collect_activation_consistency(
+        SessionSyncJournal(tmp_path / "journal.json"), native_session, {}
+    )
+
+    assert activation["profile"] == "inaccessible"
+    assert AuthFailureCode.ENVIRONMENT_BLOCKED.value in codes
+    assert AuthFailureCode.PROFILE_MISMATCH.value not in codes
+
+
+def test_rendering_implementation_lives_outside_collectors():
+    collector_source = "\n".join(
+        inspect.getsource(report_class)
+        for report_class in diagnostic_collectors.DoctorReport.__mro__
+        if report_class.__module__ == diagnostic_collectors.__name__
+    )
+    renderer_source = inspect.getsource(diagnostic_renderers)
+
+    assert "Supa.cc doctor" not in collector_source
+    assert '"keychain"' not in collector_source
+    assert "Supa.cc doctor" in renderer_source
+    assert '"keychain"' in renderer_source
+
+
+def test_diagnostics_facade_reexports_collector_service_directly():
+    assert diagnostics_facade.DiagnosticService is diagnostic_collectors.DiagnosticService
+
+
+def test_doctor_reports_active_account_absent_from_valid_index(tmp_path):
+    manager = Mock(spec=AccountManager)
+    manager.keychain = Mock()
+    manager.active_store = Mock()
+    manager.keychain.index_path = tmp_path / "accounts.json"
+    manager.keychain.index_path.write_text(
+        '{"accounts": ["personal"]}', encoding="utf-8"
+    )
+    manager.keychain.index_path.chmod(0o600)
+    manager.keychain.service = KEYCHAIN_SERVICE
+    manager.active_store.read.return_value = "work"
+    manager.config = SupabaseConfig(binary_resolver=lambda _: None)
+    manager.sync_journal = SessionSyncJournal(tmp_path / "session-sync.json")
+    manager.native_session = NativeSessionSynchronizer(
+        manager.config, env={}, supabase_home=tmp_path / ".supabase"
+    )
+
+    report = _service(tmp_path, manager=manager).run()
+
+    assert AuthFailureCode.ACTIVE_ACCOUNT_MISSING.value in report.diagnostic_codes
+    assert report.ok is False
+
+
+def test_doctor_uses_supabase_home_for_native_session_diagnostics(tmp_path):
+    custom_home = tmp_path / "custom-supabase-home"
+    service = DiagnosticService(
+        env={"SUPABASE_HOME": str(custom_home)},
+        launcher_path=tmp_path / "supa.cc",
+        python_executable=tmp_path / "python",
+        environment=detect_environment(system_name="Darwin"),
+    )
+    manager = Mock(spec=AccountManager)
+    manager.keychain = Mock()
+    manager.keychain.index_path = tmp_path / "accounts.json"
+    manager.keychain.service = KEYCHAIN_SERVICE
+    manager.active_store = Mock()
+    manager.active_store.read.return_value = None
+    manager.config = SupabaseConfig(binary_resolver=lambda _: None)
+    manager.sync_journal = SessionSyncJournal(tmp_path / "journal.json")
+    manager.native_session = NativeSessionSynchronizer(manager.config, env=service.env)
+    service._manager = manager
+
+    report = service.run()
+
+    assert report.environment["telemetry_directory_exists"] is False
+    assert manager.native_session.fallback_path == custom_home / "access-token"
 
 
 @pytest.mark.parametrize(
@@ -341,6 +466,7 @@ def test_doctor_reads_node_package_metadata_without_executing_cli(tmp_path):
 def test_doctor_classifies_invalid_index_without_overwriting_it(tmp_path):
     index = tmp_path / "accounts.json"
     index.write_text("not-json", encoding="utf-8")
+    index.chmod(0o600)
     service = _service(tmp_path)
 
     report = service.run()
@@ -485,6 +611,37 @@ def test_linux_doctor_reports_distribution_and_unavailable_credential_store(
     signature_resolver.assert_not_called()
 
 
+def test_default_doctor_preserves_legacy_status_but_marks_availability_unverified(
+    tmp_path,
+):
+    credential_store = Mock()
+    credential_store.service = "supa.cc.tests.credentials"
+    credential_store.status.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.SecretService.Keyring",
+        available=True,
+        live_probed=False,
+    )
+
+    report = _service(
+        tmp_path,
+        environment=detect_environment(
+            system_name="Linux", os_release="ID=ubuntu\n"
+        ),
+        credential_store=credential_store,
+    ).run()
+
+    assert report.credentials["status"] == "available"
+    assert report.credentials["live_probed"] is False
+    assert report.credentials["configured"] is True
+    assert report.credentials["availability"] == "unverified"
+    human = report.to_human().lower()
+    assert "configurado" in human
+    assert "não verificado" in human
+    assert "(available)" not in human
+    assert "(disponível)" not in human
+    credential_store.probe.assert_not_called()
+
+
 def test_linux_doctor_human_output_reports_distribution_and_remediation(
     tmp_path,
 ):
@@ -517,7 +674,7 @@ def test_doctor_blocks_unknown_linux_without_constructing_account_manager(
     environment = detect_environment(system_name="Linux", os_release="ID=custom\n")
     token = fake_pat("blocked_doctor")
     monkeypatch.setattr(
-        "supa_cc.diagnostics.AccountManager",
+        "supa_cc.diagnostic_collectors.AccountManager",
         Mock(side_effect=AssertionError("must not construct manager")),
     )
 
@@ -544,7 +701,7 @@ def test_doctor_blocks_unsupported_os_without_constructing_account_manager(
 ):
     environment = detect_environment(system_name="Windows")
     monkeypatch.setattr(
-        "supa_cc.diagnostics.AccountManager",
+        "supa_cc.diagnostic_collectors.AccountManager",
         Mock(side_effect=AssertionError("must not construct manager")),
     )
 

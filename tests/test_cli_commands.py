@@ -49,7 +49,8 @@ class TestCLICommands:
             message = _check_for_updates()
 
         assert "brew upgrade supa-cc" in message
-        assert "pipx upgrade supa.cc" in message
+        assert 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"' in message
+        assert "pipx upgrade supa.cc" not in message
 
     def test_update_check_uses_linux_guidance(self, monkeypatch):
         from supa_cc.environment import detect_environment
@@ -61,7 +62,8 @@ class TestCLICommands:
         with patch("os.path.isdir", return_value=False):
             message = _check_for_updates()
 
-        assert "pipx upgrade supa.cc" in message
+        assert 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"' in message
+        assert "pipx upgrade supa.cc" not in message
         assert "brew" not in message
 
     def test_list_empty_accounts(self):
@@ -188,6 +190,20 @@ class TestCLICommands:
         with patch("supa_cc.accounts.AccountManager") as manager_class:
             manager_class.side_effect = CredentialAccessError("private backend detail")
             result = runner.invoke(main, command, input=input_text)
+
+        assert result.exit_code != 0
+        assert "Não foi possível acessar a credencial no armazenamento de credenciais." in result.output
+        assert "private backend detail" not in result.output
+
+    def test_add_sanitizes_typed_credential_store_failure(self):
+        runner = CliRunner()
+        with patch("supa_cc.accounts.AccountManager") as manager_class:
+            manager_class.return_value.add.side_effect = CredentialAccessError(
+                "private backend detail"
+            )
+            result = runner.invoke(
+                main, ["add", "work"], input=f"{fake_pat('blocked_add')}\n"
+            )
 
         assert result.exit_code != 0
         assert "Não foi possível acessar a credencial no armazenamento de credenciais." in result.output

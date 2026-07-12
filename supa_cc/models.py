@@ -11,3 +11,8 @@ class Account:
     def validate_token(self) -> bool:
         """Valida formato do token Supabase."""
         return is_valid_access_token(self.token)
+
+
+@dataclass(frozen=True)
+class AccountSummary:
+    name: str

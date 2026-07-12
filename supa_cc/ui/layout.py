@@ -37,22 +37,6 @@ def create_header(title: str, subtitle: str = "") -> Panel:
     )
 
 
-def create_footer(text: str) -> Text:
-    """Cria texto de rodapé estilizado."""
-    return Text(text, style=RICH_STYLES["dim"], justify="center")
-
-
-def create_divider(width: Optional[int] = None) -> Text:
-    """Cria linha divisória estilizada."""
-    divider_width = width or default_console.width
-    return Text("─" * divider_width, style=RICH_STYLES["border"])
-
-
-def spacer(lines: int = 1) -> Text:
-    """Cria espaçamento vertical."""
-    return Text("\n" * lines)
-
-
 def create_message_panel(text: str, level: str = "info") -> Panel:
     """Cria painel de mensagem com estilo apropriado."""
     style = RICH_STYLES.get(level, RICH_STYLES["info"])

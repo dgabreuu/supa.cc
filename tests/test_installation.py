@@ -24,7 +24,10 @@ def test_supported_platform_guidance_includes_display_only_install_commands(
     )
 
     assert command in guidance.install_hint
-    assert "pipx upgrade supa.cc" in guidance.update_hint
+    assert 'pipx install "git+https://github.com/dgabreuu/supa.cc.git"' in guidance.install_hint
+    assert "pipx install supa.cc" not in guidance.install_hint
+    assert 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"' in guidance.update_hint
+    assert "pipx upgrade supa.cc" not in guidance.update_hint
 
 
 def test_unsupported_linux_guidance_does_not_offer_package_manager_commands():

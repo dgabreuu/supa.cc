@@ -1,16 +1,14 @@
-from typing import Callable, Iterable, Optional
+from typing import Optional
 
 from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.text import Text
 
-from ..models import Account
+from ..strings import UIStrings as Textos
 from .console import console as default_console
 from .layout import center_banner_lines, clear_screen, create_header, create_message_panel
 from .state import NavigationState, UIMessage
-from .strings import UIStrings as Textos
 from .theme import RICH_STYLES, get_banner
 
 
@@ -29,12 +27,9 @@ class UIRenderer:
         self,
         state: NavigationState,
         title: str,
-        render_body: Optional[Callable[[], None]] = None,
     ) -> None:
         self.clear()
         self.console.print(create_header(title, Textos.APP_NAME))
-        if render_body is not None:
-            render_body()
 
     def show_home(self, state: NavigationState, account_count: int) -> None:
         account_label = Textos.ACCOUNT_COUNT_ONE if account_count == 1 else Textos.ACCOUNT_COUNT_MANY
@@ -61,15 +56,6 @@ class UIRenderer:
     def show_message(self, message: UIMessage) -> None:
         panel = create_message_panel(message.text, message.level)
         self.console.print(panel)
-
-    def show_accounts(self, accounts: Iterable[Account]) -> None:
-        table = Table(title=Textos.TABLE_TITLE, border_style=RICH_STYLES["border"])
-        table.add_column(Textos.TABLE_ACCOUNT, style="white")
-
-        for account in accounts:
-            table.add_row(account.name)
-
-        self.console.print(table)
 
     def show_goodbye(self) -> None:
         self.console.print(

@@ -3,10 +3,26 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python < 3.11
     import tomli as tomllib
 
+from pathlib import Path
+
+from supa_cc import __version__
+import supa_cc.account_store as account_store
+import supa_cc.supabase_cli as supabase_cli
+
+
+def test_internal_modules_do_not_expose_stale_class_aliases():
+    assert not hasattr(account_store, "AccountRepository")
+    assert not hasattr(supabase_cli, "SupabaseConfig")
+
 
 def load_project_metadata():
     with open("pyproject.toml", "rb") as pyproject_file:
         return tomllib.load(pyproject_file)["project"]
+
+
+def load_pyproject():
+    with open("pyproject.toml", "rb") as pyproject_file:
+        return tomllib.load(pyproject_file)
 
 
 def test_project_metadata_uses_supa_cc_identity():
@@ -16,6 +32,19 @@ def test_project_metadata_uses_supa_cc_identity():
     assert project["scripts"] == {
         "supa.cc": "supa_cc.__main__:main",
     }
+
+
+def test_source_version_is_0_3_0_while_formula_remains_on_stable_release():
+    project = load_project_metadata()
+    with open("AGENTS.md", "r", encoding="utf-8") as agents_file:
+        agents = agents_file.read()
+    with open("Formula/supa-cc.rb", "r", encoding="utf-8") as formula_file:
+        formula = formula_file.read()
+
+    assert project["version"] == "0.3.0"
+    assert __version__ == "0.3.0"
+    assert "- **Versão:** 0.3.0" in agents
+    assert "/refs/tags/v0.2.0.tar.gz" in formula
 
 
 def test_project_metadata_links_public_repository():
@@ -32,6 +61,32 @@ def test_python_39_test_dependency_includes_tomli():
     project = load_project_metadata()
 
     assert 'tomli>=2.0.0; python_version < "3.11"' in project["optional-dependencies"]["dev"]
+
+
+def test_build_and_audit_dependencies_are_bounded_and_development_only():
+    pyproject = load_pyproject()
+
+    assert pyproject["build-system"]["requires"] == ["hatchling>=1.25,<2"]
+    assert "pip-audit>=2.7,<3" in pyproject["project"]["optional-dependencies"]["dev"]
+    assert not any(
+        dependency.startswith("pip-audit")
+        for dependency in pyproject["project"]["dependencies"]
+    )
+
+
+def test_sdist_explicitly_excludes_private_and_local_artifacts():
+    exclude = set(load_pyproject()["tool"]["hatch"]["build"]["targets"]["sdist"]["exclude"])
+
+    required = {
+        "/.superpowers",
+        "/docs/superpowers",
+        "/.pytest_cache",
+        "/dist",
+        "/build",
+        "/.venv",
+        "/venv",
+    }
+    assert required <= exclude
 
 
 def test_project_metadata_declares_macos_and_linux_support():
@@ -63,3 +118,6 @@ def test_license_uses_mit_with_supa_cc_attribution():
 
     assert license_text.startswith("MIT License")
     assert "Copyright (c) 2026 Supa.cc contributors" in license_text
+    assert "Tradução" not in license_text
+    assert license_text.rstrip().endswith("SOFTWARE.")
+    assert Path("docs/license-pt-BR.md").is_file()

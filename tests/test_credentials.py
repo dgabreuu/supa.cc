@@ -4,6 +4,7 @@ import pytest
 from keyring.errors import KeyringError, KeyringLocked, PasswordDeleteError
 
 import supa_cc.credentials as credentials
+from supa_cc.account_store import AccountStore
 from supa_cc.auth import (
     AuthFailureCode,
     CredentialPermissionDeniedError,
@@ -93,11 +94,25 @@ def test_linux_selects_only_secret_service_backend(fake_secret_service):
     assert store.status() == CredentialStoreStatus(
         backend_name="keyring.backends.SecretService.Keyring",
         available=True,
+        live_probed=False,
     )
-    assert len(fake.calls) == 1
+    assert fake.calls == []
+
+
+def test_live_probe_is_opt_in_and_uses_an_isolated_namespace(fake_secret_service):
+    store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
+
+    status = store.probe()
+
+    assert status.available is True
+    assert status.live_probed is True
     operation, service, name = fake.calls[0]
     assert operation == "get"
-    assert service != "supa.cc.supabase.accounts.v2"
+    assert service not in {
+        "supa.cc.supabase.accounts.v2",
+        credentials.SUPABASE_CLI_CREDENTIAL_SERVICE,
+    }
     assert service.startswith("supa.cc.probe.")
     assert name.startswith("probe-")
 
@@ -230,7 +245,7 @@ def test_linux_rejects_subclass_of_expected_backend_before_credential_writes(
     assert backend.calls == []
 
 
-def test_unavailable_provider_reports_safe_remediation(
+def test_unavailable_provider_probe_reports_safe_remediation(
     fake_secret_service, monkeypatch
 ):
     monkeypatch.setattr(
@@ -242,7 +257,7 @@ def test_unavailable_provider_reports_safe_remediation(
     store = create_credential_store(linux_environment())
     fake = fake_secret_service.instances[0]
 
-    status = store.status()
+    status = store.probe()
 
     assert status.available is False
     assert "D-Bus" in status.message
@@ -256,7 +271,7 @@ def test_unavailable_provider_reports_safe_remediation(
     [KeyringLocked("locked detail"), PermissionError("permission detail")],
     ids=["locked", "permission"],
 )
-def test_unavailable_collection_reports_safe_remediation(
+def test_unavailable_collection_probe_reports_safe_remediation(
     fake_secret_service, probe_error
 ):
     fake_secret_service.next_get_error = probe_error
@@ -264,7 +279,7 @@ def test_unavailable_collection_reports_safe_remediation(
     store = create_credential_store(linux_environment())
     fake = fake_secret_service.instances[0]
 
-    status = store.status()
+    status = store.probe()
 
     assert status.available is False
     assert "D-Bus" in status.message
@@ -274,28 +289,28 @@ def test_unavailable_collection_reports_safe_remediation(
     assert fake.calls[0][1] != "supa.cc.supabase.accounts.v2"
 
 
-def test_unavailable_store_blocks_writes_before_token_access(fake_secret_service):
+def test_transient_probe_failure_does_not_block_later_writes(fake_secret_service):
     fake_secret_service.next_get_error = PermissionError("permission detail")
     store = create_credential_store(linux_environment())
     fake = fake_secret_service.instances[0]
     account = Account(name="work", token=fake_pat("unavailable"))
 
-    with pytest.raises(CredentialAccessError) as raised:
-        store.set(account)
+    status = store.probe()
+    fake.get_error = None
+    store.set(account)
 
-    assert "D-Bus" in str(raised.value)
-    assert account.token not in str(raised.value)
-    assert [call[0] for call in fake.calls] == ["get"]
+    assert status.available is False
+    assert [call[0] for call in fake.calls] == ["get", "set", "get"]
 
 
 @pytest.mark.parametrize("operation", ["get", "set", "delete"])
-def test_startup_probe_secret_service_unavailability_survives_classification(
+def test_secret_service_operation_unavailability_survives_classification(
     fake_secret_service, operation
 ):
-    fake_secret_service.next_get_error = PermissionError("private probe detail")
     account = Account(name="work", token=fake_pat("startup-probe"))
     store = create_credential_store(linux_environment())
     fake = fake_secret_service.instances[0]
+    setattr(fake, f"{operation}_error", PermissionError("private operation detail"))
 
     with pytest.raises(SecretServiceUnavailableError) as raised:
         if operation == "get":
@@ -315,8 +330,51 @@ def test_startup_probe_secret_service_unavailability_survives_classification(
     assert result.message == expected_message
     assert account.token not in str(raised.value)
     assert account.token not in result.message
-    assert "private probe detail" not in result.message
-    assert [call[0] for call in fake.calls] == ["get"]
+    assert "private operation detail" not in result.message
+    assert [call[0] for call in fake.calls] == [operation]
+
+
+def test_matches_compares_stored_value_without_returning_it(fake_secret_service, monkeypatch):
+    store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
+    stored = fake_pat("stored-match")
+    expected = fake_pat("expected-match")
+    fake.passwords[(store.service, "work")] = stored
+    compared = []
+
+    def compare_digest(left, right):
+        compared.append((left, right))
+        return False
+
+    monkeypatch.setattr(credentials.hmac, "compare_digest", compare_digest)
+
+    result = store.matches("work", expected)
+
+    assert result is False
+    assert compared == [(stored, expected)]
+    assert stored not in repr(result)
+
+
+def test_matches_normalizes_backend_errors(fake_secret_service):
+    store = create_credential_store(linux_environment())
+    fake_secret_service.instances[0].get_error = KeyringError("private token detail")
+
+    with pytest.raises(SecretServiceUnavailableError) as raised:
+        store.matches("work", fake_pat("expected"))
+
+    assert "private token detail" not in str(raised.value)
+
+
+def test_supabase_cli_store_uses_official_native_namespace_and_selected_backend(
+    fake_secret_service,
+):
+    store = credentials.create_supabase_cli_credential_store(linux_environment())
+
+    assert credentials.SUPABASE_CLI_CREDENTIAL_SERVICE == "Supabase CLI"
+    assert credentials.SUPABASE_CLI_CREDENTIAL_NAME == "supabase"
+    assert store.service == "Supabase CLI"
+    assert store.backend_name == "keyring.backends.SecretService.Keyring"
+    assert fake_secret_service.instances[0].calls == []
 
 
 def test_store_uses_the_selected_fake_for_every_operation(fake_secret_service):
@@ -447,6 +505,38 @@ def test_store_tolerates_only_a_recognized_missing_delete(fake_secret_service):
     fake.delete_error = PasswordDeleteError("Item not found")
 
     store.delete("missing")
+
+
+def test_secret_service_no_such_password_delete_is_idempotent(fake_secret_service):
+    store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
+    fake.delete_error = PasswordDeleteError("No such password!")
+
+    store.delete("missing")
+
+
+def test_secret_service_no_such_password_does_not_hide_other_delete_failures(
+    fake_secret_service,
+):
+    store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
+    fake.delete_error = PasswordDeleteError("No such password! backend failed")
+
+    with pytest.raises(SecretServiceUnavailableError):
+        store.delete("missing")
+
+
+def test_secret_service_no_such_password_allows_backup_cleanup(
+    fake_secret_service, tmp_path
+):
+    store = create_credential_store(linux_environment())
+    fake = fake_secret_service.instances[0]
+    fake.delete_error = PasswordDeleteError("No such password!")
+    account_store = AccountStore(
+        index_path=tmp_path / "accounts.json", credential_store=store
+    )
+
+    account_store.delete_account_backup("work")
 
 
 def test_store_rejects_read_back_mismatch_without_exposing_token(fake_secret_service):

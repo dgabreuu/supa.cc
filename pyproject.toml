@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.25,<2"]
 build-backend = "hatchling.build"
 
 [project]
 name = "supa.cc"
-version = "0.2.0"
+version = "0.3.0"
 description = "Local Supabase account switcher for macOS Keychain and Linux Secret Service"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -48,6 +48,7 @@ Issues = "https://github.com/dgabreuu/supa.cc/issues"
 dev = [
     "pytest>=8.0.0",
     "build>=1.2.0",
+    "pip-audit>=2.7,<3",
     "tomli>=2.0.0; python_version < \"3.11\"",
 ]
 
@@ -56,6 +57,23 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["supa_cc"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.superpowers",
+    "/docs/superpowers",
+    "/.pytest_cache",
+    "/.ruff_cache",
+    "/**/__pycache__",
+    "/**/*.pyc",
+    "/**/*.diff",
+    "/dist",
+    "/build",
+    "/.venv",
+    "/venv",
+    "/.env",
+    "/.DS_Store",
+]
 
 [tool.pytest.ini_options]
 markers = [

@@ -15,13 +15,8 @@ class FakeRenderer:
     def paint_home(self, state, account_count):
         self.home_paints += 1
 
-    def paint_subpage(self, state, title, render_body=None):
+    def paint_subpage(self, state, title):
         self.subpage_paints.append(title)
-        if render_body:
-            render_body()
-
-    def show_accounts(self, accounts):
-        pass
 
     def show_goodbye(self):
         self.goodbye_calls += 1

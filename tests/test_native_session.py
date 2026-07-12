@@ -10,10 +10,76 @@ from helpers import fake_pat
 from supa_cc.auth import AuthFailureCode, AuthResult
 from supa_cc.models import Account
 from supa_cc.native_session import (
+    MutationState,
     NativeSessionSynchronizer,
     SessionSyncJournal,
     access_token_fallback_path,
 )
+
+
+def test_preflight_rejects_custom_profile_without_cli_calls(tmp_path):
+    home = tmp_path / "supabase"
+    home.mkdir()
+    (home / "profile").write_text("personal\n", encoding="utf-8")
+    (home / "profile").chmod(0o600)
+    config = Mock()
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=home)
+
+    result = synchronizer.preflight()
+
+    assert result.code is AuthFailureCode.PROFILE_MISMATCH
+    assert config.method_calls == []
+
+
+def test_preflight_rejects_symlinked_profile_without_cli_calls(tmp_path):
+    home = tmp_path / "supabase"
+    home.mkdir()
+    target = tmp_path / "profile-target"
+    target.write_text("supabase\n", encoding="utf-8")
+    target.chmod(0o600)
+    (home / "profile").symlink_to(target)
+    config = Mock()
+
+    result = NativeSessionSynchronizer(
+        config, env={}, supabase_home=home
+    ).preflight()
+
+    assert result.code is AuthFailureCode.PROFILE_MISMATCH
+    assert config.method_calls == []
+
+
+def test_preflight_checks_cli_only_after_local_state_is_safe(tmp_path):
+    config = Mock()
+    config.preflight.return_value = AuthResult.success()
+    synchronizer = NativeSessionSynchronizer(
+        config, env={}, supabase_home=tmp_path / "supabase"
+    )
+
+    assert synchronizer.preflight().ok
+    config.preflight.assert_called_once_with()
+    assert synchronizer.mutation_state is MutationState.NONE
+
+
+def test_activate_uses_controlled_home_and_requires_native_credential_match(tmp_path):
+    config = Mock()
+    config.login_with_access_token.return_value = AuthResult.success()
+    config.verify_persisted_session.return_value = AuthResult.success()
+    credentials = Mock()
+    credentials.matches.return_value = False
+    account = Account("work", fake_pat("controlled"))
+    synchronizer = NativeSessionSynchronizer(
+        config, env={}, supabase_home=tmp_path / "real", credential_store=credentials
+    )
+
+    result = synchronizer.activate(account)
+
+    assert result.code is AuthFailureCode.NATIVE_VERIFICATION_FAILED
+    assert synchronizer.mutation_state is MutationState.ATTEMPTED
+    controlled_home = config.login_with_access_token.call_args.kwargs["supabase_home"]
+    assert controlled_home != tmp_path / "real"
+    assert not controlled_home.exists()
+    credentials.matches.assert_called_once_with("supabase", account.token)
+    config.verify_persisted_session.assert_not_called()
 
 
 def test_access_token_fallback_path_honors_supabase_home(tmp_path):
@@ -36,12 +102,10 @@ def test_access_token_fallback_path_uses_default_home(tmp_path, monkeypatch):
 
 def test_activate_rejects_inherited_access_token_without_login(tmp_path):
     config = Mock()
-    journal = SessionSyncJournal(tmp_path / "session-sync.json")
     synchronizer = NativeSessionSynchronizer(
         config=config,
         env={"SUPABASE_ACCESS_TOKEN": fake_pat("parent")},
         supabase_home=tmp_path / "supabase",
-        journal=journal,
     )
     account = Account(name="work", token=fake_pat("work"))
 
@@ -62,7 +126,6 @@ def test_activate_rejects_preexisting_plaintext_fallback(tmp_path):
         config=config,
         env={},
         supabase_home=supabase_home,
-        journal=SessionSyncJournal(tmp_path / "session-sync.json"),
     )
 
     result = synchronizer.activate(Account(name="work", token=fake_pat("work")))
@@ -110,158 +173,32 @@ def test_activate_rejects_fallback_inspection_error(tmp_path, monkeypatch):
     config.login_with_access_token.assert_not_called()
 
 
-def test_activate_logs_in_verifies_without_env_and_blocks_created_fallback(tmp_path):
+def test_activate_controlled_home_prevents_plaintext_fallback_write(tmp_path):
     supabase_home = tmp_path / "supabase"
     supabase_home.mkdir()
     config = Mock()
     account = Account(name="work", token=fake_pat("work"))
 
-    def login(_account):
-        (supabase_home / "access-token").write_text(account.token, encoding="utf-8")
-        return AuthResult.success("login ok")
+    def login(_account, *, supabase_home, profile):
+        assert profile == "supabase"
+        with pytest.raises(IsADirectoryError):
+            (supabase_home / "access-token").write_text(account.token, encoding="utf-8")
+        return AuthResult.failure(AuthFailureCode.NATIVE_LOGIN_FAILED, "safe")
 
     config.login_with_access_token.side_effect = login
     synchronizer = NativeSessionSynchronizer(
         config=config,
         env={},
         supabase_home=supabase_home,
-        journal=SessionSyncJournal(tmp_path / "session-sync.json"),
     )
 
     result = synchronizer.activate(account)
 
     assert result.ok is False
-    assert result.code is AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED
+    assert result.code is AuthFailureCode.NATIVE_LOGIN_FAILED
     assert not (supabase_home / "access-token").exists()
     config.verify_persisted_session.assert_not_called()
     assert account.token not in result.message
-
-
-@pytest.mark.parametrize("failure_kind", ["symlink", "directory", "wrong_owner"])
-def test_activate_refuses_unsafe_post_login_fallback_cleanup(
-    tmp_path, monkeypatch, failure_kind
-):
-    supabase_home = tmp_path / "supabase"
-    supabase_home.mkdir()
-    fallback = supabase_home / "access-token"
-    config = Mock()
-
-    def login(_account):
-        if failure_kind == "symlink":
-            fallback.symlink_to(tmp_path / "missing")
-        elif failure_kind == "directory":
-            fallback.mkdir()
-        else:
-            fallback.write_text("not-read", encoding="utf-8")
-        return AuthResult.success()
-
-    config.login_with_access_token.side_effect = login
-    if failure_kind == "wrong_owner":
-        original_lstat = Path.lstat
-
-        def wrong_owner(path):
-            value = original_lstat(path)
-            if path == fallback:
-                values = list(value)
-                values[4] = os.getuid() + 1
-                return os.stat_result(values)
-            return value
-
-        monkeypatch.setattr(Path, "lstat", wrong_owner)
-    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
-
-    result = synchronizer.activate(Account("work", fake_pat("unsafe-cleanup")))
-
-    assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
-    config.verify_persisted_session.assert_not_called()
-
-
-def test_activate_detects_fallback_substitution_before_unlink(tmp_path, monkeypatch):
-    supabase_home = tmp_path / "supabase"
-    supabase_home.mkdir()
-    fallback = supabase_home / "access-token"
-    config = Mock()
-
-    def login(_account):
-        fallback.write_text("not-read", encoding="utf-8")
-        return AuthResult.success()
-
-    config.login_with_access_token.side_effect = login
-    original_lstat = Path.lstat
-    calls = 0
-
-    def substitute(path):
-        nonlocal calls
-        value = original_lstat(path)
-        if path == fallback:
-            calls += 1
-            if calls == 2:
-                fallback.unlink()
-                fallback.symlink_to(tmp_path / "missing")
-                value = original_lstat(path)
-        return value
-
-    monkeypatch.setattr(Path, "lstat", substitute)
-    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
-
-    result = synchronizer.activate(Account("work", fake_pat("substitution")))
-
-    assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
-    assert fallback.is_symlink()
-
-
-def test_activate_reports_post_login_unlink_failure(tmp_path, monkeypatch):
-    supabase_home = tmp_path / "supabase"
-    supabase_home.mkdir()
-    fallback = supabase_home / "access-token"
-    config = Mock()
-
-    def login(_account):
-        fallback.write_text("not-read", encoding="utf-8")
-        return AuthResult.success()
-
-    config.login_with_access_token.side_effect = login
-    original_unlink = Path.unlink
-
-    def fail_unlink(path, *args, **kwargs):
-        if path == fallback:
-            raise PermissionError("private")
-        return original_unlink(path, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "unlink", fail_unlink)
-    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
-
-    result = synchronizer.activate(Account("work", fake_pat("unlink")))
-
-    assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
-    assert fallback.exists()
-
-
-def test_activate_reports_post_login_inspection_failure(tmp_path, monkeypatch):
-    supabase_home = tmp_path / "supabase"
-    fallback = supabase_home / "access-token"
-    config = Mock()
-
-    def login(_account):
-        supabase_home.mkdir()
-        fallback.write_text("not-read", encoding="utf-8")
-        return AuthResult.success()
-
-    config.login_with_access_token.side_effect = login
-    original_lstat = Path.lstat
-
-    def fail_after_login(path):
-        if path == fallback and fallback.parent.exists():
-            raise PermissionError("private")
-        return original_lstat(path)
-
-    monkeypatch.setattr(Path, "lstat", fail_after_login)
-    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=supabase_home)
-
-    result = synchronizer.activate(Account("work", fake_pat("post-stat")))
-
-    assert result.code is AuthFailureCode.SYNC_ROLLBACK_FAILED
-    config.verify_persisted_session.assert_not_called()
 
 
 def test_activate_succeeds_after_login_and_persisted_verification(tmp_path):
@@ -273,14 +210,14 @@ def test_activate_succeeds_after_login_and_persisted_verification(tmp_path):
         config=config,
         env={},
         supabase_home=tmp_path / "supabase",
-        journal=SessionSyncJournal(tmp_path / "session-sync.json"),
+        credential_store=Mock(matches=Mock(return_value=True)),
     )
 
     result = synchronizer.activate(account)
 
     assert result.ok is True
-    config.login_with_access_token.assert_called_once_with(account)
-    config.verify_persisted_session.assert_called_once_with()
+    assert config.login_with_access_token.call_args.args == (account,)
+    assert config.verify_persisted_session.call_count == 1
     assert "sincronizada" in result.message.lower() or "ativada" in result.message.lower()
     assert account.token not in result.message
 
@@ -295,7 +232,6 @@ def test_activate_propagates_login_failure_without_verification(tmp_path):
         config=config,
         env={},
         supabase_home=tmp_path / "supabase",
-        journal=SessionSyncJournal(tmp_path / "session-sync.json"),
     )
 
     result = synchronizer.activate(Account(name="work", token=fake_pat("work")))
@@ -319,13 +255,12 @@ def test_logout_requires_successful_logout_and_failed_verification(tmp_path):
         config=config,
         env={},
         supabase_home=tmp_path / "supabase",
-        journal=SessionSyncJournal(tmp_path / "session-sync.json"),
     )
 
     result = synchronizer.logout()
 
     assert result.ok is True
-    config.logout_session.assert_called_once_with()
+    assert config.logout_session.call_count == 1
     assert config.verify_persisted_session.call_count == 2
 
 
@@ -340,7 +275,7 @@ def test_logout_returns_success_without_destructive_call_when_already_logged_out
 
     assert result.ok
     config.logout_session.assert_not_called()
-    config.verify_persisted_session.assert_called_once_with()
+    assert config.verify_persisted_session.call_count == 1
 
 
 def test_logout_failure_short_circuits_verification(tmp_path):
@@ -353,7 +288,37 @@ def test_logout_failure_short_circuits_verification(tmp_path):
     result = synchronizer.logout()
 
     assert result is failure
-    config.verify_persisted_session.assert_called_once_with()
+    assert config.verify_persisted_session.call_count == 1
+    assert synchronizer.mutation_state is MutationState.UNCERTAIN
+
+
+def test_logout_exception_after_attempt_is_sanitized_and_uncertain(tmp_path):
+    config = Mock()
+    config.verify_persisted_session.return_value = AuthResult.success()
+    config.logout_session.side_effect = OSError("private native detail")
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
+
+    result = synchronizer.logout()
+
+    assert result.code is AuthFailureCode.SYNC_PENDING
+    assert "private native detail" not in result.message
+    assert synchronizer.mutation_state is MutationState.UNCERTAIN
+
+
+def test_logout_postverification_exception_is_sanitized_and_uncertain(tmp_path):
+    config = Mock()
+    config.logout_session.return_value = AuthResult.success("logout ok")
+    config.verify_persisted_session.side_effect = [
+        AuthResult.success("active"),
+        OSError("private verification detail"),
+    ]
+    synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path)
+
+    result = synchronizer.logout()
+
+    assert result.code is AuthFailureCode.SYNC_PENDING
+    assert "private verification detail" not in result.message
+    assert synchronizer.mutation_state is MutationState.UNCERTAIN
 
 
 def test_logout_fails_when_verification_remains_authenticated(tmp_path):
@@ -365,6 +330,7 @@ def test_logout_fails_when_verification_remains_authenticated(tmp_path):
     result = synchronizer.logout()
 
     assert result.code is AuthFailureCode.SYNC_PENDING
+    assert synchronizer.mutation_state is MutationState.UNCERTAIN
 
 
 @pytest.mark.parametrize(
@@ -381,6 +347,7 @@ def test_logout_returns_pending_after_inconclusive_postverification(tmp_path, co
     result = synchronizer.logout()
 
     assert result.code is AuthFailureCode.SYNC_PENDING
+    assert synchronizer.mutation_state is MutationState.UNCERTAIN
 
 
 @pytest.mark.parametrize(
@@ -528,6 +495,15 @@ def test_journal_read_rejects_wrong_owner(tmp_path, monkeypatch):
         journal.read()
 
 
+def test_journal_read_rejects_oversized_content(tmp_path):
+    path = tmp_path / "session-sync.json"
+    path.write_text("x" * 4097, encoding="utf-8")
+    path.chmod(0o600)
+
+    with pytest.raises(ValueError, match="O journal de sincronização é inválido"):
+        SessionSyncJournal(path).read()
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
@@ -557,6 +533,26 @@ def test_journal_rejects_invalid_names_operations_and_phases(tmp_path, kwargs):
 def test_journal_validates_operation_phase_combinations(tmp_path, kwargs):
     with pytest.raises(ValueError):
         SessionSyncJournal(tmp_path / "journal").write(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "operation,phase",
+    [
+        ("account_add", "native_verified"),
+        ("account_replace", "native_login"),
+        ("account_remove", "credential_written"),
+        ("logout", "credential_written"),
+        ("activate", "index_committed"),
+    ],
+)
+def test_journal_rejects_phases_not_allowed_for_operation(tmp_path, operation, phase):
+    target = None if operation == "logout" else "work"
+    previous = "old" if operation == "logout" else None
+
+    with pytest.raises(ValueError):
+        SessionSyncJournal(tmp_path / "journal").write(
+            operation, target, previous, phase
+        )
 
 
 def test_journal_rejects_token_fields_without_exposing_file_contents(tmp_path):

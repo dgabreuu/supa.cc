@@ -1,12 +1,19 @@
 import json
+import os
+import stat
 
 import pytest
 
-import supa_cc.keychain as keychain
-from supa_cc.auth import AccountIndexInvalidError, AccountTransactionError
+import supa_cc.account_store as keychain
+from supa_cc.account_store import AccountStore
+from supa_cc.auth import (
+    AccountIndexInvalidError,
+    AccountIndexReadError,
+    AccountTransactionError,
+)
 from supa_cc.environment import detect_environment
-from supa_cc.keychain import KEYCHAIN_SERVICE, KeychainManager
-from supa_cc.models import Account
+from supa_cc.account_store import KEYCHAIN_SERVICE, AccountStore as KeychainManager
+from supa_cc.models import Account, AccountSummary
 
 from helpers import FakeCredentialStore, fake_pat
 
@@ -26,7 +33,9 @@ def test_manager_uses_the_injected_credential_store_for_add_get_and_remove(tmp_p
 
     assert manager.get_account("work") == account
     manager.remove_account("work")
-    assert store.operations == ["get:work", "set:work", "get:work", "delete:work"]
+    assert store.operations == [
+        "get:work", "set:work", "get:work", "get:work", "delete:work"
+    ]
 
 
 def test_default_index_path_uses_linux_xdg_config_home(monkeypatch, tmp_path):
@@ -98,7 +107,7 @@ def test_service_property_remains_canonical_by_default(tmp_path):
     assert manager.service == KEYCHAIN_SERVICE
 
 
-def test_get_account_reads_store_once_then_uses_positive_cache(tmp_path):
+def test_get_account_always_reads_authoritative_store(tmp_path):
     store = FakeCredentialStore()
     store.tokens["work"] = fake_pat("work")
     manager = KeychainManager(
@@ -110,37 +119,31 @@ def test_get_account_reads_store_once_then_uses_positive_cache(tmp_path):
 
     assert first == Account(name="work", token=fake_pat("work"))
     assert second == first
-    assert store.operations == ["get:work"]
+    assert store.operations == ["get:work", "get:work"]
 
 
-def test_get_account_refreshes_positive_cache_after_ttl(tmp_path):
-    now = [100.0]
+def test_two_managers_see_credential_replacement_immediately(tmp_path):
     store = FakeCredentialStore()
     store.tokens["work"] = fake_pat("old")
-    manager = KeychainManager(
-        index_path=tmp_path / "accounts.json",
-        credential_store=store,
-        cache_ttl_seconds=1,
-        clock=lambda: now[0],
-    )
+    first = AccountStore(index_path=tmp_path / "accounts.json", credential_store=store)
+    second = AccountStore(index_path=tmp_path / "accounts.json", credential_store=store)
 
-    assert manager.get_account("work") == Account(name="work", token=fake_pat("old"))
-    store.tokens["work"] = fake_pat("new")
-    now[0] = 101.1
+    assert first.get_account("work") == Account(name="work", token=fake_pat("old"))
+    second.save_account(Account("work", fake_pat("new")))
 
-    assert manager.get_account("work") == Account(name="work", token=fake_pat("new"))
-    assert store.operations == ["get:work", "get:work"]
+    assert first.get_account("work") == Account(name="work", token=fake_pat("new"))
 
 
 def test_list_accounts_does_not_read_tokens(tmp_path):
     path = tmp_path / "accounts.json"
     path.write_text(json.dumps({"accounts": ["personal", "work"]}), encoding="utf-8")
+    path.chmod(0o600)
     store = FakeCredentialStore()
     manager = KeychainManager(index_path=path, credential_store=store)
 
     assert manager.list_accounts() == [
-        Account(name="personal", token=""),
-        Account(name="work", token=""),
+        AccountSummary(name="personal"),
+        AccountSummary(name="work"),
     ]
     assert store.operations == []
 
@@ -257,7 +260,7 @@ def test_secure_backup_round_trip_does_not_touch_index_or_cache_backup_name(tmp_
     backup_names = {operation.split(":", 1)[1] for operation in store.operations if ":" in operation} - {"work"}
     assert len(backup_names) == 1
     assert all(not keychain.is_valid_account_name(name) for name in backup_names)
-    assert not any(name in manager._token_cache for name in backup_names)
+    assert not hasattr(manager, "_token_cache")
 
 
 def test_backup_write_is_read_back_verified_and_failure_is_sanitized(tmp_path):
@@ -286,6 +289,7 @@ def test_backup_write_is_read_back_verified_and_failure_is_sanitized(tmp_path):
 def test_update_index_does_not_overwrite_invalid_json(tmp_path):
     path = tmp_path / "accounts.json"
     path.write_text("not-json", encoding="utf-8")
+    path.chmod(0o600)
     manager = KeychainManager(index_path=path, credential_store=FakeCredentialStore())
 
     with pytest.raises(AccountIndexInvalidError):
@@ -306,12 +310,61 @@ def test_update_index_writes_only_account_names_with_private_permissions(tmp_pat
     assert path.stat().st_mode & 0o777 == 0o600
 
 
+@pytest.mark.parametrize("unsafe_kind", ["symlink", "directory", "permissive"])
+def test_list_accounts_rejects_unsafe_index_file(tmp_path, unsafe_kind):
+    path = tmp_path / "accounts.json"
+    if unsafe_kind == "symlink":
+        target = tmp_path / "target"
+        target.write_text('{"accounts": []}', encoding="utf-8")
+        target.chmod(0o600)
+        path.symlink_to(target)
+    elif unsafe_kind == "directory":
+        path.mkdir()
+    else:
+        path.write_text('{"accounts": []}', encoding="utf-8")
+        path.chmod(0o644)
+    manager = KeychainManager(index_path=path, credential_store=FakeCredentialStore())
+
+    with pytest.raises(AccountIndexReadError):
+        manager.list_accounts()
+
+
+def test_list_accounts_rejects_oversized_index(tmp_path):
+    path = tmp_path / "accounts.json"
+    path.write_text(" " * (1024 * 1024 + 1), encoding="utf-8")
+    path.chmod(0o600)
+    manager = KeychainManager(index_path=path, credential_store=FakeCredentialStore())
+
+    with pytest.raises(AccountIndexReadError):
+        manager.list_accounts()
+
+
+def test_update_index_fsyncs_containing_directory(tmp_path, monkeypatch):
+    path = tmp_path / "accounts.json"
+    manager = KeychainManager(index_path=path, credential_store=FakeCredentialStore())
+    directory_fsyncs = 0
+    original_fsync = os.fsync
+
+    def record_fsync(descriptor):
+        nonlocal directory_fsyncs
+        if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            directory_fsyncs += 1
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", record_fsync)
+
+    manager.update_index(["work"])
+
+    assert directory_fsyncs == 1
+
+
 def test_update_index_preserves_previous_file_when_atomic_write_fails(
     tmp_path, monkeypatch
 ):
     path = tmp_path / "accounts.json"
     original = '{"accounts": ["work"]}'
     path.write_text(original, encoding="utf-8")
+    path.chmod(0o600)
     manager = KeychainManager(index_path=path, credential_store=FakeCredentialStore())
     monkeypatch.setattr(
         keychain.os,

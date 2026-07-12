@@ -1,95 +1,46 @@
 # Checklist de release
 
-Use este checklist antes de publicar o Supa.cc no GitHub ou atualizar a fórmula Homebrew macOS-only.
+Este checklist publica a versão 0.3.0 no GitHub e, somente depois, atualiza a fórmula Homebrew. A fórmula permanece na release v0.2.0 até a tag v0.3.0 existir.
 
-## Segurança do repositório
+## Pré-publicação
 
-```bash
-git status --short
-git remote -v
-git log -1 --format='%an <%ae>'
-```
+Revise `git status --short`, `git remote -v` e o histórico. Confirme que não há PAT, caminho absoluto local, cache, ambiente virtual, diff ou documento privado no conteúdo rastreado ou nos artefatos.
 
-Confirme que o remote é `https://github.com/dgabreuu/supa.cc.git` e que o autor público do commit é aceitável para a release.
-
-Remova artefatos locais antes de publicar:
+Em um checkout limpo da tag candidata, instale as dependências e valide:
 
 ```bash
-rm -rf .pytest_cache .ruff_cache .venv venv
-find . -name __pycache__ -type d -prune -exec rm -rf {} +
-find . -name .DS_Store -type f -delete
-```
-
-## Versão
-
-Atualize a versão em:
-
-- `pyproject.toml`
-- `supa_cc/__init__.py`
-
-Em seguida execute:
-
-```bash
+python3 -m pip install --upgrade pip
 python3 -m pip install -e ".[dev]"
-python3 -m pytest tests/test_supabase_cli_integration.py -v
 python3 -m pytest
-python3 -m pytest -m "not real_keychain and not real_secret_service"
-SUPA_CC_REAL_SECRET_SERVICE=1 python3 -m pytest -m real_secret_service -v
+python3 -m pip check
+pip-audit --skip-editable
 python3 -m build
-ls dist/
+python3 scripts/inspect_artifacts.py dist
 ```
 
-Valide também que a versão mínima suportada do Supabase CLI oferece os comandos públicos `login`, `logout --yes` e `projects list`. O fluxo de sincronização depende dessas capacidades e deve bloquear fallback de token plaintext.
+O inspetor exige exatamente uma wheel e um sdist em `dist/`, valida os caminhos dos membros e examina arquivos textuais em busca de referências privadas e caminhos absolutos locais. Instale a wheel em um ambiente virtual descartável, execute `pip check`, `supa.cc --version` e `supa.cc version` e confirme 0.3.0.
 
-A suíte de integração usa somente uma Supabase CLI falsa e PATs sintéticos. Antes da release, confirme que ela cobre seleção inicial, troca e rollback de conta, remoção da conta ativa, recuperação após interrupção e fallback plaintext forçado; o token de `login` não pode aparecer em `argv`, e a verificação direta de `projects list` não pode receber `SUPABASE_ACCESS_TOKEN`.
+A matriz CI cobre Python 3.9 e atual em Ubuntu/macOS, além de testes Linux de ambiente/build em contêineres Fedora e Arch sem exigir Secret Service real. Smoke tests nativos continuam opt-in.
 
-`python3 -m build` deve gerar uma wheel e um sdist em `dist/`. Execute os jobs de teste em Linux suportado (Debian/Ubuntu, Arch Linux e Fedora) além do macOS antes da release. Os smoke tests de Keychain e Secret Service são opt-in e não entram no job padrão sem um serviço real e consentimento explícito. O smoke de Secret Service pula com segurança caso o serviço não esteja disponível.
+## Contrato operacional
 
-Após `python3 -m build`, valide a wheel em um ambiente virtual descartável. Esta validação padrão requer um runtime Python com `ensurepip`; não use um gerenciador de pacotes automaticamente.
+Confirme Supabase CLI >= 2.109.1, perfil oficial `supabase`, confiança do executável, verificação da credencial nativa exata, rollback/recuperação mutation-aware, logout ao remover a conta ativa e bloqueio de fallback plaintext. `doctor` deve permanecer não-live por padrão; somente `doctor --account <nome> --live` abre o token para validação explícita. A trava não coordena comandos `supabase` externos concorrentes.
 
-```bash
-validation_venv="$(mktemp -d)"
-python3 -m venv "$validation_venv"
-"$validation_venv/bin/python" -m pip install dist/*.whl
-"$validation_venv/bin/supa.cc" --version  # Click: supa.cc, version 0.2.0
-"$validation_venv/bin/supa.cc" version    # Aplicação: Supa.cc v0.2.0
-rm -rf "$validation_venv"
-```
+## Tag e GitHub Release
 
-## Release no GitHub
-
-```bash
-git tag v0.2.0
-git push origin main
-git push origin v0.2.0
-```
-
-Crie uma GitHub Release a partir da tag e anexe artefatos gerados somente se necessário. Não anexe arquivos de configuração local, ambientes virtuais, caches, logs ou exportações de token.
+Crie a tag v0.3.0 somente a partir do commit validado e construa os artefatos finais em um checkout limpo dessa tag. Publique a GitHub Release sem arquivos de configuração, logs, caches ou segredos.
 
 ## Fórmula Homebrew
 
-A fórmula `Formula/supa-cc.rb` permanece exclusivamente para macOS. Não crie assets Debian, PKGBUILD/AUR ou RPM como parte desta release.
-
-O repositório não usa o prefixo `homebrew-` no nome. Faça o tap com URL explícita ao testar localmente:
+Não altere `Formula/supa-cc.rb` antes da tag v0.3.0 existir. Após a tag, atualize a URL para o tarball `v0.3.0`, calcule o SHA256 do tarball real e atualize recursos Python a partir do checkout do tap:
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
-```
-
-Depois que a tag existir, atualize `Formula/supa-cc.rb` com a URL e o SHA256 do tarball estável e verifique os recursos Python a partir de um checkout do tap:
-
-```bash
 cd "$(brew --repo dgabreuu/supa-cc)"
 brew update-python-resources Formula/supa-cc.rb
 brew audit --strict supa-cc
+brew install --build-from-source supa-cc
 brew test supa-cc
 ```
 
-A URL da fonte estável deve seguir este formato:
-
-```ruby
-url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.2.0.tar.gz"
-sha256 "<sha256-from-release-tarball>"
-```
-
-Mantenha `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"` para instalações de desenvolvimento.
+Mantenha `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"`. Não publique no PyPI e não crie assets Debian, AUR ou RPM neste processo.

@@ -1,28 +1,42 @@
-import json
 import os
-import stat
 import tempfile
+from enum import Enum
 from pathlib import Path
 from typing import Mapping, Optional
 
 from .auth import AuthFailureCode, AuthResult, is_valid_account_name
-from .config import SupabaseConfig
+from .auth import CredentialAccessError
+from .credentials import create_supabase_cli_credential_store
+from .environment import detect_environment
+from .supabase_cli import SupabaseCLI
 from .models import Account
+from .state import atomic_write_json, read_json, read_text, secure_remove
 
 
-_OPERATIONS = frozenset(("activate", "logout"))
-_PHASES = frozenset(
-    (
-        "intent",
-        "credential_backup",
-        "native_login",
-        "native_verified",
-        "local_write",
-        "verified",
-        "rollback",
-    )
-)
-_LOGOUT_PHASES = _PHASES - {"credential_backup", "native_login"}
+_OPERATION_PHASES = {
+    "activate": frozenset(
+        ("intent", "credential_backup", "native_login", "native_verified", "local_write", "verified", "rollback")
+    ),
+    "logout": frozenset(
+        ("intent", "credential_backup", "native_verified", "local_write", "verified", "rollback")
+    ),
+    "account_add": frozenset(("intent", "credential_written", "index_committed")),
+    "account_replace": frozenset(
+        ("intent", "credential_backup", "credential_written", "index_committed")
+    ),
+    "account_remove": frozenset(("intent", "credential_backup", "index_committed")),
+    "active_account_add": frozenset(
+        ("intent", "index_committed", "native_login", "native_verified")
+    ),
+}
+_JOURNAL_MAX_BYTES = 4096
+
+
+class MutationState(str, Enum):
+    NONE = "none"
+    ATTEMPTED = "attempted"
+    VERIFIED = "verified"
+    UNCERTAIN = "uncertain"
 
 
 def access_token_fallback_path(env=None, home=None) -> Path:
@@ -40,27 +54,12 @@ class SessionSyncJournal:
         self.path = Path(path)
 
     def read(self):
-        descriptor = None
         try:
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-            descriptor = os.open(self.path, flags)
-            metadata = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(metadata.st_mode)
-                or metadata.st_uid != os.getuid()
-                or stat.S_IMODE(metadata.st_mode) != 0o600
-            ):
-                raise ValueError("O journal de sincronização é inválido.")
-            with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
-                descriptor = None
-                payload = json.load(stream)
-        except FileNotFoundError:
-            return None
+            payload = read_json(self.path, _JOURNAL_MAX_BYTES)
         except (OSError, ValueError, TypeError) as error:
             raise ValueError("O journal de sincronização é inválido.") from error
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
+        if payload is None:
+            return None
         self._validate(payload)
         return payload
 
@@ -78,49 +77,10 @@ class SessionSyncJournal:
             "phase": phase,
         }
         self._validate(payload)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.parent.chmod(0o700)
-        descriptor = None
-        temporary_path = None
-        try:
-            descriptor, temporary_path = tempfile.mkstemp(
-                prefix=f".{self.path.name}.", dir=self.path.parent
-            )
-            os.fchmod(descriptor, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                descriptor = None
-                json.dump(payload, stream, sort_keys=True)
-                stream.write("\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary_path, self.path)
-            temporary_path = None
-            directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-            directory_descriptor = os.open(self.path.parent, directory_flags)
-            try:
-                os.fsync(directory_descriptor)
-            finally:
-                os.close(directory_descriptor)
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            if temporary_path is not None:
-                try:
-                    os.unlink(temporary_path)
-                except FileNotFoundError:
-                    pass
+        atomic_write_json(self.path, payload)
 
     def clear(self) -> None:
-        try:
-            self.path.unlink()
-        except FileNotFoundError:
-            return
-        directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
-        directory_descriptor = os.open(self.path.parent, directory_flags)
-        try:
-            os.fsync(directory_descriptor)
-        finally:
-            os.close(directory_descriptor)
+        secure_remove(self.path)
 
     @staticmethod
     def _validate(payload) -> None:
@@ -128,7 +88,8 @@ class SessionSyncJournal:
             "operation", "target_account", "previous_account", "phase"
         }:
             raise ValueError("O journal de sincronização é inválido.")
-        if payload["operation"] not in _OPERATIONS or payload["phase"] not in _PHASES:
+        phases = _OPERATION_PHASES.get(payload["operation"])
+        if phases is None or payload["phase"] not in phases:
             raise ValueError("O journal de sincronização é inválido.")
         for key in ("target_account", "previous_account"):
             value = payload[key]
@@ -138,7 +99,11 @@ class SessionSyncJournal:
             raise ValueError("O journal de sincronização é inválido.")
         if payload["operation"] == "logout" and (
             payload["target_account"] is not None
-            or payload["phase"] not in _LOGOUT_PHASES
+        ):
+            raise ValueError("O journal de sincronização é inválido.")
+        if (payload["operation"].startswith("account_") or payload["operation"] == "active_account_add") and (
+            payload["target_account"] is None
+            or payload["previous_account"] is not None
         ):
             raise ValueError("O journal de sincronização é inválido.")
 
@@ -146,10 +111,10 @@ class SessionSyncJournal:
 class NativeSessionSynchronizer:
     def __init__(
         self,
-        config: SupabaseConfig,
+        config: SupabaseCLI,
         env: Optional[Mapping[str, str]] = None,
         supabase_home: Optional[Path] = None,
-        journal: Optional[SessionSyncJournal] = None,
+        credential_store=None,
     ):
         self.config = config
         self.env = os.environ if env is None else env
@@ -158,50 +123,121 @@ class NativeSessionSynchronizer:
             if supabase_home is not None
             else access_token_fallback_path(self.env)
         )
-        self.journal = journal
+        self.credential_store = credential_store
+        self.mutation_state = MutationState.NONE
 
-    def activate(self, account: Account) -> AuthResult:
-        if self.env.get("SUPABASE_ACCESS_TOKEN"):
+    def preflight(self) -> AuthResult:
+        self.mutation_state = MutationState.NONE
+        if "SUPABASE_ACCESS_TOKEN" in self.env:
             return AuthResult.failure(
                 AuthFailureCode.ENVIRONMENT_BLOCKED,
                 "Remova SUPABASE_ACCESS_TOKEN do ambiente antes de sincronizar.",
             )
         try:
-            fallback = self._fallback_metadata()
-        except OSError:
-            return self._fallback_failure()
-        if fallback is not None:
-            return self._fallback_failure()
-        login = self.config.login_with_access_token(account)
-        if not login.ok:
-            return login
-        try:
-            fallback = self._fallback_metadata()
-            if fallback is not None:
-                self._remove_safe_fallback(fallback)
+            if self._fallback_metadata() is not None:
                 return self._fallback_failure()
         except OSError:
-            return self._cleanup_failure()
-        verification = self.config.verify_persisted_session()
-        if not verification.ok:
-            return verification
-        return AuthResult.success("Conta ativada e sessão nativa sincronizada.")
+            return self._fallback_failure()
+        try:
+            profile_path = self.fallback_path.parent / "profile"
+            profile = read_text(profile_path, 64)
+            if profile is None:
+                profile = "supabase"
+            if profile.strip() != "supabase":
+                return self._profile_failure()
+        except (OSError, UnicodeError, ValueError):
+            return self._profile_failure()
+        cli = self.config.preflight()
+        return cli
+
+    def activate(self, account: Account) -> AuthResult:
+        preflight = self.preflight()
+        if preflight.ok is False:
+            return preflight
+        with tempfile.TemporaryDirectory(prefix="supa-cc-native-") as directory:
+            controlled_home = Path(directory)
+            controlled_home.chmod(0o700)
+            (controlled_home / "access-token").mkdir(mode=0o700)
+            self.mutation_state = MutationState.ATTEMPTED
+            login = self.config.login_with_access_token(
+                account, supabase_home=controlled_home, profile="supabase"
+            )
+            if not login.ok:
+                return login
+            try:
+                store = self.credential_store
+                if store is None:
+                    store = create_supabase_cli_credential_store(detect_environment())
+                if not store.matches("supabase", account.token):
+                    return AuthResult.failure(
+                        AuthFailureCode.NATIVE_VERIFICATION_FAILED,
+                        "A credencial persistida pela Supabase CLI não corresponde à conta selecionada.",
+                    )
+            except CredentialAccessError:
+                return AuthResult.failure(
+                    AuthFailureCode.NATIVE_VERIFICATION_FAILED,
+                    "Não foi possível confirmar a credencial nativa com segurança.",
+                )
+            verification = self.config.verify_persisted_session(
+                supabase_home=controlled_home, profile="supabase"
+            )
+            if not verification.ok:
+                self.mutation_state = MutationState.UNCERTAIN
+                return verification
+            self.mutation_state = MutationState.VERIFIED
+            return AuthResult.success("Conta ativada e sessão nativa sincronizada.")
 
     def logout(self) -> AuthResult:
-        verification = self.config.verify_persisted_session()
+        preflight = self.preflight()
+        if preflight.ok is False:
+            return preflight
+        with tempfile.TemporaryDirectory(prefix="supa-cc-native-") as directory:
+            controlled_home = Path(directory)
+            controlled_home.chmod(0o700)
+            (controlled_home / "access-token").mkdir(mode=0o700)
+            return self._logout_controlled(controlled_home)
+
+    def _logout_controlled(self, controlled_home: Path) -> AuthResult:
+        verification = self.config.verify_persisted_session(
+            supabase_home=controlled_home, profile="supabase"
+        )
         if not verification.ok and verification.code is AuthFailureCode.TOKEN_MISSING:
             return AuthResult.success("Sessão nativa encerrada.")
         if not verification.ok:
             return verification
-        result = self.config.logout_session()
+        self.mutation_state = MutationState.ATTEMPTED
+        try:
+            result = self.config.logout_session(
+                supabase_home=controlled_home, profile="supabase"
+            )
+        except (OSError, ValueError):
+            self.mutation_state = MutationState.UNCERTAIN
+            return self._uncertain_logout_failure()
         if not result.ok:
+            self.mutation_state = MutationState.UNCERTAIN
             return result
-        verification = self.config.verify_persisted_session()
+        try:
+            verification = self.config.verify_persisted_session(
+                supabase_home=controlled_home, profile="supabase"
+            )
+        except (OSError, ValueError):
+            self.mutation_state = MutationState.UNCERTAIN
+            return self._uncertain_logout_failure()
         if not verification.ok and verification.code is AuthFailureCode.TOKEN_MISSING:
+            self.mutation_state = MutationState.VERIFIED
             return AuthResult.success("Sessão nativa encerrada.")
         if not verification.ok:
+            self.mutation_state = MutationState.UNCERTAIN
             return self._uncertain_logout_failure()
+        self.mutation_state = MutationState.UNCERTAIN
         return self._uncertain_logout_failure()
+
+    @staticmethod
+    def _profile_failure() -> AuthResult:
+        return AuthResult.failure(
+            AuthFailureCode.PROFILE_MISMATCH,
+            "Use somente o perfil oficial 'supabase' antes de sincronizar.",
+        )
 
     @staticmethod
     def _uncertain_logout_failure() -> AuthResult:
@@ -222,38 +258,3 @@ class NativeSessionSynchronizer:
             return self.fallback_path.lstat()
         except FileNotFoundError:
             return None
-
-    def _remove_safe_fallback(self, inspected) -> None:
-        if not stat.S_ISREG(inspected.st_mode) or inspected.st_uid != os.getuid():
-            raise OSError("fallback inseguro")
-
-        descriptor = None
-        try:
-            flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-            descriptor = os.open(self.fallback_path, flags)
-            opened = os.fstat(descriptor)
-            current = self.fallback_path.lstat()
-            identities = {
-                (inspected.st_dev, inspected.st_ino),
-                (opened.st_dev, opened.st_ino),
-                (current.st_dev, current.st_ino),
-            }
-            if (
-                len(identities) != 1
-                or not stat.S_ISREG(opened.st_mode)
-                or opened.st_uid != os.getuid()
-                or not stat.S_ISREG(current.st_mode)
-                or current.st_uid != os.getuid()
-            ):
-                raise OSError("fallback substituído")
-            self.fallback_path.unlink()
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-
-    @staticmethod
-    def _cleanup_failure() -> AuthResult:
-        return AuthResult.failure(
-            AuthFailureCode.SYNC_ROLLBACK_FAILED,
-            "O fallback inseguro não pôde ser removido com segurança.",
-        )

@@ -7,7 +7,7 @@ description: Use ao operar ou manter fluxos de conta, Keychain, Secret Service, 
 
 ## Propósito e limite
 
-Supa.cc gerencia PATs do Supabase localmente no macOS e em Debian/Ubuntu, Arch Linux e Fedora. Os tokens são armazenados pelo Python `keyring` no Keychain do macOS ou no Secret Service do Linux; os arquivos contêm apenas nomes de contas. Uma seleção bem-sucedida sincroniza a sessão oficial por comandos públicos do Supabase CLI.
+Supa.cc gerencia PATs do Supabase localmente no macOS e em Debian/Ubuntu, Arch Linux e Fedora, com derivados em caráter best-effort. Os tokens são armazenados pelo Python `keyring` no Keychain do macOS ou no Secret Service do Linux; nenhum arquivo local contém PAT. Uma seleção bem-sucedida sincroniza o perfil oficial por comandos públicos do Supabase CLI >= 2.109.1.
 
 Use-o para seleção interativa local de contas. Não o use como gerenciador de segredos de CI, em sistemas fora das plataformas suportadas, nem para credenciais que não sejam do Supabase.
 
@@ -84,6 +84,8 @@ supa.cc doctor --account work --live
 
 O modo padrão é totalmente read-only e não abre token. Os modos humano e JSON reportam apenas metadados não secretos:
 
+Sem `--live`, o backend é configurado, mas não verificado: `doctor` não testa disponibilidade, D-Bus ou desbloqueio e não deve descrevê-los como disponíveis.
+
 - launcher do Supa.cc e runtime Python;
 - caminhos invocado → real resolvido do Supabase CLI, versão, proveniência e metadados de assinatura disponíveis;
 - backend do Keychain e nome canônico do serviço;
@@ -144,9 +146,12 @@ O frame estável (header + body) permanece montado enquanto a Home atua como hub
 | PATs no Linux | Secret Service `supa.cc.supabase.accounts.v2` via D-Bus de usuário | Um segredo por nome de conta |
 | Índice de contas | `$XDG_CONFIG_HOME/supa.cc/accounts.json` no Linux, ou `~/.config/supa.cc/accounts.json` | Somente nomes, modo de arquivo `0600` |
 | Seleção ativa | `$XDG_CONFIG_HOME/supa.cc/active-account` no Linux, ou `~/.config/supa.cc/active-account` | Somente um nome, modo de arquivo `0600` |
+| Journal | `session-sync.json` no diretório de configuração | Operação, fase e nomes; nunca PAT |
+| Locks | `.session-sync.lock` e `.accounts.json.lock` | Coordenação entre processos Supa.cc; nunca PAT |
+| Backup de rollback | Keychain ou Secret Service, sob identidade reservada | Credencial anterior exata; nunca arquivo local |
 | Diretório de configuração | `$XDG_CONFIG_HOME/supa.cc/` no Linux, ou `~/.config/supa.cc/` | Modo de diretório `0700` |
 
-Leituras do Keychain usam um cache positivo de curta duração no processo. Sobrescrita e exclusão invalidam a entrada. Um item ausente é consultado de novo na próxima leitura. Um índice de contas inválido ou ilegível é preservado e reportado; não é recriado silenciosamente.
+Leituras do Keychain usam um cache positivo de curta duração no processo. Sobrescrita e exclusão invalidam a entrada. Um item ausente é consultado de novo na próxima leitura. Um índice de contas inválido ou ilegível é preservado e reportado; não é recriado silenciosamente. Rollback e recuperação são mutation-aware: cada fase persistida determina se é preciso restaurar a credencial anterior exata a partir do backup seguro ou concluir a mutação.
 
 O serviço antigo `supa.cc.supabase.accounts` e namespaces predecessores não são lidos, migrados, apagados ou reescritos automaticamente. Re-adicione uma conta pelo prompt oculto ou use um procedimento explícito de migração. `list`, `switch` e `doctor` normais não devem realizar migração.
 
@@ -206,4 +211,4 @@ O teste cria um item falso e descartável sob o serviço `supa.cc.tests.<uuid>` 
 5. Não apague itens duplicados/legados sem prévia exata e aprovação explícita.
 6. Para CI ou servidores, use a injeção de segredos da plataforma em vez do Supa.cc.
 
-O journal de sincronização contém apenas operação, fase e nomes e permite recuperação após interrupção. A trava evita concorrência entre processos Supa.cc cooperantes, mas não coordena comandos `supabase` externos executados ao mesmo tempo.
+O journal de sincronização contém apenas operação, fase e nomes e permite recuperação após interrupção. A trava evita concorrência entre processos Supa.cc cooperantes, mas não coordena comandos `supabase` externos executados ao mesmo tempo. Somente o perfil oficial `supabase` é aceito. O executável resolvido precisa passar a verificação de confiança (arquivo executável, proprietário usuário/root, sem escrita por grupo/outros), e a verificação pós-login confirma a credencial nativa exata.

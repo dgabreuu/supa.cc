@@ -1,4 +1,6 @@
 from pathlib import Path
+import re
+
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
@@ -49,6 +51,96 @@ def test_publication_docs_cover_installation_and_release():
     assert "brew audit --strict supa-cc" in release
     assert "brew test supa-cc" in release
     assert "git status --short" in release
+
+
+def test_docs_describe_supported_runtime_and_state_without_claiming_name_only_files():
+    paths = ("README.md", "SKILL.md", "docs/installation.md", "AGENTS.md")
+    docs = "\n".join(Path(path).read_text(encoding="utf-8") for path in paths)
+    normalized = docs.lower()
+
+    assert "2.109.1" in docs
+    assert "perfil oficial" in normalized
+    assert "executável" in normalized and "confiança" in normalized
+    assert "nenhum arquivo local contém" in normalized and "pat" in normalized
+    for state in ("accounts.json", "active-account", "session-sync", ".lock"):
+        assert state in docs
+    assert "backup" in normalized
+    assert "mutation" in normalized or "mutaç" in normalized
+    assert "somente nomes de contas" not in normalized
+    assert "arquivos locais contêm somente nomes" not in normalized
+
+
+def test_installation_uses_release_channels_not_nonexistent_pypi_package():
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+    normalized = installation.lower()
+
+    assert "git+https://github.com/dgabreuu/supa.cc.git" in installation
+    assert "brew install supa-cc" in installation
+    assert "supabase.com/docs/guides/local-development/cli/getting-started" in installation
+    assert not re.search(r"pipx\s+(?:install|upgrade)\s+supa[.-]cc(?:\s|$)", normalized)
+
+
+def test_release_keeps_formula_stable_until_clean_0_3_0_tag_build():
+    release = Path("docs/release.md").read_text(encoding="utf-8")
+    normalized = release.lower()
+
+    assert "v0.2.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+    assert "v0.3.0" in release
+    assert "depois que a tag" in normalized or "após a tag" in normalized
+    assert "checkout limpo" in normalized
+    assert "brew test supa-cc" in release
+
+
+def test_ci_has_least_privilege_cross_platform_build_and_security_jobs():
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert re.search(r"permissions:\s*\n\s+contents: read", workflow)
+    assert "ubuntu-latest" in workflow and "macos-latest" in workflow
+    assert '"3.9"' in workflow and '"3.x"' in workflow
+    assert "fedora" in workflow.lower() and "archlinux" in workflow.lower()
+    assert "pip check" in workflow
+    assert "pip-audit --skip-editable" in workflow
+    assert "python -m build" in workflow
+    assert "artifact" in workflow.lower()
+    assert re.search(r"^jobs:", workflow, re.MULTILINE)
+    assert "scripts/inspect_artifacts.py dist" in workflow
+    assert "wheel-test/bin/supa.cc --version" in workflow
+    assert "wheel-test/bin/supa.cc version" in workflow
+
+
+def test_release_uses_the_same_audit_and_artifact_inspection_commands_as_ci():
+    release = Path("docs/release.md").read_text(encoding="utf-8")
+
+    assert "pip-audit --skip-editable" in release
+    assert "scripts/inspect_artifacts.py dist" in release
+
+
+def test_readme_doctor_language_is_credential_store_neutral():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    doctor = readme.split("## Diagnóstico", 1)[1].split("## Modelo de segurança", 1)[0]
+
+    assert "armazenamento de credenciais" in doctor
+    assert "Keychain" not in doctor
+    assert "configurado" in doctor
+    assert "não testa" in doctor or "não verifica" in doctor
+
+
+def test_public_docs_do_not_claim_default_doctor_probes_credential_availability():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    skill = Path("SKILL.md").read_text(encoding="utf-8")
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+
+    for contents in (readme, skill, installation):
+        assert "configurado, mas não verificado" in contents
+
+
+def test_obsolete_private_implementation_documents_are_removed():
+    obsolete = [
+        Path(".superpowers/sdd/native-sync-task-3-report.md"),
+        *Path("docs/superpowers").glob("**/*linux-support*"),
+        *Path("docs/superpowers").glob("**/*native-cli-session-sync*"),
+    ]
+    assert not any(path.exists() for path in obsolete)
 
 
 def test_public_docs_cover_linux_installation_and_credential_requirements():

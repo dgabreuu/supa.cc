@@ -11,7 +11,7 @@ from supa_cc.auth import (
 )
 from supa_cc.ui.screens import TUIScreens
 from supa_cc.ui.state import MenuAction, NavigationState, PageId
-from supa_cc.ui.strings import UIStrings as Textos
+from supa_cc.strings import UIStrings as Textos
 
 from helpers import fake_pat
 
@@ -41,18 +41,12 @@ class FakeRenderer:
         self.console = FakeConsole()
         self.home_paints = 0
         self.subpage_paints = []
-        self.accounts_shown = []
 
     def paint_home(self, state, account_count):
         self.home_paints += 1
 
-    def paint_subpage(self, state, title, render_body=None):
+    def paint_subpage(self, state, title):
         self.subpage_paints.append(title)
-        if render_body:
-            render_body()
-
-    def show_accounts(self, accounts):
-        self.accounts_shown.append(list(accounts))
 
     def show_goodbye(self):
         pass
@@ -196,7 +190,6 @@ def test_list_accounts_uses_list_prompt_and_account_choices():
     screens.list_accounts(state)
 
     assert screens.renderer.subpage_paints == [Textos.MENU_LIST]
-    assert screens.renderer.accounts_shown == []
     call = prompts.select_calls[0]
     assert call["message"] == Textos.PROMPT_LIST_ACCOUNTS
     assert call["message"] != Textos.MENU_TITLE

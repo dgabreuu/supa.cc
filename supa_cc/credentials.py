@@ -17,6 +17,8 @@ from supa_cc.models import Account
 
 
 _CREDENTIAL_SERVICE = "supa.cc.supabase.accounts.v2"
+SUPABASE_CLI_CREDENTIAL_SERVICE = "Supabase CLI"
+SUPABASE_CLI_CREDENTIAL_NAME = "supabase"
 _MACOS_BACKEND_NAME = "keyring.backends.macOS.Keyring"
 _SECRET_SERVICE_BACKEND_NAME = "keyring.backends.SecretService.Keyring"
 _MACOS_KEYCHAIN_ITEM_NOT_FOUND = "-25300"
@@ -31,6 +33,7 @@ _MISSING_ITEM_MARKERS = (
     "no such item",
     "no such secret",
 )
+_SECRET_SERVICE_PASSWORD_MISSING = "no such password!"
 _SECRET_SERVICE_UNAVAILABLE_MESSAGE = (
     "O Secret Service não está disponível. Verifique o D-Bus e desbloqueie "
     "o Secret Service."
@@ -45,6 +48,7 @@ class CredentialStoreStatus:
     backend_name: str
     available: bool = True
     message: str = ""
+    live_probed: bool = False
 
 
 class CredentialStore:
@@ -52,20 +56,21 @@ class CredentialStore:
         self.backend_name = backend_name
         self.service = service
         self._backend = _create_backend(backend_name)
-        self._status = _probe_backend(self._backend, backend_name)
+        self._status = CredentialStoreStatus(backend_name=backend_name)
 
     def status(self) -> CredentialStoreStatus:
         return self._status
 
+    def probe(self) -> CredentialStoreStatus:
+        return _probe_backend(self._backend, self.backend_name)
+
     def get(self, name: str) -> Optional[str]:
-        self._require_available()
         try:
             return self._backend.get_password(self.service, name)
         except Exception as error:
             _raise_credential_operation_error(error, self.backend_name)
 
     def set(self, account: Account) -> None:
-        self._require_available()
         try:
             self._backend.set_password(
                 self.service,
@@ -85,7 +90,6 @@ class CredentialStore:
             )
 
     def delete(self, name: str) -> None:
-        self._require_available()
         try:
             self._backend.delete_password(self.service, name)
         except Exception as error:
@@ -93,11 +97,9 @@ class CredentialStore:
                 return
             _raise_credential_operation_error(error, self.backend_name)
 
-    def _require_available(self) -> None:
-        if not self._status.available:
-            if self.backend_name == _SECRET_SERVICE_BACKEND_NAME:
-                raise SecretServiceUnavailableError()
-            raise CredentialAccessError(self._status.message)
+    def matches(self, name: str, expected: str) -> bool:
+        stored = self.get(name)
+        return isinstance(stored, str) and hmac.compare_digest(stored, expected)
 
 
 def create_credential_store(
@@ -110,6 +112,15 @@ def create_credential_store(
         return CredentialStore(_SECRET_SERVICE_BACKEND_NAME, service=service)
     raise CredentialAccessError(
         "O armazenamento de credenciais não está disponível neste ambiente."
+    )
+
+
+def create_supabase_cli_credential_store(
+    environment: Environment,
+) -> CredentialStore:
+    return create_credential_store(
+        environment,
+        service=SUPABASE_CLI_CREDENTIAL_SERVICE,
     )
 
 
@@ -162,8 +173,9 @@ def _probe_backend(backend, backend_name: str) -> CredentialStoreStatus:
             backend_name=backend_name,
             available=False,
             message=_unavailable_message(backend_name),
+            live_probed=True,
         )
-    return CredentialStoreStatus(backend_name=backend_name)
+    return CredentialStoreStatus(backend_name=backend_name, live_probed=True)
 
 
 def _unavailable_message(backend_name: str) -> str:
@@ -193,7 +205,9 @@ def _raise_credential_operation_error(
 def _is_missing_credential(error: BaseException) -> bool:
     if not isinstance(error, PasswordDeleteError):
         return False
-    message = str(error).lower()
-    return _MACOS_KEYCHAIN_ITEM_NOT_FOUND in message or any(
-        marker in message for marker in _MISSING_ITEM_MARKERS
+    message = str(error).strip().lower()
+    return (
+        message == _SECRET_SERVICE_PASSWORD_MISSING
+        or _MACOS_KEYCHAIN_ITEM_NOT_FOUND in message
+        or any(marker in message for marker in _MISSING_ITEM_MARKERS)
     )

@@ -1,27 +1,24 @@
 import os
 import re
-import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Optional
 
 from supa_cc.environment import config_directory
+from supa_cc.state import atomic_write_text, read_text, secure_remove
 
 _ACCOUNT_NAME_REGEX = re.compile(r"[a-zA-Z0-9_-]{1,50}")
 ACCESS_TOKEN_PREFIX = "sbp_"
 ACCESS_TOKEN_BODY_CHARACTERS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-"
 )
-_ACCESS_TOKEN_REGEX = re.compile(
-    r"sbp_(?:oauth_)?[a-f0-9]{40}",
-    re.ASCII,
-)
 _PAT_CANDIDATE_REGEX = re.compile(
     r"sbp_(?:oauth_)?[a-f0-9]{40}",
     re.ASCII,
 )
 REDACTED = "[REDACTED]"
+_ACTIVE_ACCOUNT_MAX_BYTES = 256
 
 
 def is_valid_account_name(name: object) -> bool:
@@ -37,7 +34,7 @@ def is_valid_access_token(token: object) -> bool:
     """Valida o formato oficial aceito pelas Supabase CLI 2.98.2/2.109.1."""
     return (
         isinstance(token, str)
-        and _ACCESS_TOKEN_REGEX.fullmatch(token) is not None
+        and _PAT_CANDIDATE_REGEX.fullmatch(token) is not None
     )
 
 
@@ -366,9 +363,7 @@ class ActiveAccountStore:
 
     def read(self) -> Optional[str]:
         try:
-            contents = self.path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return None
+            contents = read_text(self.path, _ACTIVE_ACCOUNT_MAX_BYTES)
         except PermissionError:
             raise ActiveAccountPermissionDeniedError(
                 "Acesso ao arquivo de conta ativa não autorizado."
@@ -377,6 +372,8 @@ class ActiveAccountStore:
             raise ActiveAccountReadError(
                 "Não foi possível ler o arquivo de conta ativa."
             ) from None
+        if contents is None:
+            return None
         name = contents[:-1] if contents.endswith("\n") else contents
         if not is_valid_account_name(name):
             raise ActiveAccountInvalidError(
@@ -388,37 +385,11 @@ class ActiveAccountStore:
         if not is_valid_account_name(name):
             raise ValueError("nome de conta inválido para persistência.")
 
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.parent.chmod(0o700)
-        descriptor = None
-        temporary_path = None
-        try:
-            descriptor, temporary_path = tempfile.mkstemp(
-                prefix=f".{self.path.name}.",
-                dir=self.path.parent,
-            )
-            os.fchmod(descriptor, 0o600)
-            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-                descriptor = None
-                stream.write(f"{name}\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary_path, self.path)
-            temporary_path = None
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            if temporary_path is not None:
-                try:
-                    os.unlink(temporary_path)
-                except FileNotFoundError:
-                    pass
+        atomic_write_text(self.path, f"{name}\n")
 
     def clear(self) -> None:
         try:
-            self.path.unlink()
-        except FileNotFoundError:
-            return
+            secure_remove(self.path)
         except PermissionError:
             raise ActiveAccountPermissionDeniedError(
                 "Acesso ao arquivo de conta ativa não autorizado."

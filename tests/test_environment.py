@@ -63,6 +63,14 @@ def test_linux_config_directory_falls_back_to_home_when_xdg_is_empty(tmp_path):
     ) == (tmp_path / ".config" / "supa.cc")
 
 
+def test_linux_config_directory_ignores_relative_xdg_config_home(tmp_path):
+    environment = detect_environment(system_name="Linux", os_release="ID=arch\n")
+
+    assert environment.config_directory(
+        {"XDG_CONFIG_HOME": "relative/config"}, home=tmp_path
+    ) == (tmp_path / ".config" / "supa.cc")
+
+
 def test_macos_config_directory_preserves_existing_default(tmp_path):
     environment = detect_environment(system_name="Darwin")
 

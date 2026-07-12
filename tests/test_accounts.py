@@ -20,7 +20,7 @@ from supa_cc.auth import (
     ActiveAccountPermissionDeniedError,
     ActiveAccountReadError,
 )
-from supa_cc.keychain import KeychainManager
+from supa_cc.account_store import AccountStore as KeychainManager
 from supa_cc.models import Account
 from supa_cc.environment import detect_environment
 
@@ -31,7 +31,8 @@ from helpers import (
     fake_pat,
 )
 from supa_cc.native_session import SessionSyncJournal
-from supa_cc.native_session import NativeSessionSynchronizer
+from supa_cc.native_session import MutationState, NativeSessionSynchronizer
+from supa_cc.transactions import AccountTransactionCoordinator
 
 
 class InterruptingJournal:
@@ -66,7 +67,7 @@ def test_default_stores_use_one_detected_environment(monkeypatch):
         raising=False,
     )
     monkeypatch.setattr(
-        "supa_cc.accounts.KeychainManager",
+        "supa_cc.accounts.AccountStore",
         lambda **kwargs: keychain_arguments.append(kwargs) or created_keychain,
     )
     monkeypatch.setattr(
@@ -121,6 +122,59 @@ class TestAccountManager:
         )
         return manager
 
+    def test_manager_builds_transaction_coordinator(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+
+        assert isinstance(manager.transactions, AccountTransactionCoordinator)
+
+    def test_coordinator_exposes_only_transaction_entry_points(self, tmp_path):
+        coordinator = self.transactional_manager(tmp_path).transactions
+
+        for name in (
+            "_sync_lock",
+            "_run_with_sync_lock",
+            "_sync_lock_path",
+            "_pending_sync_failure",
+            "list",
+            "get",
+            "validate_named_account",
+            "run_active",
+        ):
+            assert not hasattr(coordinator, name)
+
+    def test_replacing_sync_journal_updates_coordinator_and_lock_path(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        replacement = SessionSyncJournal(tmp_path / "replacement" / "sync.json")
+
+        manager.sync_journal = replacement
+
+        assert manager.transactions.sync_journal is replacement
+        assert manager._sync_lock_path == replacement.path.with_name(
+            ".session-sync.lock"
+        )
+
+    def test_set_active_delegates_to_coordinator_under_sync_lock(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        expected = AuthResult.success("delegated")
+        manager.transactions.set_active = Mock(return_value=expected)
+
+        result = manager.set_active("work")
+
+        assert result is expected
+        manager.transactions.set_active.assert_called_once_with("work")
+
+    def test_mutations_delegate_to_coordinator_under_sync_lock(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        manager.transactions.add = Mock()
+        manager.transactions.remove = Mock()
+        account = Account("new", fake_pat("delegated-add"))
+
+        assert manager.add(account.name, account.token) == account
+        manager.remove("work")
+
+        manager.transactions.add.assert_called_once_with(account)
+        manager.transactions.remove.assert_called_once_with("work")
+
     def test_set_active_synchronizes_native_before_local_success(self, tmp_path):
         manager = self.transactional_manager(tmp_path)
         events = Mock()
@@ -132,6 +186,7 @@ class TestAccountManager:
 
         assert result.ok
         assert events.mock_calls == [
+            call.native.preflight(),
             call.native.activate(Account(name="work", token=fake_pat("work"))),
             call.local_write("work"),
         ]
@@ -149,6 +204,19 @@ class TestAccountManager:
         manager.native_session.logout.assert_called_once_with()
         assert manager.active_store.name is None
         assert manager.sync_journal.read() is None
+
+    def test_set_active_preflight_failure_writes_no_journal_and_does_not_compensate(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="old")
+        blocked = AuthResult.failure(AuthFailureCode.PROFILE_MISMATCH, "safe")
+        manager.native_session.preflight.return_value = blocked
+        manager.native_session.mutation_state = MutationState.NONE
+
+        result = manager.set_active("work")
+
+        assert result is blocked
+        assert manager.sync_journal.read() is None
+        manager.native_session.activate.assert_not_called()
+        manager.native_session.logout.assert_not_called()
 
     def test_set_active_restores_previous_account_when_native_sync_fails(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="old")
@@ -211,7 +279,7 @@ class TestAccountManager:
     @pytest.mark.parametrize(
         "phase,expected,native_account",
         [
-            ("intent", "old", "old"),
+            ("intent", "old", None),
             ("native_login", "old", "old"),
             ("native_verified", "work", "work"),
             ("local_write", "work", "work"),
@@ -234,6 +302,87 @@ class TestAccountManager:
             manager.native_session.activate.assert_not_called()
         else:
             assert manager.native_session.activate.call_args.args[0].name == native_account
+
+    def test_activation_intent_recovery_without_previous_account_only_cancels(self, tmp_path):
+        manager = self.transactional_manager(tmp_path)
+        manager.sync_journal.write("activate", "work", None, "intent")
+
+        result = manager.recover_pending_sync()
+
+        assert result.ok
+        assert manager.sync_journal.read() is None
+        manager.native_session.activate.assert_not_called()
+        manager.native_session.logout.assert_not_called()
+
+    def test_active_replacement_intent_recovery_cancels_without_compensation(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        manager.sync_journal.write("activate", "work", "work", "intent")
+        manager.keychain.read_account_backup.return_value = Account(
+            "work", fake_pat("stale-backup")
+        )
+
+        result = manager.recover_pending_sync()
+
+        assert result.ok
+        manager.keychain.restore_account_backup.assert_not_called()
+        manager.native_session.activate.assert_not_called()
+        manager.native_session.logout.assert_not_called()
+        assert manager.sync_journal.read() is None
+
+    @pytest.mark.parametrize("mutation_state", [MutationState.NONE, MutationState.UNCERTAIN])
+    def test_first_activation_native_login_recovery_rolls_forward_idempotently(
+        self, tmp_path, mutation_state
+    ):
+        manager = self.transactional_manager(tmp_path)
+        manager.sync_journal.write("activate", "work", None, "native_login")
+        manager.native_session.mutation_state = mutation_state
+
+        result = manager.recover_pending_sync()
+
+        assert result.ok
+        manager.native_session.preflight.assert_called_once_with()
+        manager.keychain.get_account.assert_called_once_with("work")
+        manager.native_session.activate.assert_called_once_with(
+            Account(name="work", token=fake_pat("work"))
+        )
+        assert manager.active_store.name == "work"
+        assert manager.sync_journal.read() is None
+        manager.native_session.logout.assert_not_called()
+
+    def test_first_activation_native_login_recovery_retains_pending_when_preflight_is_unsafe(
+        self, tmp_path
+    ):
+        manager = self.transactional_manager(tmp_path)
+        manager.sync_journal.write("activate", "work", None, "native_login")
+        blocked = AuthResult.failure(AuthFailureCode.PROFILE_MISMATCH, "safe")
+        manager.native_session.preflight.return_value = blocked
+
+        result = manager.recover_pending_sync()
+
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        assert manager.sync_journal.read()["phase"] == "native_login"
+        manager.keychain.get_account.assert_not_called()
+        manager.native_session.activate.assert_not_called()
+        manager.native_session.logout.assert_not_called()
+
+    def test_first_activation_native_login_recovery_retains_pending_when_login_cannot_verify(
+        self, tmp_path
+    ):
+        manager = self.transactional_manager(tmp_path)
+        manager.sync_journal.write("activate", "work", None, "native_login")
+        manager.native_session.activate.return_value = AuthResult.failure(
+            AuthFailureCode.NATIVE_LOGIN_FAILED, "safe"
+        )
+
+        result = manager.recover_pending_sync()
+
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        assert manager.sync_journal.read()["phase"] == "native_login"
+        manager.native_session.activate.assert_called_once_with(
+            Account(name="work", token=fake_pat("work"))
+        )
+        assert manager.active_store.name is None
+        manager.native_session.logout.assert_not_called()
 
     @pytest.mark.parametrize(
         "failure_method,failure_call,expected_phase",
@@ -492,7 +641,7 @@ class TestAccountManager:
         assert not switch_thread.is_alive()
         assert not mutation_thread.is_alive()
         if operation == "add":
-            mutator.keychain.add_account.assert_called_once()
+            mutator.keychain.save_account.assert_called_once()
         else:
             mutator.keychain.remove_account.assert_called_once_with("old")
 
@@ -597,7 +746,7 @@ class TestAccountManager:
         manager = AccountManager()
         manager.keychain.index_path = tmp_path / "accounts.json"
         manager.keychain.update_index([])
-        with patch.object(manager.keychain, 'add_account') as add_account:
+        with patch.object(manager.keychain, 'save_account') as add_account:
             account = manager.add("test", fake_pat())
             assert account.name == "test"
             assert account.token == fake_pat()
@@ -620,6 +769,16 @@ class TestAccountManager:
         manager.keychain.add_account.assert_called_once_with(replacement)
         manager.native_session.activate.assert_called_once_with(replacement)
 
+    def test_add_repairs_active_name_with_missing_credential_before_success(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="stale")
+        manager.keychain.get_account.side_effect = lambda _name: None
+        account = Account("stale", fake_pat("repair-stale"))
+
+        assert manager.add(account.name, account.token) == account
+
+        manager.keychain.add_account.assert_called_once_with(account)
+        manager.native_session.activate.assert_called_once_with(account)
+
     def test_add_active_account_restores_old_credential_and_session_on_failure(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="work")
         old = manager.keychain.get_account("work")
@@ -633,6 +792,19 @@ class TestAccountManager:
         manager.keychain.restore_account_backup.assert_called_once_with("work")
         assert manager.native_session.activate.call_args_list[-1] == call(old)
         assert manager.sync_journal.read() is None
+
+    def test_active_replacement_does_not_touch_native_session_after_no_mutation_failure(self, tmp_path):
+        manager = self.transactional_manager(tmp_path, previous="work")
+        manager.native_session.activate.return_value = AuthResult.failure(
+            AuthFailureCode.PROFILE_MISMATCH, "safe"
+        )
+        manager.native_session.mutation_state = MutationState.NONE
+
+        with pytest.raises(AccountTransactionError):
+            manager.add("work", fake_pat("replacement-no-mutation"))
+
+        manager.keychain.restore_account_backup.assert_called_once_with("work")
+        assert manager.native_session.activate.call_count == 1
 
     @pytest.mark.parametrize("write_call", [1, 2, 3, 4, 5])
     def test_active_overwrite_restart_restores_old_pat_from_secure_backup(
@@ -661,11 +833,15 @@ class TestAccountManager:
         result = restarted.recover_pending_sync()
 
         assert result.ok
-        assert restarted.get("work").token == old
-        if write_call == 1:
+        expected_token = replacement if write_call == 5 else old
+        assert restarted.get("work").token == expected_token
+        if write_call < 4:
             restarted_native.activate.assert_not_called()
         else:
-            restarted_native.activate.assert_called_once_with(Account("work", old))
+            expected_native_token = replacement if write_call == 5 else old
+            restarted_native.activate.assert_called_once_with(
+                Account("work", expected_native_token)
+            )
         assert set(store.tokens) == {"work"}
         assert not durable.path.exists()
 
@@ -743,7 +919,7 @@ class TestAccountManager:
         manager = AccountManager()
         manager.keychain.index_path = tmp_path / "accounts.json"
         manager.keychain.update_index([])
-        with patch.object(manager.keychain, 'remove_account') as remove_account:
+        with patch.object(manager.keychain, 'delete_account') as remove_account:
             manager.remove("test")
             remove_account.assert_called_once_with("test")
 
@@ -752,7 +928,7 @@ class TestAccountManager:
 
         manager.remove("work")
 
-        manager.keychain.remove_account.assert_called_once_with("work")
+        manager.keychain.delete_account.assert_called_once_with("work")
         manager.native_session.logout.assert_not_called()
         assert manager.active_store.name == "old"
 
@@ -767,9 +943,14 @@ class TestAccountManager:
         manager.remove("work")
 
         assert events.mock_calls == [
+            call.native.preflight(),
+            call.keychain.get_account("work"),
+            call.keychain.create_account_backup("work"),
             call.native.logout(),
             call.clear(),
             call.keychain.remove_account("work"),
+            call.keychain.read_account_backup("work"),
+            call.keychain.delete_account_backup("work"),
         ]
         assert manager.active_store.name is None
         assert manager.sync_journal.read() is None
@@ -779,13 +960,14 @@ class TestAccountManager:
         manager.native_session.logout.return_value = AuthResult.failure(
             AuthFailureCode.NATIVE_LOGOUT_FAILED, "safe"
         )
+        manager.native_session.mutation_state = MutationState.UNCERTAIN
 
         with pytest.raises(AccountTransactionError):
             manager.remove("work")
 
         assert manager.active_store.name == "work"
         manager.keychain.remove_account.assert_not_called()
-        assert manager.sync_journal.read() is None
+        assert manager.sync_journal.read()["phase"] == "credential_backup"
 
     def test_remove_active_retains_intent_after_post_logout_uncertainty(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="work")
@@ -798,7 +980,7 @@ class TestAccountManager:
 
         assert manager.active_store.name == "work"
         manager.keychain.remove_account.assert_not_called()
-        assert manager.sync_journal.read()["phase"] == "intent"
+        assert manager.sync_journal.read()["phase"] == "credential_backup"
 
     def test_logout_recovery_retains_intent_when_preverification_is_inconclusive(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="work")
@@ -822,6 +1004,225 @@ class TestAccountManager:
             manager.add("new", fake_pat("new"))
 
         manager.keychain.add_account.assert_not_called()
+
+    def test_inactive_new_add_recovery_rolls_forward_after_credential_write(self, tmp_path):
+        store = FakeCredentialStore()
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(
+            tmp_path, store, MemoryActiveAccountStore("old"), Mock(), durable
+        )
+        manager.sync_journal.write("account_add", "new", None, "credential_written")
+        manager.keychain.save_account(Account("new", fake_pat("durable-new")))
+
+        assert manager.recover_pending_sync().ok
+        assert [item.name for item in manager.list()] == ["new"]
+        assert durable.read() is None
+
+    def test_inactive_replacement_recovery_restores_secure_backup_before_commit(self, tmp_path):
+        store = FakeCredentialStore()
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(
+            tmp_path, store, MemoryActiveAccountStore("old"), Mock(), durable
+        )
+        manager.keychain.add_account(Account("work", fake_pat("old-value")))
+        manager.keychain.create_account_backup("work")
+        manager.sync_journal.write("account_replace", "work", None, "credential_written")
+        manager.keychain.save_account(Account("work", fake_pat("new-value")))
+
+        assert manager.recover_pending_sync().ok
+        assert manager.get("work") == Account("work", fake_pat("old-value"))
+        assert set(store.tokens) == {"work"}
+
+    def test_inactive_remove_recovery_rolls_forward_from_intent(self, tmp_path):
+        store = FakeCredentialStore()
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(
+            tmp_path, store, MemoryActiveAccountStore("old"), Mock(), durable
+        )
+        manager.keychain.add_account(Account("work", fake_pat("remove-value")))
+        manager.keychain.create_account_backup("work")
+        manager.sync_journal.write("account_remove", "work", None, "intent")
+
+        assert manager.recover_pending_sync().ok
+        assert manager.get("work") is None
+        assert manager.list() == []
+        assert set(store.tokens) == set()
+
+    @pytest.mark.parametrize("operation", ["add", "remove"])
+    def test_inactive_phase_write_failure_after_index_commit_recovers_consistently(
+        self, tmp_path, operation
+    ):
+        store = FakeCredentialStore()
+        active = MemoryActiveAccountStore("old")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(tmp_path, store, active, Mock(), durable)
+        if operation == "remove":
+            manager.keychain.add_account(Account("work", fake_pat("old-work")))
+        manager.sync_journal = FaultInjectingJournal(
+            durable, "write", 3
+        )
+
+        with pytest.raises(Exception):
+            if operation == "add":
+                manager.add("work", fake_pat("new-work"))
+            else:
+                manager.remove("work")
+
+        restarted = self.durable_manager(tmp_path, store, active, Mock(), durable)
+        assert restarted.recover_pending_sync().ok
+        listed = [item.name for item in restarted.list()]
+        assert (restarted.get("work") is not None) == ("work" in listed)
+
+    @pytest.mark.parametrize("operation", ["replace", "remove"])
+    def test_inactive_intent_is_durable_before_secure_backup(self, tmp_path, operation):
+        store = FakeCredentialStore()
+        active = MemoryActiveAccountStore("old")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(tmp_path, store, active, Mock(), durable)
+        manager.keychain.add_account(Account("work", fake_pat("old-work")))
+        manager.sync_journal = InterruptingJournal(durable, write_call=1)
+
+        with pytest.raises(KeyboardInterrupt):
+            if operation == "replace":
+                manager.add("work", fake_pat("replacement"))
+            else:
+                manager.remove("work")
+
+        assert set(store.tokens) == {"work"}
+
+    def test_stale_active_recovery_completes_native_sync_before_clear(self, tmp_path):
+        store = FakeCredentialStore()
+        active = MemoryActiveAccountStore("stale")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        account = Account("stale", fake_pat("stale-recovery"))
+        manager = self.durable_manager(tmp_path, store, active, Mock(), durable)
+        manager.keychain.add_account(account)
+        durable.write("active_account_add", "stale", None, "index_committed")
+        native = Mock()
+        native.activate.return_value = AuthResult.success()
+        restarted = self.durable_manager(tmp_path, store, active, native, durable)
+
+        assert restarted.recover_pending_sync().ok
+        native.activate.assert_called_once_with(account)
+        assert durable.read() is None
+
+    def test_stale_active_success_then_phase_write_failure_retains_local_account(self, tmp_path):
+        store = FakeCredentialStore()
+        active = MemoryActiveAccountStore("stale")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        native = Mock()
+        native.preflight.return_value = AuthResult.success()
+        native.activate.return_value = AuthResult.success()
+        manager = self.durable_manager(tmp_path, store, active, native, durable)
+        manager.sync_journal = FaultInjectingJournal(durable, "write", 4)
+
+        with pytest.raises(AccountTransactionError):
+            manager.add("stale", fake_pat("stale-success"))
+
+        assert manager.get("stale") is not None
+        assert [item.name for item in manager.list()] == ["stale"]
+        assert durable.read() is not None
+
+    def test_active_remove_intent_precedes_backup_and_recovery_cleans_backup(self, tmp_path):
+        store = FakeCredentialStore()
+        active = MemoryActiveAccountStore("work")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        native = Mock()
+        native.preflight.return_value = AuthResult.success()
+        native.logout.return_value = AuthResult.success()
+        manager = self.durable_manager(tmp_path, store, active, native, durable)
+        manager.keychain.add_account(Account("work", fake_pat("active-remove")))
+        manager.sync_journal = InterruptingJournal(durable, write_call=2)
+
+        with pytest.raises(KeyboardInterrupt):
+            manager.remove("work")
+
+        assert durable.read()["phase"] == "intent"
+        assert len(store.tokens) == 2
+        restarted = self.durable_manager(tmp_path, store, active, native, durable)
+        assert restarted.recover_pending_sync().ok
+        assert store.tokens == {}
+
+    def test_active_remove_definitive_failure_deletes_backup_before_journal(self, tmp_path):
+        store = FakeCredentialStore()
+        active = MemoryActiveAccountStore("work")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        native = Mock()
+        native.preflight.return_value = AuthResult.success()
+        native.logout.return_value = AuthResult.failure(
+            AuthFailureCode.NATIVE_LOGOUT_FAILED, "safe"
+        )
+        native.mutation_state = MutationState.NONE
+        manager = self.durable_manager(tmp_path, store, active, native, durable)
+        manager.keychain.add_account(Account("work", fake_pat("definitive")))
+
+        with pytest.raises(AccountTransactionError):
+            manager.remove("work")
+
+        assert set(store.tokens) == {"work"}
+        assert durable.read() is None
+
+    def test_active_remove_definitive_failure_retains_journal_when_backup_cleanup_fails(
+        self, tmp_path, monkeypatch
+    ):
+        store = FakeCredentialStore()
+        active = MemoryActiveAccountStore("work")
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        native = Mock()
+        native.preflight.return_value = AuthResult.success()
+        native.logout.return_value = AuthResult.failure(
+            AuthFailureCode.NATIVE_LOGOUT_FAILED, "safe"
+        )
+        native.mutation_state = MutationState.NONE
+        manager = self.durable_manager(tmp_path, store, active, native, durable)
+        manager.keychain.add_account(Account("work", fake_pat("cleanup-failure")))
+        monkeypatch.setattr(
+            manager.keychain,
+            "delete_account_backup",
+            lambda _name: (_ for _ in ()).throw(OSError("private")),
+        )
+
+        with pytest.raises(AccountTransactionError):
+            manager.remove("work")
+
+        assert durable.read()["phase"] == "credential_backup"
+
+    def test_logout_verified_recovery_deletes_backup_before_clearing(self, tmp_path):
+        store = FakeCredentialStore()
+        active = MemoryActiveAccountStore(None)
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(tmp_path, store, active, Mock(), durable)
+        manager.keychain.save_account(Account("work", fake_pat("verified-cleanup")))
+        manager.keychain.create_account_backup("work")
+        manager.keychain.delete_account("work")
+        durable.write("logout", None, "work", "verified")
+
+        assert manager.recover_pending_sync().ok
+        assert store.tokens == {}
+        assert durable.read() is None
+
+    def test_logout_verified_recovery_retains_journal_when_backup_cleanup_fails(
+        self, tmp_path, monkeypatch
+    ):
+        store = FakeCredentialStore()
+        durable = SessionSyncJournal(tmp_path / "session-sync.json")
+        manager = self.durable_manager(
+            tmp_path, store, MemoryActiveAccountStore(None), Mock(), durable
+        )
+        manager.keychain.save_account(Account("work", fake_pat("verified-pending")))
+        manager.keychain.create_account_backup("work")
+        manager.keychain.delete_account("work")
+        durable.write("logout", None, "work", "verified")
+        monkeypatch.setattr(
+            manager.keychain,
+            "delete_account_backup",
+            lambda _name: (_ for _ in ()).throw(OSError("private")),
+        )
+
+        result = manager.recover_pending_sync()
+
+        assert result.code is AuthFailureCode.SYNC_PENDING
+        assert durable.read()["phase"] == "verified"
 
     def test_inactive_remove_runs_pending_recovery_before_deletion(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="old")
@@ -853,17 +1254,18 @@ class TestAccountManager:
         config = Mock()
         session_present = [True]
 
-        def verify():
+        def verify(**_kwargs):
             if session_present[0]:
                 return AuthResult.success()
             return AuthResult.failure(AuthFailureCode.TOKEN_MISSING, "safe")
 
-        def logout():
+        def logout(**_kwargs):
             session_present[0] = False
             return AuthResult.success()
 
         config.verify_persisted_session.side_effect = verify
         config.logout_session.side_effect = logout
+        config.preflight.return_value = AuthResult.success()
         native = NativeSessionSynchronizer(config, env={}, supabase_home=tmp_path / "home")
         durable = SessionSyncJournal(tmp_path / "session-sync.json")
         manager = self.durable_manager(tmp_path, store, active_store, native, durable)
@@ -904,7 +1306,7 @@ class TestAccountManager:
             manager.remove("work")
 
         assert active_store.name == "work"
-        assert durable.read()["phase"] == "intent"
+        assert durable.read()["phase"] == "credential_backup"
         restarted = self.durable_manager(tmp_path, store, active_store, native, durable)
         assert restarted.recover_pending_sync().ok
         assert config.logout_session.call_count == 1
@@ -1287,7 +1689,7 @@ class TestAccountManager:
         manager = AccountManager()
         manager.keychain.index_path = tmp_path / "accounts.json"
         manager.keychain.update_index([])
-        with patch.object(manager.keychain, 'add_account') as add_account:
+        with patch.object(manager.keychain, 'save_account') as add_account:
             manager.add("work", fake_pat("token_one"))
             manager.add("work", fake_pat("token_two"))
             assert add_account.call_count == 2
@@ -1317,8 +1719,8 @@ class TestAccountManager:
         release_first = threading.Event()
         second_started = threading.Event()
         second_entered_read = threading.Event()
-        first_read_index = first.keychain._read_index_locked
-        second_read_index = second.keychain._read_index_locked
+        first_read_index = first.transactions._index_names
+        second_read_index = second.transactions._index_names
 
         def paused_first_read():
             names = first_read_index()
@@ -1341,12 +1743,12 @@ class TestAccountManager:
                 failures.append(exc)
 
         with patch.object(
-            first.keychain,
-            "_read_index_locked",
+            first.transactions,
+            "_index_names",
             side_effect=paused_first_read,
         ), patch.object(
-            second.keychain,
-            "_read_index_locked",
+            second.transactions,
+            "_index_names",
             side_effect=observed_second_read,
         ):
             first_thread = threading.Thread(
@@ -1392,9 +1794,9 @@ class TestAccountManager:
         manager.keychain.update_index([])
 
         with patch(
-            "supa_cc.keychain.os.replace", side_effect=OSError("index write failed")
+            "supa_cc.account_store.os.replace", side_effect=OSError("index write failed")
         ):
-            with pytest.raises(OSError, match="index write failed"):
+            with pytest.raises(AccountTransactionError):
                 manager.add("work", fake_pat("replacement_token"))
 
         assert store.tokens == {"work": previous}
@@ -1412,9 +1814,9 @@ class TestAccountManager:
         manager.keychain.update_index(["work"])
 
         with patch(
-            "supa_cc.keychain.os.replace", side_effect=OSError("index write failed")
+            "supa_cc.account_store.os.replace", side_effect=OSError("index write failed")
         ):
-            with pytest.raises(OSError, match="index write failed"):
+            with pytest.raises(AccountTransactionError):
                 manager.remove("work")
 
         assert store.tokens == {"work": previous}
@@ -1473,7 +1875,7 @@ class TestAccountManager:
 
         store.set = set_account
         with patch(
-            "supa_cc.keychain.os.replace", side_effect=commit_failure
+            "supa_cc.account_store.os.replace", side_effect=commit_failure
         ):
             with pytest.raises(Exception) as raised:
                 manager.add("work", replacement)
@@ -1511,7 +1913,7 @@ class TestAccountManager:
 
         store.set = set_account
         with patch(
-            "supa_cc.keychain.os.replace", side_effect=commit_failure
+            "supa_cc.account_store.os.replace", side_effect=commit_failure
         ):
             with pytest.raises(Exception) as raised:
                 manager.remove("work")
@@ -1528,5 +1930,5 @@ class TestAccountManager:
         assert previous not in rendered
         assert "index failure" not in rendered
         assert "rollback failure" not in rendered
-        assert store.tokens == {}
+        assert store.tokens == {"work": previous}
         assert [account.name for account in manager.list()] == ["work"]

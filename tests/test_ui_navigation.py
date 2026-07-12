@@ -1,6 +1,5 @@
 from questionary import Choice, Separator
 from questionary.prompts.common import InquirerControl
-
 from supa_cc.ui.navigation import (
     BACK_ARROW,
     BACK_SPACING_LINES,
@@ -9,7 +8,7 @@ from supa_cc.ui.navigation import (
     first_selectable_value,
 )
 from supa_cc.ui.state import MenuAction
-from supa_cc.ui.strings import UIStrings as Textos
+from supa_cc.strings import UIStrings as Textos
 
 
 def test_back_spacing_is_two_lines():
@@ -38,7 +37,7 @@ def test_choices_with_back_separates_voltar_by_two_lines():
     voltar = result[2 + BACK_SPACING_LINES]
     assert isinstance(voltar, Choice)
     assert voltar.value == MenuAction.BACK
-    assert voltar.title == "Voltar"
+    assert voltar.title == [("class:text", "← Voltar")]
     assert len(result) == 2 + BACK_SPACING_LINES + 1
 
 
@@ -59,35 +58,19 @@ def test_first_selectable_value_with_only_back():
     assert first_selectable_value(choices) == MenuAction.BACK
 
 
-def test_renderer_always_shows_arrow_for_voltar_without_standard_pointer():
+def test_questionary_renders_formatted_back_choice_with_spacing_and_selection():
     choices = choices_with_back([Choice(title="A", value="a")])
-    control = InquirerControl(choices, pointer=DEFAULT_POINTER, use_indicator=False)
-    # Point at first option (A)
-    control.pointed_at = 0
-    tokens = control._get_choice_tokens()
-    text = "".join(part for _, part in tokens if part)
-
-    assert "»" in text  # standard pointer on A
-    assert BACK_ARROW in text  # ← always on Voltar
-    assert "Voltar" in text
-
-    # Point at Voltar
+    control = InquirerControl(
+        choices,
+        pointer=DEFAULT_POINTER,
+        use_indicator=False,
+    )
     control.pointed_at = len(control.choices) - 1
     tokens = control._get_choice_tokens()
-    rendered = [(style, part) for style, part in tokens]
+    rendered = "".join(text for _, text in tokens)
 
-    # No » next to Voltar when focused
-    voltar_chunks = []
-    capture = False
-    for style, part in rendered:
-        if BACK_ARROW in part:
-            capture = True
-        if capture:
-            voltar_chunks.append((style, part))
-            if "Voltar" in part:
-                break
-
-    joined = "".join(part for _, part in voltar_chunks)
-    assert BACK_ARROW in joined
-    assert "»" not in joined
-    assert any(style == "class:highlighted" and "Voltar" in part for style, part in voltar_chunks)
+    assert control.get_pointed_at().value is MenuAction.BACK
+    assert f"{BACK_ARROW} {Textos.MENU_BACK}" in rendered
+    assert sum(style == "class:separator" for style, _ in tokens) == BACK_SPACING_LINES
+    assert DEFAULT_POINTER in rendered  # Questionary may show its standard selected pointer.
+    assert InquirerControl._get_choice_tokens.__module__.startswith("questionary.")

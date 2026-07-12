@@ -10,8 +10,8 @@ import pytest
 
 from supa_cc.auth import ActiveAccountStore, AuthFailureCode
 from supa_cc.accounts import AccountManager
-from supa_cc.config import SupabaseConfig
-from supa_cc.keychain import KeychainManager
+from supa_cc.account_store import AccountStore as KeychainManager
+from supa_cc.supabase_cli import SupabaseCLI as SupabaseConfig
 from supa_cc.models import Account
 from supa_cc.native_session import NativeSessionSynchronizer, SessionSyncJournal
 
@@ -43,6 +43,9 @@ from pathlib import Path
 
 state_path = Path(os.environ['FAKE_SUPABASE_STATE'])
 control_path = Path(os.environ['FAKE_SUPABASE_CONTROL'])
+if sys.argv[1:] == ['--version']:
+    print('2.109.1')
+    sys.exit(0)
 state = json.loads(state_path.read_text()) if state_path.exists() else {'events': []}
 control = json.loads(control_path.read_text())
 token = os.environ.get('SUPABASE_ACCESS_TOKEN')
@@ -90,6 +93,12 @@ def _integration_manager(tmp_path, monkeypatch):
     monkeypatch.setenv("SUPABASE_HOME", str(supabase_home))
     monkeypatch.delenv("SUPABASE_ACCESS_TOKEN", raising=False)
     config = SupabaseConfig(binary_resolver=lambda _: str(executable))
+    class NativeCredentials:
+        def matches(self, name, expected):
+            assert name == "supabase"
+            state = _fake_state(state_path)
+            return state.get("session_fingerprint") == hashlib.sha256(expected.encode()).hexdigest()
+
     journal = SessionSyncJournal(tmp_path / "config" / "session-sync.json")
     manager = AccountManager(
         keychain=KeychainManager(
@@ -99,7 +108,8 @@ def _integration_manager(tmp_path, monkeypatch):
         config=config,
         active_store=ActiveAccountStore(tmp_path / "config" / "active-account"),
         native_session=NativeSessionSynchronizer(
-            config, env={}, supabase_home=supabase_home, journal=journal
+            config, env={}, supabase_home=supabase_home,
+            credential_store=NativeCredentials(),
         ),
         sync_journal=journal,
     )
@@ -217,7 +227,7 @@ def test_native_sync_blocks_and_removes_forced_plaintext_fallback(tmp_path, monk
 
     result = manager.set_active("work")
 
-    assert result.code is AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED
+    assert result.code is AuthFailureCode.NATIVE_LOGIN_FAILED
     assert manager.active_store.read() is None
     assert not (supabase_home / "access-token").exists()
     state = _fake_state(state_path)

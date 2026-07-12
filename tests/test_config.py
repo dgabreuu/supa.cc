@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import pytest
 
 from supa_cc.auth import AuthFailureCode, AuthResult
-from supa_cc.config import SupabaseConfig
+from supa_cc.supabase_cli import SupabaseCLI as SupabaseConfig
 from supa_cc.models import Account
 
 from helpers import fake_pat
@@ -24,6 +24,13 @@ def _process(returncode=0, stdout="", stderr=""):
     process.stderr = os.fdopen(stderr_read, "rb", buffering=0)
     process.poll.return_value = returncode
     return process
+
+
+def _binary(tmp_path, name="supabase"):
+    binary = tmp_path / name
+    binary.write_text("#!/bin/sh\n", encoding="utf-8")
+    binary.chmod(0o700)
+    return str(binary)
 
 
 def test_resolves_supabase_binary_to_real_path(tmp_path):
@@ -47,16 +54,16 @@ def test_is_installed_is_false_when_binary_cannot_be_resolved():
 
 def test_validate_access_token_uses_projects_list_and_copied_environment(tmp_path):
     token = fake_pat("env-only")
-    binary = str(tmp_path / "real-supabase")
+    binary = _binary(tmp_path, "real-supabase")
     config = SupabaseConfig(binary_resolver=lambda _: binary)
     account = Account(name="work", token=token)
 
     with patch.dict(
-        "supa_cc.config.os.environ",
+        "supa_cc.supabase_cli.os.environ",
         {"PARENT_VALUE": "present"},
         clear=True,
     ), patch(
-        "supa_cc.config.subprocess.Popen",
+        "supa_cc.process.subprocess.Popen",
         return_value=_process(),
     ) as popen:
         result = config.validate_access_token(account)
@@ -66,32 +73,30 @@ def test_validate_access_token_uses_projects_list_and_copied_environment(tmp_pat
     assert token not in result.message
     assert token not in repr(result)
     assert "SUPABASE_ACCESS_TOKEN" not in os.environ
-    popen.assert_called_once_with(
-        [os.path.realpath(binary), "projects", "list"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env={"PARENT_VALUE": "present", "SUPABASE_ACCESS_TOKEN": token},
-        bufsize=0,
-        start_new_session=(os.name == "posix"),
-    )
+    invocation = popen.call_args
+    assert invocation.args[0][0].startswith(("/proc/self/fd/", "/dev/fd/"))
+    assert invocation.args[0][1:] == ["projects", "list"]
+    assert invocation.kwargs["env"] == {"PARENT_VALUE": "present", "SUPABASE_ACCESS_TOKEN": token}
+    assert invocation.kwargs["pass_fds"]
     assert "login" not in popen.call_args.args[0]
     assert token not in popen.call_args.args[0]
 
 
 def test_login_passes_token_only_in_child_environment(tmp_path):
     token = fake_pat("native-login")
-    binary = str(tmp_path / "supabase")
+    binary = _binary(tmp_path)
     config = SupabaseConfig(binary_resolver=lambda _: binary)
     account = Account(name="work", token=token)
 
     with patch.dict(
-        "supa_cc.config.os.environ", {"PARENT": "yes"}, clear=True
+        "supa_cc.supabase_cli.os.environ", {"PARENT": "yes"}, clear=True
     ), patch(
-        "supa_cc.config.subprocess.Popen", return_value=_process()
+        "supa_cc.process.subprocess.Popen", return_value=_process()
     ) as popen:
         result = config.login_with_access_token(account)
 
-    assert popen.call_args.args[0] == [os.path.realpath(binary), "login"]
+    assert popen.call_args.args[0][0].startswith(("/proc/self/fd/", "/dev/fd/"))
+    assert popen.call_args.args[0][1:] == ["login"]
     assert token not in popen.call_args.args[0]
     assert popen.call_args.kwargs["env"] == {
         "PARENT": "yes",
@@ -110,27 +115,28 @@ def test_login_passes_token_only_in_child_environment(tmp_path):
 def test_native_commands_remove_inherited_environment_override(
     tmp_path, method, arguments
 ):
-    binary = str(tmp_path / "supabase")
+    binary = _binary(tmp_path)
     config = SupabaseConfig(binary_resolver=lambda _: binary)
 
     with patch.dict(
-        "supa_cc.config.os.environ",
+        "supa_cc.supabase_cli.os.environ",
         {"PARENT": "yes", "SUPABASE_ACCESS_TOKEN": fake_pat("inherited")},
         clear=True,
     ), patch(
-        "supa_cc.config.subprocess.Popen", return_value=_process()
+        "supa_cc.process.subprocess.Popen", return_value=_process()
     ) as popen:
         result = getattr(config, method)()
 
-    assert popen.call_args.args[0] == [os.path.realpath(binary), *arguments]
+    assert popen.call_args.args[0][0].startswith(("/proc/self/fd/", "/dev/fd/"))
+    assert popen.call_args.args[0][1:] == arguments
     assert popen.call_args.kwargs["env"] == {"PARENT": "yes"}
     assert result.ok is True
 
 
 def test_validate_access_token_does_not_run_when_token_is_missing(tmp_path):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
-    with patch("supa_cc.config.subprocess.Popen") as run:
+    with patch("supa_cc.process.subprocess.Popen") as run:
         result = config.validate_access_token(Account(name="work", token=""))
 
     assert result.ok is False
@@ -141,7 +147,7 @@ def test_validate_access_token_does_not_run_when_token_is_missing(tmp_path):
 def test_validate_access_token_does_not_run_when_cli_is_missing():
     config = SupabaseConfig(binary_resolver=lambda _: None)
 
-    with patch("supa_cc.config.subprocess.Popen") as run:
+    with patch("supa_cc.process.subprocess.Popen") as run:
         result = config.validate_access_token(
             Account(name="work", token=fake_pat("missing-cli"))
         )
@@ -172,10 +178,10 @@ def test_validate_access_token_does_not_run_when_cli_is_missing():
 def test_validate_access_token_classifies_cli_failures_without_echoing_output(
     tmp_path, output, expected
 ):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
     with patch(
-        "supa_cc.config.subprocess.Popen",
+        "supa_cc.process.subprocess.Popen",
         return_value=_process(returncode=7, stderr=output),
     ):
         result = config.validate_access_token(
@@ -202,9 +208,9 @@ def test_validate_access_token_classifies_cli_failures_without_echoing_output(
 def test_validate_access_token_classifies_execution_failures_safely(
     tmp_path, failure, expected
 ):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
-    with patch("supa_cc.config.subprocess.Popen", side_effect=failure):
+    with patch("supa_cc.process.subprocess.Popen", side_effect=failure):
         result = config.validate_access_token(
             Account(name="work", token=fake_pat("execution"))
         )
@@ -216,10 +222,10 @@ def test_validate_access_token_classifies_execution_failures_safely(
 
 
 def test_validate_access_token_never_calls_native_keychain_repair(tmp_path):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
     with patch(
-        "supa_cc.config.subprocess.Popen", return_value=_process()
+        "supa_cc.process.subprocess.Popen", return_value=_process()
     ) as run:
         result = config.validate_access_token(
             Account(name="work", token=fake_pat("no-repair"))
@@ -231,13 +237,13 @@ def test_validate_access_token_never_calls_native_keychain_repair(tmp_path):
 
 def test_execute_authenticated_passes_pat_only_in_copied_environment(tmp_path):
     token = fake_pat("command_env_only")
-    binary = str(tmp_path / "supabase")
+    binary = _binary(tmp_path)
     config = SupabaseConfig(binary_resolver=lambda _: binary)
 
     with patch.dict(
-        "supa_cc.config.os.environ", {"PARENT": "yes"}, clear=True
+        "supa_cc.supabase_cli.os.environ", {"PARENT": "yes"}, clear=True
     ), patch(
-        "supa_cc.config.subprocess.Popen",
+        "supa_cc.process.subprocess.Popen",
         return_value=_process(stdout="project output\n"),
     ) as popen:
         result = config.execute_authenticated(
@@ -250,13 +256,8 @@ def test_execute_authenticated_passes_pat_only_in_copied_environment(tmp_path):
     assert result.stderr == ""
     assert token not in repr(result)
     assert token not in popen.call_args.args[0]
-    assert popen.call_args.args[0] == [
-        os.path.realpath(binary),
-        "projects",
-        "list",
-        "--profile",
-        "work",
-    ]
+    assert popen.call_args.args[0][0].startswith(("/proc/self/fd/", "/dev/fd/"))
+    assert popen.call_args.args[0][1:] == ["projects", "list", "--profile", "work"]
     assert popen.call_args.kwargs["env"] == {
         "PARENT": "yes",
         "SUPABASE_ACCESS_TOKEN": token,
@@ -280,9 +281,9 @@ def test_execute_authenticated_passes_pat_only_in_copied_environment(tmp_path):
 def test_execute_authenticated_rejects_empty_or_sensitive_arguments(
     tmp_path, arguments
 ):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
-    with patch("supa_cc.config.subprocess.Popen") as run:
+    with patch("supa_cc.process.subprocess.Popen") as run:
         result = config.execute_authenticated(
             Account(name="work", token=fake_pat("unsafe")), arguments
         )
@@ -298,10 +299,10 @@ def test_execute_authenticated_rejects_empty_or_sensitive_arguments(
 def test_execute_authenticated_sanitizes_exact_and_token_like_output(tmp_path):
     token = fake_pat("exact_secret")
     other_token = fake_pat("other_secret")
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
     with patch(
-        "supa_cc.config.subprocess.Popen",
+        "supa_cc.process.subprocess.Popen",
         return_value=_process(
             returncode=9,
             stdout=f"first={token}\n",
@@ -331,9 +332,9 @@ def test_execute_authenticated_sanitizes_exact_and_token_like_output(tmp_path):
 def test_execute_authenticated_classifies_runtime_failures(
     tmp_path, failure, expected
 ):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
-    with patch("supa_cc.config.subprocess.Popen", side_effect=failure):
+    with patch("supa_cc.process.subprocess.Popen", side_effect=failure):
         result = config.execute_authenticated(
             Account(name="work", token=fake_pat("runtime")),
             ["projects", "list"],
@@ -349,10 +350,10 @@ def test_execute_authenticated_classifies_runtime_failures(
     [(0, 0), (1, 1), (255, 255), (-9, 1), (256, 1), (999, 1)],
 )
 def test_execute_authenticated_normalizes_child_exit_code(tmp_path, raw, expected):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
     with patch(
-        "supa_cc.config.subprocess.Popen",
+        "supa_cc.process.subprocess.Popen",
         return_value=_process(returncode=raw, stderr="failed"),
     ):
         result = config.execute_authenticated(
@@ -363,7 +364,7 @@ def test_execute_authenticated_normalizes_child_exit_code(tmp_path, raw, expecte
 
 
 def test_validate_access_token_reuses_authenticated_executor(tmp_path):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
     account = Account(name="work", token=fake_pat("reuse"))
 
     with patch.object(config, "execute_authenticated") as execute:
@@ -380,7 +381,7 @@ def test_validate_access_token_reuses_authenticated_executor(tmp_path):
 
 def test_captured_executor_maps_value_error_without_traceback(tmp_path):
     token = fake_pat("nul_argv")
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
 
     result = config.execute_authenticated(
         Account(name="work", token=token),
@@ -393,7 +394,7 @@ def test_captured_executor_maps_value_error_without_traceback(tmp_path):
 
 
 def test_streaming_terminates_child_before_propagating_keyboard_interrupt(tmp_path):
-    config = SupabaseConfig(binary_resolver=lambda _: str(tmp_path / "supabase"))
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
     stdout_read, stdout_write = os.pipe()
     stderr_read, stderr_write = os.pipe()
     os.close(stdout_write)
@@ -406,8 +407,8 @@ def test_streaming_terminates_child_before_propagating_keyboard_interrupt(tmp_pa
     process.pid = 99999999
 
     with patch(
-        "supa_cc.config.subprocess.Popen", return_value=process
-    ), patch("supa_cc.config.os.killpg") as killpg:
+        "supa_cc.process.subprocess.Popen", return_value=process
+    ), patch("supa_cc.process.os.killpg") as killpg:
         with pytest.raises(KeyboardInterrupt):
             config.execute_authenticated_streaming(
                 Account(name="work", token=fake_pat("interrupt_cleanup")),
