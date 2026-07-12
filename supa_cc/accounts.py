@@ -1,5 +1,4 @@
 import os
-import stat
 from contextlib import contextmanager
 from typing import Callable, Iterator, List, Optional, Sequence
 
@@ -20,7 +19,7 @@ from .auth import (
 from .environment import detect_environment
 from .models import Account, AccountSummary
 from .native_session import NativeSessionSynchronizer, SessionSyncJournal
-from .file_lock import acquire_file_lock, release_file_lock
+from .file_lock import acquire_file_lock, release_file_lock, validate_lock_file
 from .supabase_cli import SupabaseCLI
 from .transactions import AccountTransactionCoordinator, pending_sync_failure
 
@@ -93,34 +92,10 @@ class AccountManager:
         unlock_failed = False
         close_failed = False
         try:
-            opened = os.fstat(descriptor)
-            current = self._sync_lock_path.lstat()
-            unsafe_posix_metadata = not _is_windows() and (
-                opened.st_uid != os.getuid()
-                or stat.S_IMODE(opened.st_mode) != 0o600
-                or current.st_uid != os.getuid()
-                or stat.S_IMODE(current.st_mode) != 0o600
-            )
-            if (
-                not stat.S_ISREG(opened.st_mode)
-                or not stat.S_ISREG(current.st_mode)
-                or unsafe_posix_metadata
-                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
-            ):
-                raise ValueError("O lock de sincronização é inválido.")
+            validate_lock_file(descriptor, self._sync_lock_path)
             acquire_file_lock(descriptor)
             locked = True
-            current = self._sync_lock_path.lstat()
-            unsafe_posix_metadata = not _is_windows() and (
-                current.st_uid != os.getuid()
-                or stat.S_IMODE(current.st_mode) != 0o600
-            )
-            if (
-                not stat.S_ISREG(current.st_mode)
-                or unsafe_posix_metadata
-                or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
-            ):
-                raise ValueError("O lock de sincronização é inválido.")
+            validate_lock_file(descriptor, self._sync_lock_path)
             try:
                 yield
             except BaseException as error:

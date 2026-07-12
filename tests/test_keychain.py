@@ -310,6 +310,29 @@ def test_update_index_writes_only_account_names_with_private_permissions(tmp_pat
     assert path.stat().st_mode & 0o777 == 0o600
 
 
+def test_windows_index_lock_rejects_link_without_writing_target(tmp_path, monkeypatch):
+    path = tmp_path / "accounts.json"
+    manager = KeychainManager(index_path=path, credential_store=FakeCredentialStore())
+    target = tmp_path / "target"
+    target.write_bytes(b"")
+    manager.index_lock_path.symlink_to(target)
+    real_open = os.open
+
+    monkeypatch.setattr(keychain, "_is_windows", lambda: True)
+    monkeypatch.setattr(
+        keychain.os,
+        "open",
+        lambda lock_path, flags, mode=0o777: real_open(
+            lock_path, flags & ~getattr(os, "O_NOFOLLOW", 0), mode
+        ),
+    )
+
+    with pytest.raises(OSError, match="unsafe lock file"):
+        manager.update_index(["work"])
+
+    assert target.read_bytes() == b""
+
+
 @pytest.mark.parametrize("unsafe_kind", ["symlink", "directory", "permissive"])
 def test_list_accounts_rejects_unsafe_index_file(tmp_path, unsafe_kind):
     path = tmp_path / "accounts.json"

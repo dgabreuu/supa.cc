@@ -1,4 +1,7 @@
+import os
 from unittest.mock import Mock
+
+import pytest
 
 import supa_cc.file_lock as file_lock
 
@@ -34,3 +37,23 @@ def test_windows_lock_reserves_and_locks_first_byte(monkeypatch):
         ((9, backend.LK_LOCK, 1),),
         ((9, backend.LK_UNLCK, 1),),
     ]
+
+
+def test_windows_lock_rejects_link_before_writing_target(tmp_path, monkeypatch):
+    target = tmp_path / "target"
+    target.write_bytes(b"")
+    link = tmp_path / "lock"
+    link.symlink_to(target)
+    descriptor = os.open(link, os.O_RDWR)
+    write = Mock(wraps=os.write)
+    monkeypatch.setattr(file_lock, "_is_windows", lambda: True)
+    monkeypatch.setattr(file_lock.os, "write", write)
+
+    try:
+        with pytest.raises(OSError, match="unsafe lock file"):
+            file_lock.validate_lock_file(descriptor, link)
+    finally:
+        os.close(descriptor)
+
+    write.assert_not_called()
+    assert target.read_bytes() == b""

@@ -1,4 +1,6 @@
 import os
+import stat
+from pathlib import Path
 
 try:
     import fcntl as _fcntl
@@ -9,6 +11,37 @@ try:
     import msvcrt as _msvcrt
 except ImportError:  # pragma: no cover - exercised on POSIX CI
     _msvcrt = None
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+def validate_lock_file(descriptor: int, path: Path) -> None:
+    opened = os.fstat(descriptor)
+    current = Path(path).lstat()
+    unsafe_posix_metadata = not _is_windows() and (
+        opened.st_uid != os.getuid()
+        or stat.S_IMODE(opened.st_mode) != 0o600
+        or current.st_uid != os.getuid()
+        or stat.S_IMODE(current.st_mode) != 0o600
+    )
+    reparse_point = _is_windows() and bool(
+        getattr(current, "st_file_attributes", 0)
+        & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    )
+    multiply_linked = _is_windows() and (
+        getattr(opened, "st_nlink", 1) != 1 or getattr(current, "st_nlink", 1) != 1
+    )
+    if (
+        not stat.S_ISREG(opened.st_mode)
+        or not stat.S_ISREG(current.st_mode)
+        or unsafe_posix_metadata
+        or reparse_point
+        or multiply_linked
+        or not os.path.samestat(opened, current)
+    ):
+        raise OSError("unsafe lock file")
 
 
 def _acquire_posix(descriptor: int) -> None:
@@ -41,14 +74,14 @@ def _release_windows(descriptor: int) -> None:
 
 
 def acquire_file_lock(descriptor: int) -> None:
-    if os.name == "nt":
+    if _is_windows():
         _acquire_windows(descriptor)
     else:
         _acquire_posix(descriptor)
 
 
 def release_file_lock(descriptor: int) -> None:
-    if os.name == "nt":
+    if _is_windows():
         _release_windows(descriptor)
     else:
         _release_posix(descriptor)

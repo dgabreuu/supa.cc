@@ -14,7 +14,7 @@ from .auth import (
 )
 from .credentials import CredentialStore, create_credential_store
 from .environment import Environment, detect_environment
-from .file_lock import acquire_file_lock, release_file_lock
+from .file_lock import acquire_file_lock, release_file_lock, validate_lock_file
 from .models import Account, AccountSummary
 from .state import atomic_write_text, read_text
 
@@ -106,8 +106,10 @@ class AccountStore:
         try:
             if not _is_windows():
                 os.fchmod(descriptor, 0o600)
+            validate_lock_file(descriptor, self.index_lock_path)
             acquire_file_lock(descriptor)
             locked = True
+            validate_lock_file(descriptor, self.index_lock_path)
             yield
         finally:
             if locked:
