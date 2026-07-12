@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from supa_cc.auth import AuthFailureCode, AuthResult
+from supa_cc.auth import AuthFailureCode, AuthResult, CommandResult
 from supa_cc.supabase_cli import SupabaseCLI as SupabaseConfig
 from supa_cc.models import Account
 
@@ -39,10 +39,46 @@ def _assert_verified_invocation(invocation, binary):
     if os.name == "nt" or sys.platform == "darwin":
         assert command == str(os.path.realpath(binary))
         assert invocation.kwargs["pass_fds"] == ()
-        assert invocation.kwargs["pre_spawn_check"] is not None
     else:
         assert command.startswith(("/proc/self/fd/", "/dev/fd/"))
         assert invocation.kwargs["pass_fds"]
+
+
+def test_macos_popen_assertion_does_not_expect_consumed_pre_spawn_callback(
+    tmp_path, monkeypatch
+):
+    binary = _binary(tmp_path)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    invocation = Mock(
+        args=([str(os.path.realpath(binary)), "projects", "list"],),
+        kwargs={"pass_fds": ()},
+    )
+
+    _assert_verified_invocation(invocation, binary)
+
+
+def test_macos_run_process_executes_pre_spawn_revalidation(tmp_path, monkeypatch):
+    binary = _binary(tmp_path)
+    config = SupabaseConfig(binary_resolver=lambda _: binary)
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    def run_at_spawn(argv, _env, *_args, **kwargs):
+        assert argv[0] == str(os.path.realpath(binary))
+        kwargs["pre_spawn_check"]()
+        return CommandResult.success()
+
+    with patch.object(config, "_require_same_binary") as revalidate, patch(
+        "supa_cc.supabase_cli.run_process", side_effect=run_at_spawn
+    ):
+        result = config.execute_authenticated(
+            Account("work", fake_pat("macos-config-boundary")),
+            ["projects", "list"],
+        )
+
+    assert result.ok
+    descriptor, path = revalidate.call_args.args
+    assert isinstance(descriptor, int)
+    assert path == str(os.path.realpath(binary))
 
 
 def test_resolves_supabase_binary_to_real_path(tmp_path):
