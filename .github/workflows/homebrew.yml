@@ -11,20 +11,30 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
+      - name: Register exact public tap revision
+        run: |
+          brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
+          tap_repo="$(brew --repo dgabreuu/supa-cc)"
+          test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"
       - name: Verify generated Python resources
         run: |
-          brew update-python-resources Formula/supa-cc.rb
-          git diff --exit-code -- Formula/supa-cc.rb
+          tap_repo="$(brew --repo dgabreuu/supa-cc)"
+          formula="$tap_repo/Formula/supa-cc.rb"
+          brew update-python-resources "$formula"
+          git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb
       - name: Audit formula
-        run: brew audit --strict --formula ./Formula/supa-cc.rb
+        run: |
+          tap_repo="$(brew --repo dgabreuu/supa-cc)"
+          formula="$tap_repo/Formula/supa-cc.rb"
+          brew audit --strict --formula "$formula"
       - name: Install formula from source
-        run: brew install --build-from-source ./Formula/supa-cc.rb
+        run: |
+          tap_repo="$(brew --repo dgabreuu/supa-cc)"
+          formula="$tap_repo/Formula/supa-cc.rb"
+          brew install --build-from-source "$formula"
       - name: Verify installed version
         run: |
           test "$(supa.cc --version)" = "supa.cc, version 0.3.0"
           supa.cc version | grep -Fx "Supa.cc v0.3.0"
       - name: Test formula
-        run: brew test supa-cc
+        run: brew test dgabreuu/supa-cc/supa-cc

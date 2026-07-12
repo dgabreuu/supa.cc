@@ -114,17 +114,30 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
     workflow_text = Path(".github/workflows/homebrew.yml").read_text(encoding="utf-8")
 
     for command in (
-        "brew update-python-resources Formula/supa-cc.rb",
-        "git diff --exit-code -- Formula/supa-cc.rb",
-        "brew audit --strict --formula ./Formula/supa-cc.rb",
-        "brew install --build-from-source ./Formula/supa-cc.rb",
+        "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git",
+        'tap_repo="$(brew --repo dgabreuu/supa-cc)"',
+        'test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"',
+        'formula="$tap_repo/Formula/supa-cc.rb"',
+        'brew update-python-resources "$formula"',
+        'git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb',
+        'brew audit --strict --formula "$formula"',
+        'brew install --build-from-source "$formula"',
         "supa.cc --version",
         "supa.cc version",
-        "brew test supa-cc",
+        "brew test dgabreuu/supa-cc/supa-cc",
     ):
         assert command in workflow_text
+    sha_guard = workflow_text.index('test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"')
+    resource_update = workflow_text.index('brew update-python-resources "$formula"')
+    assert sha_guard < resource_update
     assert "0.3.0" in workflow_text
-    for prohibited in ("git commit", "git push", "gh release", "upload-artifact"):
+    for prohibited in (
+        "actions/checkout",
+        "git commit",
+        "git push",
+        "gh release",
+        "upload-artifact",
+    ):
         assert prohibited not in workflow_text
 
 
