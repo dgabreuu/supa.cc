@@ -114,10 +114,23 @@ def test_homebrew_workflow_refreshes_metadata_once_before_registering_tap():
     workflow_text = Path(".github/workflows/homebrew.yml").read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
     steps = workflow["jobs"]["validate"]["steps"]
+    command_lines = [
+        line.strip()
+        for step in steps
+        for line in step.get("run", "").splitlines()
+        if line.strip()
+    ]
+    update_commands = [
+        line
+        for line in command_lines
+        if line == "brew update" or line.startswith("brew update ")
+    ]
 
     assert steps[0] == {"name": "Update Homebrew metadata", "run": "brew update"}
-    assert workflow_text.count("brew update\n") == 1
-    assert workflow_text.index("brew update\n") < workflow_text.index("brew tap ")
+    assert update_commands == ["brew update"]
+    assert command_lines.index("brew update") < command_lines.index(
+        "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git"
+    )
 
 
 def test_homebrew_workflow_validates_committed_formula_without_publishing():
