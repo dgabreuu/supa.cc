@@ -336,13 +336,20 @@ def test_platform_lifecycle_commands_use_separately_labeled_blocks():
 
 def test_security_claims_distinguish_posix_checks_from_windows_guarantees():
     security = Path("docs/security.md").read_text(encoding="utf-8").lower()
+    skill = Path("SKILL.md").read_text(encoding="utf-8").lower()
 
     assert "macos e linux" in security
     assert "pertencente ao usuário ou root" in security
-    assert "windows" in security and "identidade canônica" in security
+    assert "windows" in security and "antes da criação do processo" in security
+    assert "caminho" in security and "descritor" in security
     assert "%appdata%" in security and "herda" in security
     assert "não impõe modos posix" in security
     assert not re.search(r"windows[^\n]+privad[oa] para o usuário atual", security)
+    for document in (security, skill):
+        assert not re.search(
+            r"windows[^\n]+(?:preserva|garante)[^\n]+identidade[^\n]+execução",
+            document,
+        )
 
 
 def test_stable_installation_does_not_use_mutable_repository_revisions():

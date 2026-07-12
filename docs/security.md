@@ -15,7 +15,7 @@ Este é o documento canônico das garantias e limites de segurança do Supa.cc.
 
 `switch` valida o PAT, usa somente o perfil oficial `supabase` e os comandos públicos `login`, `logout --yes` e `projects list` do Supabase CLI >= 2.109.1. O PAT é passado por `SUPABASE_ACCESS_TOKEN` no ambiente do processo filho e nunca em `argv`.
 
-No macOS e Linux, o executável resolvido deve ser arquivo regular executável, pertencente ao usuário ou root e sem escrita por grupo/outros. No Windows, a verificação exige um arquivo regular e preserva sua identidade canônica entre a inspeção, a abertura e a execução; o Supa.cc não afirma validar proprietário, ACL ou modos POSIX nesse sistema. A verificação pós-login confirma a credencial nativa exata persistida. O Supa.cc não edita diretamente credenciais ou perfis do CLI.
+No macOS e Linux, o executável resolvido deve ser arquivo regular executável, pertencente ao usuário ou root e sem escrita por grupo/outros; a execução usa o descritor aberto. No Windows, a API de criação de processo executa um caminho, não o descritor verificado. O Supa.cc exige arquivo regular e compara a identidade do caminho com o descritor após a abertura e novamente imediatamente antes da criação do processo, reduzindo a janela de substituição sem alegar execução vinculada ao descritor, validação de proprietário, ACL ou modos POSIX. A proteção contra troca concorrente também depende dos controles de acesso do diretório que contém o executável. A verificação pós-login confirma a credencial nativa exata persistida. O Supa.cc não edita diretamente credenciais ou perfis do CLI.
 
 Um `SUPABASE_ACCESS_TOKEN` herdado tem precedência e bloqueia a sincronização. Um fallback `access-token` plaintext é bloqueado sem leitura ou migração. Saída, erros e exceções são sanitizados.
 
@@ -35,6 +35,6 @@ Somente `supa.cc doctor --account <nome> --live` abre uma vez a credencial escol
 
 - macOS: o runtime Python é o acessor do Keychain; o Supa.cc não contorna bloqueio nem amplia ACLs.
 - Linux: requer D-Bus de usuário e Secret Service desbloqueado; ambientes headless sem ambos falham com orientação segura.
-- Windows: aceita somente Windows Credential Manager por `WinVaultKeyring`; `%APPDATA%` guarda apenas metadados sem segredo. O diretório e os arquivos herdam os controles de acesso do diretório `%APPDATA%`; o Supa.cc não cria uma ACL privada e não impõe modos POSIX no Windows.
+- Windows: aceita somente Windows Credential Manager por `WinVaultKeyring`; `%APPDATA%` guarda apenas metadados sem segredo. Locks rejeitam caminhos de reparse, links adicionais e mudanças de identidade detectáveis antes e depois da aquisição. O diretório e os arquivos herdam os controles de acesso do diretório `%APPDATA%`; o Supa.cc não cria uma ACL privada e não impõe modos POSIX no Windows.
 
 Para remediação sem expor segredos, consulte [Solução de problemas](troubleshooting.md).

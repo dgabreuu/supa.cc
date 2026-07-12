@@ -36,6 +36,32 @@ def test_windows_executes_verified_absolute_binary_path(tmp_path, monkeypatch):
     assert not run.call_args.args[0][0].startswith(("/proc/self/fd", "/dev/fd"))
 
 
+def test_windows_revalidates_binary_at_process_spawn_boundary(tmp_path, monkeypatch):
+    binary = _executable(tmp_path)
+    replacement = tmp_path / "replacement"
+    replacement.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    replacement.chmod(0o700)
+    cli = SupabaseCLI(binary_resolver=lambda _: str(binary))
+    monkeypatch.setattr(supabase_cli, "_is_windows", lambda: True)
+    original_open = cli._open_binary
+
+    def open_then_replace():
+        opened = original_open()
+        os.replace(replacement, binary)
+        return opened
+
+    monkeypatch.setattr(cli, "_open_binary", open_then_replace)
+
+    with patch("supa_cc.process.subprocess.Popen") as popen:
+        result = cli.execute_authenticated(
+            Account("work", fake_pat("windows-replacement")),
+            ["projects", "list"],
+        )
+
+    assert result.code is AuthFailureCode.ENVIRONMENT_BLOCKED
+    popen.assert_not_called()
+
+
 @pytest.mark.parametrize("mode", [0o600, 0o722, 0o702])
 def test_rejects_binary_that_is_not_safely_executable(tmp_path, mode):
     binary = _executable(tmp_path)

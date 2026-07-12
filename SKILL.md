@@ -18,6 +18,6 @@ Use [Instalação](docs/installation.md) para o ciclo de instalação, [Uso](doc
 - Rollback e recuperação devem ser mutation-aware. A trava coordena processos Supa.cc cooperantes, não comandos `supabase` externos concorrentes.
 - `doctor` e `doctor --json` são não-live, não abrem token e não comprovam disponibilidade do backend. Somente `doctor --account <nome> --live` autoriza leitura e validação autenticada da conta escolhida.
 - Não afrouxe ACLs, exporte itens, despeje ambientes ou credenciais, nem apague itens legados, journals, locks ou credenciais sem estado prévio exato e aprovação explícita.
-- No macOS e Linux, aceite apenas executável regular, executável, pertencente ao usuário ou root e sem escrita por grupo/outros. No Windows, preserve a identidade canônica entre inspeção, abertura e execução sem alegar validação de ACL ou modos POSIX.
+- No macOS e Linux, aceite apenas executável regular, executável, pertencente ao usuário ou root e sem escrita por grupo/outros. No Windows, compare a identidade do caminho e do descritor após abrir e imediatamente antes de criar o processo; a API executa o caminho, portanto não alegue execução vinculada ao descritor nem validação de ACL ou modos POSIX.
 
 Identidades canônicas: `macOS: Keychain service supa.cc.supabase.accounts.v2`; `Linux: Secret Service supa.cc.supabase.accounts.v2`; `Windows: Windows Credential Manager (WinVaultKeyring) service supa.cc.supabase.accounts.v2`.

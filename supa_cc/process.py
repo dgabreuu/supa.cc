@@ -85,8 +85,11 @@ def _terminate_process_group(process):
 
 def run_process(argv: Sequence[str], env: dict, stdout_sink: OutputSink = lambda _chunk: None,
                  stderr_sink: OutputSink = lambda _chunk: None, sample_limit: int = STREAM_SAMPLE_LIMIT,
-                 timeout_seconds: Optional[float] = None, pass_fds: Tuple[int, ...] = ()) -> ProcessResult:
+                 timeout_seconds: Optional[float] = None, pass_fds: Tuple[int, ...] = (),
+                 pre_spawn_check: Optional[Callable[[], None]] = None) -> ProcessResult:
     try:
+        if pre_spawn_check is not None:
+            pre_spawn_check()
         options = {"pass_fds": pass_fds} if os.name == "posix" else {}
         process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
                                    bufsize=0, start_new_session=(os.name == "posix"), **options)

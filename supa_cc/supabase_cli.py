@@ -184,6 +184,13 @@ class SupabaseCLI:
             os.close(descriptor)
             return None, CommandResult.failure(AuthFailureCode.ENVIRONMENT_BLOCKED, _MESSAGES[AuthFailureCode.ENVIRONMENT_BLOCKED])
 
+    @staticmethod
+    def _require_same_binary(descriptor, path):
+        opened = os.fstat(descriptor)
+        current = os.stat(path, follow_symlinks=False)
+        if not stat.S_ISREG(current.st_mode) or not os.path.samestat(opened, current):
+            raise PermissionError
+
     def _run(self, arguments, env, stdout_sink=lambda _chunk: None, stderr_sink=lambda _chunk: None,
              sample_limit=STREAM_SAMPLE_LIMIT, timeout_seconds=None):
         opened, failure = self._open_binary()
@@ -208,6 +215,11 @@ class SupabaseCLI:
                 pass_fds=(descriptor,)
                 if descriptor is not None and not _is_windows()
                 else (),
+                pre_spawn_check=(
+                    lambda: self._require_same_binary(descriptor, descriptor_path)
+                )
+                if descriptor is not None and _is_windows()
+                else None,
             )
             stdout_tail, stderr_tail = stdout_redactor.feed("", final=True), stderr_redactor.feed("", final=True)
             if stdout_tail:
