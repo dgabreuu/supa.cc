@@ -103,7 +103,8 @@ def test_ci_has_least_privilege_cross_platform_build_and_security_jobs():
     assert '"3.9"' in workflow and '"3.x"' in workflow
     assert "fedora" in workflow.lower() and "archlinux" in workflow.lower()
     assert "pip check" in workflow
-    assert "pip-audit --skip-editable" in workflow
+    assert "python scripts/runtime_requirements.py runtime-requirements.txt" in workflow
+    assert "pip-audit --requirement runtime-requirements.txt" in workflow
     assert "python -m build" in workflow
     assert "artifact" in workflow.lower()
     assert re.search(r"^jobs:", workflow, re.MULTILINE)
@@ -126,7 +127,8 @@ def test_windows_ci_runs_full_suite_without_claiming_real_vault_coverage():
 def test_release_uses_the_same_audit_and_artifact_inspection_commands_as_ci():
     release = Path("docs/release.md").read_text(encoding="utf-8")
 
-    assert "pip-audit --skip-editable" in release
+    assert "python scripts/runtime_requirements.py runtime-requirements.txt" in release
+    assert "pip-audit --requirement runtime-requirements.txt" in release
     assert "scripts/inspect_artifacts.py dist" in release
 
 

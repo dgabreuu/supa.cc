@@ -1,4 +1,5 @@
 import os
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -12,7 +13,13 @@ from helpers import fake_pat
 
 
 def _executable(tmp_path, content="#!/bin/sh\nexit 0\n"):
-    binary = tmp_path / "supabase"
+    binary = tmp_path / ("supabase.cmd" if os.name == "nt" else "supabase")
+    if os.name == "nt":
+        content = (
+            "@echo %SUPABASE_ACCESS_TOKEN%: 401 Unauthorized 1>&2\r\n@exit /b 7\r\n"
+            if "401 Unauthorized" in content
+            else "@exit /b 0\r\n"
+        )
     binary.write_text(content, encoding="utf-8")
     binary.chmod(0o700)
     return binary
@@ -34,6 +41,24 @@ def test_windows_executes_verified_absolute_binary_path(tmp_path, monkeypatch):
     assert run.call_args.args[0][0] == str(binary.resolve())
     assert run.call_args.kwargs["pass_fds"] == ()
     assert not run.call_args.args[0][0].startswith(("/proc/self/fd", "/dev/fd"))
+
+
+def test_macos_executes_verified_absolute_binary_path(tmp_path, monkeypatch):
+    binary = _executable(tmp_path)
+    cli = SupabaseCLI(binary_resolver=lambda _: str(binary))
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    with patch(
+        "supa_cc.supabase_cli.run_process", return_value=CommandResult.success()
+    ) as run:
+        result = cli.execute_authenticated(
+            Account("work", fake_pat("macos-binary")), ["projects", "list"]
+        )
+
+    assert result.ok
+    assert run.call_args.args[0][0] == str(binary.resolve())
+    assert run.call_args.kwargs["pass_fds"] == ()
+    assert run.call_args.kwargs["pre_spawn_check"] is not None
 
 
 def test_windows_revalidates_binary_at_process_spawn_boundary(tmp_path, monkeypatch):
@@ -63,6 +88,7 @@ def test_windows_revalidates_binary_at_process_spawn_boundary(tmp_path, monkeypa
 
 
 @pytest.mark.parametrize("mode", [0o600, 0o722, 0o702])
+@pytest.mark.skipif(os.name != "posix", reason="POSIX executable permission modes")
 def test_rejects_binary_that_is_not_safely_executable(tmp_path, mode):
     binary = _executable(tmp_path)
     binary.chmod(mode)
@@ -79,6 +105,7 @@ def test_rejects_binary_that_is_not_safely_executable(tmp_path, mode):
     popen.assert_not_called()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX executable permission modes")
 def test_revalidates_binary_metadata_before_each_invocation(tmp_path):
     binary = _executable(tmp_path)
     cli = SupabaseCLI(binary_resolver=lambda _: str(binary))
@@ -104,6 +131,7 @@ def test_rejects_nonregular_executable_path(tmp_path):
     assert result.code is AuthFailureCode.ENVIRONMENT_BLOCKED
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX ownership metadata")
 def test_rejects_executable_owned_by_another_user(tmp_path, monkeypatch):
     binary = _executable(tmp_path)
     real_fstat = os.fstat
@@ -122,6 +150,7 @@ def test_rejects_executable_owned_by_another_user(tmp_path, monkeypatch):
     assert result.code is AuthFailureCode.ENVIRONMENT_BLOCKED
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX ownership metadata")
 def test_accepts_root_owned_executable(tmp_path, monkeypatch):
     binary = _executable(tmp_path)
     real_fstat = os.fstat

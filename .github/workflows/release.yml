@@ -52,7 +52,8 @@ jobs:
         run: |
           python -m pytest
           python -m pip check
-          pip-audit --skip-editable
+          python scripts/runtime_requirements.py runtime-requirements.txt
+          pip-audit --requirement runtime-requirements.txt
       - name: Build release artifacts once
         run: python -m build
       - name: Inspect release artifacts

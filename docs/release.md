@@ -13,7 +13,8 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
 python3 -m pip check
-pip-audit --skip-editable
+python scripts/runtime_requirements.py runtime-requirements.txt
+pip-audit --requirement runtime-requirements.txt
 rm -rf dist
 python3 -m build
 python3 scripts/inspect_artifacts.py dist

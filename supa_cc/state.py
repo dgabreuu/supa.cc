@@ -128,6 +128,9 @@ def secure_remove(path: Path) -> None:
             or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino)
         ):
             raise OSError("unsafe state file")
+        if _is_windows():
+            os.close(descriptor)
+            descriptor = None
         path.unlink()
     except FileNotFoundError:
         return

@@ -4,6 +4,7 @@ import hashlib
 import threading
 import time
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -19,15 +20,21 @@ from helpers import FakeCredentialStore, fake_pat
 
 
 def _fake_cli(tmp_path: Path, body: str, name: str = "supabase") -> Path:
-    executable = tmp_path / name
-    executable.write_text(
+    script = tmp_path / (name + ".py" if os.name == "nt" else name)
+    script.write_text(
         "#!/usr/bin/env python3\n"
         "import os, subprocess, sys, time\n"
         + body
         + "\n",
         encoding="utf-8",
     )
-    executable.chmod(0o700)
+    script.chmod(0o700)
+    if os.name != "nt":
+        return script
+    executable = tmp_path / (name + ".cmd")
+    executable.write_text(
+        f'@"{sys.executable}" "%~dp0{name}.py" %*\r\n', encoding="utf-8"
+    )
     return executable
 
 

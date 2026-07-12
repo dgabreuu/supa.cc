@@ -298,6 +298,7 @@ def test_update_index_does_not_overwrite_invalid_json(tmp_path):
     assert path.read_text(encoding="utf-8") == "not-json"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission modes")
 def test_update_index_writes_only_account_names_with_private_permissions(tmp_path):
     path = tmp_path / "accounts.json"
     manager = KeychainManager(index_path=path, credential_store=FakeCredentialStore())
@@ -335,6 +336,8 @@ def test_windows_index_lock_rejects_link_without_writing_target(tmp_path, monkey
 
 @pytest.mark.parametrize("unsafe_kind", ["symlink", "directory", "permissive"])
 def test_list_accounts_rejects_unsafe_index_file(tmp_path, unsafe_kind):
+    if unsafe_kind == "permissive" and os.name != "posix":
+        pytest.skip("POSIX permission modes")
     path = tmp_path / "accounts.json"
     if unsafe_kind == "symlink":
         target = tmp_path / "target"
@@ -362,6 +365,7 @@ def test_list_accounts_rejects_oversized_index(tmp_path):
         manager.list_accounts()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory fsync")
 def test_update_index_fsyncs_containing_directory(tmp_path, monkeypatch):
     path = tmp_path / "accounts.json"
     manager = KeychainManager(index_path=path, credential_store=FakeCredentialStore())

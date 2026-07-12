@@ -57,3 +57,40 @@ def test_windows_lock_rejects_link_before_writing_target(tmp_path, monkeypatch):
 
     write.assert_not_called()
     assert target.read_bytes() == b""
+
+
+def test_windows_lock_accepts_unknown_legacy_link_count(tmp_path, monkeypatch):
+    lock_path = tmp_path / "lock"
+    lock_path.write_bytes(b"\0")
+    descriptor = os.open(lock_path, os.O_RDWR)
+    opened = os.fstat(descriptor)
+    current = lock_path.lstat()
+
+    def legacy_metadata(metadata):
+        values = list(metadata)
+        values[3] = 0
+        return os.stat_result(values)
+
+    monkeypatch.setattr(file_lock, "_is_windows", lambda: True)
+    monkeypatch.setattr(file_lock.os, "fstat", lambda _fd: legacy_metadata(opened))
+    monkeypatch.setattr(
+        type(lock_path), "lstat", lambda _path: legacy_metadata(current)
+    )
+    try:
+        file_lock.validate_lock_file(descriptor, lock_path)
+    finally:
+        os.close(descriptor)
+
+
+def test_windows_file_identity_rejects_path_replacement(monkeypatch):
+    monkeypatch.setattr(file_lock, "_is_windows", lambda: True)
+    monkeypatch.setattr(file_lock.os, "name", "nt")
+    monkeypatch.setattr(
+        file_lock, "_windows_file_identity", Mock(side_effect=[(7, 11), (7, 12)])
+    )
+    monkeypatch.setattr(file_lock.os, "open", Mock(return_value=9))
+    close = Mock()
+    monkeypatch.setattr(file_lock.os, "close", close)
+
+    assert file_lock._same_file(8, "lock", Mock(), Mock()) is False
+    close.assert_called_once_with(9)

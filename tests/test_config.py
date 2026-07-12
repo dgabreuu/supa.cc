@@ -1,6 +1,7 @@
 import os
 import signal
 import subprocess
+import sys
 from unittest.mock import Mock, patch
 
 import pytest
@@ -31,6 +32,17 @@ def _binary(tmp_path, name="supabase"):
     binary.write_text("#!/bin/sh\n", encoding="utf-8")
     binary.chmod(0o700)
     return str(binary)
+
+
+def _assert_verified_invocation(invocation, binary):
+    command = invocation.args[0][0]
+    if os.name == "nt" or sys.platform == "darwin":
+        assert command == str(os.path.realpath(binary))
+        assert invocation.kwargs["pass_fds"] == ()
+        assert invocation.kwargs["pre_spawn_check"] is not None
+    else:
+        assert command.startswith(("/proc/self/fd/", "/dev/fd/"))
+        assert invocation.kwargs["pass_fds"]
 
 
 def test_resolves_supabase_binary_to_real_path(tmp_path):
@@ -74,10 +86,9 @@ def test_validate_access_token_uses_projects_list_and_copied_environment(tmp_pat
     assert token not in repr(result)
     assert "SUPABASE_ACCESS_TOKEN" not in os.environ
     invocation = popen.call_args
-    assert invocation.args[0][0].startswith(("/proc/self/fd/", "/dev/fd/"))
+    _assert_verified_invocation(invocation, binary)
     assert invocation.args[0][1:] == ["projects", "list"]
     assert invocation.kwargs["env"] == {"PARENT_VALUE": "present", "SUPABASE_ACCESS_TOKEN": token}
-    assert invocation.kwargs["pass_fds"]
     assert "login" not in popen.call_args.args[0]
     assert token not in popen.call_args.args[0]
 
@@ -95,7 +106,7 @@ def test_login_passes_token_only_in_child_environment(tmp_path):
     ) as popen:
         result = config.login_with_access_token(account)
 
-    assert popen.call_args.args[0][0].startswith(("/proc/self/fd/", "/dev/fd/"))
+    _assert_verified_invocation(popen.call_args, binary)
     assert popen.call_args.args[0][1:] == ["login"]
     assert token not in popen.call_args.args[0]
     assert popen.call_args.kwargs["env"] == {
@@ -127,7 +138,7 @@ def test_native_commands_remove_inherited_environment_override(
     ) as popen:
         result = getattr(config, method)()
 
-    assert popen.call_args.args[0][0].startswith(("/proc/self/fd/", "/dev/fd/"))
+    _assert_verified_invocation(popen.call_args, binary)
     assert popen.call_args.args[0][1:] == arguments
     assert popen.call_args.kwargs["env"] == {"PARENT": "yes"}
     assert result.ok is True
@@ -256,7 +267,7 @@ def test_execute_authenticated_passes_pat_only_in_copied_environment(tmp_path):
     assert result.stderr == ""
     assert token not in repr(result)
     assert token not in popen.call_args.args[0]
-    assert popen.call_args.args[0][0].startswith(("/proc/self/fd/", "/dev/fd/"))
+    _assert_verified_invocation(popen.call_args, binary)
     assert popen.call_args.args[0][1:] == ["projects", "list", "--profile", "work"]
     assert popen.call_args.kwargs["env"] == {
         "PARENT": "yes",
@@ -408,7 +419,7 @@ def test_streaming_terminates_child_before_propagating_keyboard_interrupt(tmp_pa
 
     with patch(
         "supa_cc.process.subprocess.Popen", return_value=process
-    ), patch("supa_cc.process.os.killpg") as killpg:
+    ), patch("supa_cc.process.os.killpg", create=True) as killpg:
         with pytest.raises(KeyboardInterrupt):
             config.execute_authenticated_streaming(
                 Account(name="work", token=fake_pat("interrupt_cleanup")),

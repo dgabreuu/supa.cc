@@ -181,7 +181,7 @@ def test_activate_controlled_home_prevents_plaintext_fallback_write(tmp_path):
 
     def login(_account, *, supabase_home, profile):
         assert profile == "supabase"
-        with pytest.raises(IsADirectoryError):
+        with pytest.raises(OSError):
             (supabase_home / "access-token").write_text(account.token, encoding="utf-8")
         return AuthResult.failure(AuthFailureCode.NATIVE_LOGIN_FAILED, "safe")
 
@@ -388,6 +388,7 @@ def test_journal_round_trip_never_stores_tokens(tmp_path):
     assert journal.read() is None
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission modes")
 def test_journal_uses_private_permissions_and_atomic_replacement(tmp_path):
     path = tmp_path / "private" / "session-sync.json"
     journal = SessionSyncJournal(path)
@@ -417,6 +418,7 @@ def test_journal_write_fsyncs_file_and_containing_directory(tmp_path, monkeypatc
     assert any(stat.S_ISDIR(mode) for mode in calls)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory fsync")
 def test_journal_clear_fsyncs_containing_directory(tmp_path, monkeypatch):
     path = tmp_path / "private" / "session-sync.json"
     journal = SessionSyncJournal(path)
@@ -477,6 +479,7 @@ def test_journal_read_rejects_unsafe_file_metadata(tmp_path, unsafe_kind):
         SessionSyncJournal(path).read()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX ownership metadata")
 def test_journal_read_rejects_wrong_owner(tmp_path, monkeypatch):
     path = tmp_path / "session-sync.json"
     journal = SessionSyncJournal(path)

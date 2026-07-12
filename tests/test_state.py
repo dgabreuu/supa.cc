@@ -30,6 +30,7 @@ def test_read_text_rejects_unsafe_final_file(tmp_path, unsafe_kind):
         read_text(path, max_bytes=32)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX ownership metadata")
 def test_read_text_rejects_wrong_owner(tmp_path, monkeypatch):
     path = tmp_path / "state"
     _private_file(path)
@@ -54,6 +55,7 @@ def test_read_text_rejects_oversized_content(tmp_path):
         read_text(path, max_bytes=32)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX durability and modes")
 def test_atomic_write_text_fsyncs_file_and_directory(tmp_path, monkeypatch):
     path = tmp_path / "private" / "state"
     synced = []
@@ -72,6 +74,7 @@ def test_atomic_write_text_fsyncs_file_and_directory(tmp_path, monkeypatch):
     assert stat.S_IMODE(path.parent.stat().st_mode) == 0o700
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory fsync")
 def test_secure_remove_fsyncs_directory(tmp_path, monkeypatch):
     path = tmp_path / "state"
     _private_file(path)
@@ -121,3 +124,31 @@ def test_windows_atomic_write_skips_directory_fsync(tmp_path, monkeypatch):
     atomic_write_text(path, "state\n")
 
     directory_sync.assert_not_called()
+
+
+def test_windows_secure_remove_closes_legacy_handle_before_unlink(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "state"
+    _private_file(path)
+    descriptor = None
+    real_open = os.open
+    real_unlink = type(path).unlink
+
+    def record_open(*args, **kwargs):
+        nonlocal descriptor
+        descriptor = real_open(*args, **kwargs)
+        return descriptor
+
+    def require_closed(path_object):
+        with pytest.raises(OSError):
+            os.fstat(descriptor)
+        return real_unlink(path_object)
+
+    monkeypatch.setattr(state, "_is_windows", lambda: True)
+    monkeypatch.setattr(state.os, "open", record_open)
+    monkeypatch.setattr(type(path), "unlink", require_closed)
+
+    secure_remove(path)
+
+    assert not path.exists()

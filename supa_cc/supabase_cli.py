@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import stat
+import sys
 from typing import Callable, Optional, Sequence
 
 from .auth import (ACCESS_TOKEN_PREFIX, AuthFailureCode, AuthResult, CommandResult,
@@ -12,6 +13,10 @@ from .process import OutputSink, ProcessState, STREAM_SAMPLE_LIMIT, run_process
 
 def _is_windows() -> bool:
     return os.name == "nt"
+
+
+def _requires_path_execution() -> bool:
+    return _is_windows() or sys.platform == "darwin"
 
 
 BinaryResolver = Callable[[str], Optional[str]]
@@ -179,7 +184,8 @@ class SupabaseCLI:
             descriptor_path = f"{descriptor_root}/{descriptor}"
             if not os.path.exists(descriptor_root):
                 raise PermissionError
-            return (descriptor, descriptor_path), None
+            execution_path = self.supabase_cli if _requires_path_execution() else descriptor_path
+            return (descriptor, execution_path), None
         except (FileNotFoundError, PermissionError, OSError):
             os.close(descriptor)
             return None, CommandResult.failure(AuthFailureCode.ENVIRONMENT_BLOCKED, _MESSAGES[AuthFailureCode.ENVIRONMENT_BLOCKED])
@@ -213,12 +219,12 @@ class SupabaseCLI:
                 lambda chunk: publish("stderr", stderr_redactor, stderr_sink, chunk),
                 sample_limit, timeout_seconds,
                 pass_fds=(descriptor,)
-                if descriptor is not None and not _is_windows()
+                if descriptor is not None and not _requires_path_execution()
                 else (),
                 pre_spawn_check=(
                     lambda: self._require_same_binary(descriptor, descriptor_path)
                 )
-                if descriptor is not None and _is_windows()
+                if descriptor is not None and _requires_path_execution()
                 else None,
             )
             stdout_tail, stderr_tail = stdout_redactor.feed("", final=True), stderr_redactor.feed("", final=True)

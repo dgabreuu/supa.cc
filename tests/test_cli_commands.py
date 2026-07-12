@@ -20,7 +20,7 @@ from supa_cc.auth import (
 from supa_cc.diagnostics import DoctorReport
 from supa_cc.models import Account
 
-from helpers import fake_pat
+from helpers import click_runner, fake_pat
 
 
 class TestCLICommands:
@@ -119,7 +119,8 @@ class TestCLICommands:
         result = runner.invoke(main, ["add", "work", "--token", token])
 
         assert result.exit_code == 2
-        assert "No such option '--token'" in result.output
+        assert "No such option" in result.output
+        assert "--token" in result.output
         assert token not in result.output
 
     def test_add_invalid_token_shows_sanitized_error(self):
@@ -295,7 +296,7 @@ class TestCLICommands:
         assert "Missing argument" in result.output
 
     def test_run_accepts_unknown_supabase_options_and_emits_sanitized_streams(self):
-        runner = CliRunner()
+        runner = click_runner()
         command_result = CommandResult.success(
             stdout="safe stdout\n", stderr="safe stderr\n"
         )
@@ -325,7 +326,7 @@ class TestCLICommands:
         assert callable(manager.run_active.call_args.kwargs["stderr_sink"])
 
     def test_run_propagates_normalized_failure_exit_and_message(self):
-        runner = CliRunner()
+        runner = click_runner()
         command_result = CommandResult.failure(
             AuthFailureCode.TOKEN_REJECTED,
             "O token foi rejeitado pela API da Supabase.",

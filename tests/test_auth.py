@@ -1,3 +1,4 @@
+import os
 import stat
 from pathlib import Path
 
@@ -171,6 +172,7 @@ def test_candidate_detection_is_conservative_for_valid_pat_with_trailing_newline
     assert fake_pat("newline_candidate") not in sanitize_sensitive_text(value)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission modes")
 def test_active_account_store_writes_only_name_with_private_permissions(tmp_path):
     path = tmp_path / "supa.cc" / "active-account"
     store = ActiveAccountStore(path=path)
@@ -205,6 +207,7 @@ def test_active_account_store_keeps_explicit_path_without_default_resolution(
     assert ActiveAccountStore(path).path == path
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission modes")
 def test_active_account_store_restricts_existing_permissions(tmp_path):
     path = tmp_path / "supa.cc" / "active-account"
     path.parent.mkdir(mode=0o755)
@@ -278,6 +281,8 @@ def test_active_account_store_returns_none_when_missing(tmp_path):
 
 @pytest.mark.parametrize("unsafe_kind", ["symlink", "directory", "permissive"])
 def test_active_account_store_rejects_unsafe_state_file(tmp_path, unsafe_kind):
+    if unsafe_kind == "permissive" and os.name != "posix":
+        pytest.skip("POSIX permission modes")
     path = tmp_path / "active-account"
     if unsafe_kind == "symlink":
         target = tmp_path / "target"

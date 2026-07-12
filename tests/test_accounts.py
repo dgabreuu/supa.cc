@@ -1,3 +1,4 @@
+import os
 import threading
 import stat
 import traceback
@@ -449,15 +450,17 @@ class TestAccountManager:
         symlink_result = manager.set_active("work")
 
         assert not symlink_result.ok
-        lock_path.unlink()
-        lock_path.write_text("", encoding="utf-8")
-        lock_path.chmod(0o644)
+        if os.name == "posix":
+            lock_path.unlink()
+            lock_path.write_text("", encoding="utf-8")
+            lock_path.chmod(0o644)
 
-        permissive_result = manager.set_active("work")
+            permissive_result = manager.set_active("work")
 
-        assert not permissive_result.ok
-        assert stat.S_IMODE(lock_path.stat().st_mode) == 0o644
+            assert not permissive_result.ok
+            assert stat.S_IMODE(lock_path.stat().st_mode) == 0o644
 
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX permission modes")
     def test_sync_lock_is_private(self, tmp_path):
         manager = self.transactional_manager(tmp_path)
 
@@ -487,7 +490,6 @@ class TestAccountManager:
         manager.native_session.activate.assert_not_called()
 
     def release_failure_patches(self, fail_unlock=False, fail_close=False):
-        fcntl = __import__("fcntl")
         real_open = __import__("os").open
         real_close = __import__("os").close
         descriptors = []
@@ -500,7 +502,6 @@ class TestAccountManager:
             return descriptor
 
         def release(descriptor):
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
             if fail_unlock:
                 raise OSError("private unlock path")
 
