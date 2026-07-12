@@ -41,7 +41,14 @@ def test_source_version_is_0_3_0_while_formula_remains_on_stable_release():
 
     assert project["version"] == "0.3.0"
     assert __version__ == "0.3.0"
-    assert "/refs/tags/v0.2.0.tar.gz" in formula
+    assert (
+        'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.3.0.tar.gz"'
+        in formula
+    )
+    assert (
+        'sha256 "0b54c209831fef223d8bff3518c54310f3c89e7e4bde0e676f84dd5dd8c2acdd"'
+        in formula
+    )
 
 
 def test_project_metadata_links_public_repository():

@@ -1,0 +1,30 @@
+name: Validate Homebrew formula
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+      - name: Verify generated Python resources
+        run: |
+          brew update-python-resources Formula/supa-cc.rb
+          git diff --exit-code -- Formula/supa-cc.rb
+      - name: Audit formula
+        run: brew audit --strict --formula ./Formula/supa-cc.rb
+      - name: Install formula from source
+        run: brew install --build-from-source ./Formula/supa-cc.rb
+      - name: Verify installed version
+        run: |
+          test "$(supa.cc --version)" = "supa.cc, version 0.3.0"
+          supa.cc version | grep -Fx "Supa.cc v0.3.0"
+      - name: Test formula
+        run: brew test supa-cc

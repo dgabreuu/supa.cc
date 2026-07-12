@@ -10,8 +10,8 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.2.0.tar.gz"
-TARBALL_SHA256 = "61ffeb04b5c157f71a5e14fdd7a740757d9ac77655c39476feb04ea02ceaf054"
+TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.3.0.tar.gz"
+TARBALL_SHA256 = "0b54c209831fef223d8bff3518c54310f3c89e7e4bde0e676f84dd5dd8c2acdd"
 
 
 def test_readme_uses_public_repository_url():
@@ -84,15 +84,48 @@ def test_installation_uses_stable_release_channels():
         assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
 
 
-def test_release_keeps_formula_stable_until_clean_0_3_0_tag_build():
+def test_release_formula_uses_verified_0_3_0_tag():
     release = Path("docs/release.md").read_text(encoding="utf-8")
-    normalized = release.lower()
+    formula = Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
-    assert "v0.2.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
-    assert "v0.3.0" in release
-    assert "depois que a tag" in normalized or "após a tag" in normalized
-    assert "checkout limpo" in normalized
+    assert "v0.3.0" in formula
+    assert "v0.2.0" not in formula
     assert "brew test supa-cc" in release
+
+
+def test_homebrew_workflow_is_manual_read_only_macos_validation():
+    path = Path(".github/workflows/homebrew.yml")
+    workflow_text = path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    trigger = workflow.get("on", workflow.get(True))
+
+    assert trigger == {"workflow_dispatch": None}
+    assert workflow["permissions"] == {}
+    validate = workflow["jobs"]["validate"]
+    assert validate["runs-on"] == "macos-latest"
+    assert validate["permissions"] == {"contents": "read"}
+    assert "secrets" not in workflow_text.lower()
+    assert "id-token" not in workflow_text.lower()
+    for permission in ("write", "packages:", "deployments:"):
+        assert permission not in workflow_text.lower()
+
+
+def test_homebrew_workflow_validates_committed_formula_without_publishing():
+    workflow_text = Path(".github/workflows/homebrew.yml").read_text(encoding="utf-8")
+
+    for command in (
+        "brew update-python-resources Formula/supa-cc.rb",
+        "git diff --exit-code -- Formula/supa-cc.rb",
+        "brew audit --strict --formula ./Formula/supa-cc.rb",
+        "brew install --build-from-source ./Formula/supa-cc.rb",
+        "supa.cc --version",
+        "supa.cc version",
+        "brew test supa-cc",
+    ):
+        assert command in workflow_text
+    assert "0.3.0" in workflow_text
+    for prohibited in ("git commit", "git push", "gh release", "upload-artifact"):
+        assert prohibited not in workflow_text
 
 
 def test_ci_has_least_privilege_cross_platform_build_and_security_jobs():
@@ -288,7 +321,7 @@ def test_release_runbook_orders_pypi_verification_before_formula_and_copy_change
     )
     positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
     assert positions == sorted(positions)
-    assert "v0.2.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+    assert "v0.3.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
 
 def test_troubleshooting_doctor_language_is_credential_store_neutral():
