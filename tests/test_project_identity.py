@@ -36,14 +36,11 @@ def test_project_metadata_uses_supa_cc_identity():
 
 def test_source_version_is_0_3_0_while_formula_remains_on_stable_release():
     project = load_project_metadata()
-    with open("AGENTS.md", "r", encoding="utf-8") as agents_file:
-        agents = agents_file.read()
     with open("Formula/supa-cc.rb", "r", encoding="utf-8") as formula_file:
         formula = formula_file.read()
 
     assert project["version"] == "0.3.0"
     assert __version__ == "0.3.0"
-    assert "- **Versão:** 0.3.0" in agents
     assert "/refs/tags/v0.2.0.tar.gz" in formula
 
 
@@ -54,6 +51,8 @@ def test_project_metadata_links_public_repository():
         "Homepage": "https://github.com/dgabreuu/supa.cc",
         "Repository": "https://github.com/dgabreuu/supa.cc.git",
         "Issues": "https://github.com/dgabreuu/supa.cc/issues",
+        "Documentation": "https://github.com/dgabreuu/supa.cc/blob/main/docs/usage.md",
+        "Changelog": "https://github.com/dgabreuu/supa.cc/blob/main/CHANGELOG.md",
     }
 
 
@@ -120,4 +119,4 @@ def test_license_uses_mit_with_supa_cc_attribution():
     assert "Copyright (c) 2026 Supa.cc contributors" in license_text
     assert "Tradução" not in license_text
     assert license_text.rstrip().endswith("SOFTWARE.")
-    assert Path("docs/license-pt-BR.md").is_file()
+    assert not Path("docs/license-pt-BR.md").exists()

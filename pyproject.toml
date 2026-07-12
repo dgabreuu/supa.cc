@@ -5,8 +5,8 @@ build-backend = "hatchling.build"
 [project]
 name = "supa.cc"
 version = "0.3.0"
-description = "Local Supabase account switcher for macOS Keychain and Linux Secret Service"
-readme = "README.md"
+description = "Local Supabase account switcher for macOS, Linux, and Windows"
+readme = { file = "README.md", content-type = "text/markdown" }
 license = { file = "LICENSE" }
 requires-python = ">=3.9"
 keywords = [
@@ -14,8 +14,10 @@ keywords = [
     "cli",
     "macos",
     "linux",
+    "windows",
     "keychain",
     "secret-service",
+    "credential-manager",
     "account-management",
     "developer-tools",
 ]
@@ -27,6 +29,7 @@ classifiers = [
     "Natural Language :: Portuguese",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Topic :: Software Development",
@@ -43,10 +46,13 @@ dependencies = [
 Homepage = "https://github.com/dgabreuu/supa.cc"
 Repository = "https://github.com/dgabreuu/supa.cc.git"
 Issues = "https://github.com/dgabreuu/supa.cc/issues"
+Documentation = "https://github.com/dgabreuu/supa.cc/blob/main/docs/usage.md"
+Changelog = "https://github.com/dgabreuu/supa.cc/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
+    "PyYAML>=6.0",
     "build>=1.2.0",
     "pip-audit>=2.7,<3",
     "tomli>=2.0.0; python_version < \"3.11\"",
@@ -79,4 +85,5 @@ exclude = [
 markers = [
     "real_keychain: opt-in smoke test that accesses an isolated macOS Keychain item",
     "real_secret_service: opt-in smoke test that accesses an isolated Linux Secret Service item",
+    "real_windows_credential_manager: opt-in smoke test that accesses an isolated Windows Credential Manager item",
 ]

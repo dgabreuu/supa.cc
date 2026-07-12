@@ -17,6 +17,7 @@ FORBIDDEN_COMPONENTS = {
 }
 FORBIDDEN_TEXT = (".superpowers", "docs/superpowers")
 POLICY_FILES = (
+    ".gitignore",
     "pyproject.toml",
     "scripts/inspect_artifacts.py",
     "tests/test_artifact_inspection.py",

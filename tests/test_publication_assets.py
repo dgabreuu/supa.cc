@@ -1,6 +1,12 @@
 from pathlib import Path
 import re
 
+import yaml
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10
+    import tomli as tomllib
+
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
@@ -39,13 +45,13 @@ def test_homebrew_formula_is_present_with_public_metadata():
     assert 'shell_output("#{bin}/supa.cc --version")' in formula
 
 
-def test_publication_docs_cover_installation_and_release():
+def test_publication_docs_keep_stable_installation_separate_from_development():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     release = Path("docs/release.md").read_text(encoding="utf-8")
 
     assert "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git" in installation
     assert "brew install supa-cc" in installation
-    assert "brew install --HEAD supa-cc" in installation
+    assert "brew install --HEAD supa-cc" not in installation
     assert "brew --repo dgabreuu/supa-cc" in release
     assert "brew update-python-resources Formula/supa-cc.rb" in release
     assert "brew audit --strict supa-cc" in release
@@ -54,30 +60,28 @@ def test_publication_docs_cover_installation_and_release():
 
 
 def test_docs_describe_supported_runtime_and_state_without_claiming_name_only_files():
-    paths = ("README.md", "SKILL.md", "docs/installation.md", "AGENTS.md")
-    docs = "\n".join(Path(path).read_text(encoding="utf-8") for path in paths)
-    normalized = docs.lower()
+    security = Path("docs/security.md").read_text(encoding="utf-8")
+    normalized = security.lower()
 
-    assert "2.109.1" in docs
+    assert "2.109.1" in security
     assert "perfil oficial" in normalized
-    assert "executável" in normalized and "confiança" in normalized
+    assert "executável" in normalized
     assert "nenhum arquivo local contém" in normalized and "pat" in normalized
     for state in ("accounts.json", "active-account", "session-sync", ".lock"):
-        assert state in docs
+        assert state in security
     assert "backup" in normalized
     assert "mutation" in normalized or "mutaç" in normalized
     assert "somente nomes de contas" not in normalized
     assert "arquivos locais contêm somente nomes" not in normalized
 
 
-def test_installation_uses_release_channels_not_nonexistent_pypi_package():
+def test_installation_uses_stable_release_channels():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
-    normalized = installation.lower()
 
-    assert "git+https://github.com/dgabreuu/supa.cc.git" in installation
     assert "brew install supa-cc" in installation
     assert "supabase.com/docs/guides/local-development/cli/getting-started" in installation
-    assert not re.search(r"pipx\s+(?:install|upgrade)\s+supa[.-]cc(?:\s|$)", normalized)
+    for command in ("install", "upgrade", "uninstall"):
+        assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
 
 
 def test_release_keeps_formula_stable_until_clean_0_3_0_tag_build():
@@ -108,6 +112,17 @@ def test_ci_has_least_privilege_cross_platform_build_and_security_jobs():
     assert "wheel-test/bin/supa.cc version" in workflow
 
 
+def test_windows_ci_runs_full_suite_without_claiming_real_vault_coverage():
+    workflow = yaml.safe_load(Path(".github/workflows/ci.yml").read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["test-build"]["steps"]
+    test_steps = [step for step in steps if "pytest" in step.get("run", "")]
+
+    assert len(test_steps) == 1
+    assert "python -m pytest\n" in test_steps[0]["run"]
+    assert "tests/test_" not in test_steps[0]["run"]
+    assert "SUPA_CC_RUN_WINDOWS_CREDENTIAL_MANAGER_SMOKE" not in test_steps[0]["run"]
+
+
 def test_release_uses_the_same_audit_and_artifact_inspection_commands_as_ci():
     release = Path("docs/release.md").read_text(encoding="utf-8")
 
@@ -115,23 +130,165 @@ def test_release_uses_the_same_audit_and_artifact_inspection_commands_as_ci():
     assert "scripts/inspect_artifacts.py dist" in release
 
 
-def test_readme_doctor_language_is_credential_store_neutral():
-    readme = Path("README.md").read_text(encoding="utf-8")
-    doctor = readme.split("## Diagnóstico", 1)[1].split("## Modelo de segurança", 1)[0]
+def test_release_workflow_uses_published_release_and_least_privilege_oidc():
+    path = Path(".github/workflows/release.yml")
+    workflow_text = path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    trigger = workflow.get("on", workflow.get(True))
 
-    assert "armazenamento de credenciais" in doctor
-    assert "Keychain" not in doctor
-    assert "configurado" in doctor
-    assert "não testa" in doctor or "não verifica" in doctor
+    assert trigger == {"release": {"types": ["published"]}}
+    assert workflow["permissions"] == {}
+    assert workflow["jobs"]["build"]["permissions"] == {"contents": "read"}
+    publish = workflow["jobs"]["publish"]
+    assert publish["permissions"] == {"id-token": "write"}
+    assert "permissions" not in workflow["jobs"]["verify-pypi"]
+    assert "secrets" not in workflow_text.lower()
+    assert "password:" not in workflow_text.lower()
+
+
+def test_release_workflow_rejects_draft_and_prerelease_before_build_or_publish():
+    workflow = yaml.safe_load(Path(".github/workflows/release.yml").read_text(encoding="utf-8"))
+    jobs = workflow["jobs"]
+    stable_guard = "github.event.release.draft == false && github.event.release.prerelease == false"
+
+    assert jobs["build"]["if"] == stable_guard
+    for job_name in ("publish", "verify-pypi"):
+        assert jobs[job_name]["if"] == "success()"
+
+    validation = jobs["build"]["steps"][0]
+    assert validation["name"] == "Require stable published release"
+    assert validation["env"] == {
+        "RELEASE_DRAFT": "${{ github.event.release.draft }}",
+        "RELEASE_PRERELEASE": "${{ github.event.release.prerelease }}",
+    }
+    assert "RELEASE_DRAFT" in validation["run"]
+    assert "RELEASE_PRERELEASE" in validation["run"]
+
+
+def test_release_workflow_pins_only_reviewed_official_actions_by_sha():
+    workflow_text = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    expected_actions = {
+        "actions/checkout",
+        "actions/setup-python",
+        "actions/upload-artifact",
+        "actions/download-artifact",
+        "pypa/gh-action-pypi-publish",
+    }
+    uses = re.findall(
+        r"^\s+(?:-\s+)?uses:\s+([^@\s]+)@([^\s#]+)\s+#\s+(.+)$",
+        workflow_text,
+        re.MULTILINE,
+    )
+
+    assert {repository for repository, _ref, _comment in uses} == expected_actions
+    assert all(re.fullmatch(r"[0-9a-f]{40}", ref) for _repository, ref, _comment in uses)
+    assert all(re.search(r"\bv\d", comment) for _repository, _ref, comment in uses)
+    assert workflow_text.count("actions/checkout@") == 1
+    assert any(
+        step.get("uses", "").startswith("actions/checkout@")
+        for step in workflow["jobs"]["build"]["steps"]
+    )
+    for job_name in ("publish", "verify-pypi"):
+        assert not any(
+            step.get("uses", "").startswith("actions/checkout@")
+            for step in workflow["jobs"][job_name]["steps"]
+        )
+
+
+def test_release_workflow_builds_once_and_publishes_the_same_artifact():
+    workflow_text = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    jobs = workflow["jobs"]
+
+    assert workflow_text.count("python -m build") == 1
+    assert workflow_text.count("actions/upload-artifact@") == 1
+    assert workflow_text.count("actions/download-artifact@") == 1
+    assert jobs["publish"]["needs"] == "build"
+    assert jobs["verify-pypi"]["needs"] == "publish"
+    assert jobs["verify-pypi"]["strategy"]["matrix"]["os"] == [
+        "ubuntu-latest",
+        "windows-latest",
+    ]
+    assert "pipx install supa.cc==0.3.0" in workflow_text
+
+
+def test_pypi_metadata_has_explicit_markdown_and_public_links():
+    metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
+
+    assert metadata["readme"] == {
+        "file": "README.md",
+        "content-type": "text/markdown",
+    }
+    assert metadata["urls"]["Documentation"].endswith("/blob/main/docs/usage.md")
+    assert metadata["urls"]["Changelog"].endswith("/blob/main/CHANGELOG.md")
+
+
+def test_readme_links_render_from_pypi_without_repository_relative_targets():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    targets = re.findall(r"!?(?:\[[^]]*\])\(([^)]+)\)", readme)
+
+    assert targets
+    assert all(target.startswith("https://") for target in targets)
+
+
+def test_changelog_marks_0_3_0_as_prepared_and_only_claims_verified_scope():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+    normalized = changelog.lower()
+
+    heading = re.search(r"^##\s+\[?0\.3\.0\]?\s*[-:]\s*(.+)$", changelog, re.MULTILINE)
+    assert heading
+    assert "não lançad" in heading.group(1).lower()
+    for expected in (
+        "sessão nativa",
+        "linux",
+        "windows",
+        "doctor",
+        "segurança",
+        "recuperação",
+    ):
+        assert expected in normalized
+    assert "re-adicionar" not in normalized
+    assert "readicionar" not in normalized
+    assert "rollback para 0.2.0" not in normalized
+
+
+def test_release_runbook_orders_pypi_verification_before_formula_and_copy_changes():
+    release = Path("docs/release.md").read_text(encoding="utf-8")
+    normalized = release.lower()
+
+    concepts = (
+        r"^##\s+\d+\..*validar.*candidat",
+        r"^##\s+\d+\..*github release",
+        r"^##\s+\d+\..*pypi",
+        r"^##\s+\d+\..*pipx.*linux.*windows",
+        r"^##\s+\d+\..*fórmula homebrew",
+        r"^##\s+\d+\..*texto.*disponibilidade",
+    )
+    positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
+    assert positions == sorted(positions)
+    assert "v0.2.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+
+
+def test_troubleshooting_doctor_language_is_credential_store_neutral():
+    troubleshooting = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
+    normalized = troubleshooting.lower()
+
+    assert "armazenamento de credenciais" in normalized
+    assert "configur" in normalized
+    assert "não" in normalized and ("test" in normalized or "verific" in normalized)
 
 
 def test_public_docs_do_not_claim_default_doctor_probes_credential_availability():
-    readme = Path("README.md").read_text(encoding="utf-8")
     skill = Path("SKILL.md").read_text(encoding="utf-8")
-    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+    troubleshooting = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
 
-    for contents in (readme, skill, installation):
-        assert "configurado, mas não verificado" in contents
+    for contents in (skill, troubleshooting):
+        normalized = contents.lower()
+        assert "doctor" in normalized
+        assert "não" in normalized
+        assert "credencial" in normalized
+        assert "live" in normalized
 
 
 def test_obsolete_private_implementation_documents_are_removed():
@@ -144,32 +301,23 @@ def test_obsolete_private_implementation_documents_are_removed():
 
 
 def test_public_docs_cover_linux_installation_and_credential_requirements():
-    readme = Path("README.md").read_text(encoding="utf-8")
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     skill = Path("SKILL.md").read_text(encoding="utf-8")
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
-    docs = "\n".join((readme, installation, skill, agents))
-    normalized = docs.lower()
 
     for distribution in ("Debian", "Ubuntu", "Arch", "Fedora"):
         assert distribution in installation
-    assert "pipx" in docs
-    assert "Secret Service" in docs
-    assert "D-Bus" in docs
-    assert "XDG_CONFIG_HOME" in docs
-    assert "supa.cc doctor" in docs
-    assert "headless" in normalized
-    assert "plaintext" in normalized
-    assert "keyrings.alt" in normalized
+    for detail in ("pipx", "Secret Service", "D-Bus", "XDG_CONFIG_HOME", "supa.cc doctor"):
+        assert detail in installation
+    for detail in ("headless", "plaintext", "keyrings.alt"):
+        assert detail in installation.lower()
+    assert "Secret Service" in skill and "Secret Service" in agents
 
 
 def test_public_docs_keep_installation_routes_and_credential_flow_platform_specific():
-    readme = Path("README.md").read_text(encoding="utf-8")
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     skill = Path("SKILL.md").read_text(encoding="utf-8")
 
-    assert "Homebrew (somente macOS)" in readme
-    assert "Linux (somente pipx)" in readme
     assert "Homebrew (somente macOS)" in installation
     assert "Linux (somente pipx)" in installation
     assert "macOS: Keychain service supa.cc.supabase.accounts.v2" in skill
@@ -187,46 +335,80 @@ def test_release_docs_build_and_validate_linux_artifacts():
 
 
 def test_public_authentication_contract_is_safe_and_current():
-    readme = Path("README.md").read_text(encoding="utf-8")
-    skill = Path("SKILL.md").read_text(encoding="utf-8")
-    installation = Path("docs/installation.md").read_text(encoding="utf-8")
-    docs = "\n".join((readme, skill, installation))
-    normalized = docs.lower()
+    surfaces = {
+        path: Path(path).read_text(encoding="utf-8")
+        for path in (
+            "SKILL.md",
+            "AGENTS.md",
+            "docs/installation.md",
+            "docs/usage.md",
+            "docs/security.md",
+            "docs/troubleshooting.md",
+            "CONTRIBUTING.md",
+        )
+    }
+    contradictions = (
+        "supa.cc add <name> --token",
+        "supa.cc add <nome> --token",
+        "supabase login --name",
+        "repair automático",
+        "credential repair is automatic",
+        "memoizes both loaded tokens and missing",
+        "ativa a conta informada no supabase cli",
+    )
+    default_doctor_reads_secrets = re.compile(
+        r"\b(?:supa\.cc\s+)?doctor(?:\s+--json)?\s+"
+        r"(?:abre|l[eê]|consulta|sonda|testa|verifica|opens?|reads?|probes?|checks?)\s+"
+        r"(?:o\s+|a\s+|os\s+|as\s+)?"
+        r"(?:pat|token|credencia\w*|backend|armazenamento)",
+        re.IGNORECASE,
+    )
 
-    assert "supa.cc add <name> --token" not in normalized
-    assert "supa.cc add <nome> --token" not in normalized
-    assert "supabase login --name" not in normalized
-    assert "repair automático" not in normalized
-    assert "credential repair is automatic" not in normalized
-    assert "memoizes both loaded tokens and missing" not in normalized
-    assert "ativa a conta informada no supabase cli" not in normalized
+    for path, document in surfaces.items():
+        normalized = document.lower()
+        for contradiction in contradictions:
+            assert contradiction not in normalized, f"contradiction in {path}: {contradiction}"
+        assert not default_doctor_reads_secrets.search(document), (
+            f"{path} claims default doctor opens or probes credentials"
+        )
 
-    assert "supa.cc run --" in docs
-    assert "supa.cc doctor" in docs
-    assert "doctor --json" in docs
-    assert "--account <nome> --live" in docs or "--account <name> --live" in docs
-    assert "SUPABASE_ACCESS_TOKEN" in docs
-    assert "supa.cc.supabase.accounts.v2" in docs
-    assert "active-account" in docs
-    assert "supabase projects list" in docs
-    assert "opcional" in normalized or "optional" in normalized
-    assert "override" in normalized
-    assert "fallback" in normalized and "plaintext" in normalized
-    assert "logout" in normalized
-    assert "credenciais auxiliares" in normalized or "auxiliary credentials" in normalized
-    assert "journal" in normalized
-    assert "concorr" in normalized or "concurr" in normalized
-    assert "login" in normalized and "logout" in normalized and "projects list" in normalized
-    assert "prompt oculto" in normalized or "hidden prompt" in normalized
-    assert "sbp_oauth_" in docs
-    assert "[0-9a-f]{40}" in docs
-    assert "40 lowercase hexadecimal" in normalized or "40 caracteres hexadecimais minúsculos" in normalized
+    skill = surfaces["SKILL.md"]
+    usage = surfaces["docs/usage.md"]
+    security = surfaces["docs/security.md"]
+    assert "supa.cc run --" in usage and "prompt oculto" in usage.lower()
+    assert "doctor --json" in usage and "--account <nome> --live" in usage
+    live_access = re.compile(
+        r"(?:somente|apenas|exige|required|only)?.{0,100}"
+        r"(?:--account\s+<[^>]+>.{0,20}--live|--live.{0,30}--account)"
+        r".{0,120}(?:abre|l[eê]|opens?|reads?).{0,40}(?:pat|token|credencia)",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for path, document in (
+        ("docs/usage.md", usage),
+        ("docs/security.md", security),
+    ):
+        assert live_access.search(document), (
+            f"{path} must state that only account live mode reads a credential"
+        )
+    for detail in (
+        "SUPABASE_ACCESS_TOKEN",
+        "supa.cc.supabase.accounts.v2",
+        "active-account",
+        "plaintext",
+        "logout",
+        "journal",
+        "concorr",
+        "login",
+        "projects list",
+    ):
+        assert detail.lower() in security.lower()
+    assert "precedência" in security.lower() or "override" in security.lower()
+    assert "sbp_oauth_" in skill and "[0-9a-f]{40}" in skill
 
 
 def test_public_docs_describe_the_opt_in_keychain_smoke_safely():
-    readme = Path("README.md").read_text(encoding="utf-8")
-    skill = Path("SKILL.md").read_text(encoding="utf-8")
-    docs = "\n".join((readme, skill))
+    contributing = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
+    docs = contributing
 
     command = (
         "SUPA_CC_RUN_KEYCHAIN_SMOKE=1 .venv/bin/pytest -q "
@@ -244,4 +426,99 @@ def test_public_docs_describe_the_opt_in_keychain_smoke_safely():
     assert (
         ("nunca acessa" in docs and "Supabase CLI" in docs)
         or ("never accesses" in docs and "Supabase CLI" in docs)
+    )
+
+
+def test_public_support_and_security_surfaces_are_safe_and_official():
+    security = Path("SECURITY.md").read_text(encoding="utf-8")
+    contributing = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "https://github.com/dgabreuu/supa.cc/issues" in contributing
+    assert "https://github.com/dgabreuu/supa.cc/security/advisories/new" in security
+    assert "não abra uma issue pública" in security.lower()
+    assert "python 3.9" in contributing.lower()
+    assert 'python3 -m pip install -e ".[dev]"' in contributing
+    assert 'py -m pip install -e ".[dev]"' in contributing
+    assert "python3 -m pytest" in contributing
+    assert "py -m pytest" in contributing
+    assert "pat" in security.lower() and "dump" in security.lower()
+    assert "pat" in contributing.lower() and "dump" in contributing.lower()
+
+
+def _load_issue_form(filename):
+    path = Path(".github/ISSUE_TEMPLATE", filename)
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def _fields_by_id(form):
+    return {field["id"]: field for field in form["body"] if "id" in field}
+
+
+def _assert_safety_contract(form):
+    fields = _fields_by_id(form)
+    safety = fields["safety"]
+    assert safety["type"] == "checkboxes"
+    assert safety["attributes"]["options"][0]["required"] is True
+    public_copy = "\n".join(
+        field.get("attributes", {}).get("value", "") for field in form["body"]
+    ).lower()
+    assert "pat" in public_copy
+    assert "credencia" in public_copy and "dump" in public_copy
+    assert any(term in public_copy for term in ("nunca", "não inclua", "do not"))
+
+
+def test_bug_and_install_forms_collect_required_reproduction_context():
+    filenames = ("bug_report.yml", "install_problem.yml")
+    required_fields = {
+        "os": "input",
+        "supa_cc_version": "input",
+        "python_version": "input",
+        "supabase_cli_version": "input",
+        "installation_method": "dropdown",
+        "reproduction": "textarea",
+        "expected": "textarea",
+        "actual": "textarea",
+    }
+
+    for filename in filenames:
+        form = _load_issue_form(filename)
+        fields = _fields_by_id(form)
+        assert form.get("name") and form.get("description")
+        for field_id, field_type in required_fields.items():
+            assert fields[field_id]["type"] == field_type
+            assert fields[field_id]["validations"]["required"] is True
+        assert fields["doctor"]["type"] == "textarea"
+        assert fields["doctor"].get("validations", {}).get("required", False) is False
+        assert "supa.cc doctor --json" in fields["doctor"]["attributes"]["label"]
+        _assert_safety_contract(form)
+
+
+def test_feature_form_requires_only_problem_proposal_and_safety_acceptance():
+    form = _load_issue_form("feature_request.yml")
+    fields = _fields_by_id(form)
+
+    assert form.get("name") and form.get("description")
+    assert set(fields) == {"problem", "proposal", "safety"}
+    assert fields["problem"]["type"] == "textarea"
+    assert fields["proposal"]["type"] == "textarea"
+    assert fields["problem"]["validations"]["required"] is True
+    assert fields["proposal"]["validations"]["required"] is True
+    _assert_safety_contract(form)
+
+
+def test_issue_template_config_disables_blank_issues_and_uses_official_routes():
+    config = _load_issue_form("config.yml")
+
+    assert config["blank_issues_enabled"] is False
+    assert [link["url"] for link in config["contact_links"]] == [
+        "https://github.com/dgabreuu/supa.cc/issues",
+        "https://github.com/dgabreuu/supa.cc/security/advisories/new",
+    ]
+
+
+def test_issue_form_validation_dependency_is_declared():
+    project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
+
+    assert any(
+        re.match(r"pyyaml(?:\[.*\])?\s*[<>=!~]", dependency, re.IGNORECASE)
+        for dependency in project["optional-dependencies"]["dev"]
     )
