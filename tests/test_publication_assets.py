@@ -117,6 +117,7 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
         "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git",
         'tap_repo="$(brew --repo dgabreuu/supa-cc)"',
         'test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"',
+        "brew trust --formula dgabreuu/supa-cc/supa-cc",
         'formula="$tap_repo/Formula/supa-cc.rb"',
         'brew update-python-resources "$formula"',
         'git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb',
@@ -128,8 +129,11 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
     ):
         assert command in workflow_text
     sha_guard = workflow_text.index('test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"')
+    formula_trust = workflow_text.index("brew trust --formula dgabreuu/supa-cc/supa-cc")
     resource_update = workflow_text.index('brew update-python-resources "$formula"')
-    assert sha_guard < resource_update
+    assert sha_guard < formula_trust < resource_update
+    assert workflow_text.count("brew trust --formula dgabreuu/supa-cc/supa-cc") == 1
+    assert "brew trust dgabreuu/supa-cc" not in workflow_text
     assert "0.3.0" in workflow_text
     for prohibited in (
         "actions/checkout",

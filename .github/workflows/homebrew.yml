@@ -16,6 +16,7 @@ jobs:
           brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
           tap_repo="$(brew --repo dgabreuu/supa-cc)"
           test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"
+          brew trust --formula dgabreuu/supa-cc/supa-cc
       - name: Verify generated Python resources
         run: |
           tap_repo="$(brew --repo dgabreuu/supa-cc)"
