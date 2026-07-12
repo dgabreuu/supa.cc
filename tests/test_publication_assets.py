@@ -110,6 +110,16 @@ def test_homebrew_workflow_is_manual_read_only_macos_validation():
         assert permission not in workflow_text.lower()
 
 
+def test_homebrew_workflow_refreshes_metadata_once_before_registering_tap():
+    workflow_text = Path(".github/workflows/homebrew.yml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    steps = workflow["jobs"]["validate"]["steps"]
+
+    assert steps[0] == {"name": "Update Homebrew metadata", "run": "brew update"}
+    assert workflow_text.count("brew update\n") == 1
+    assert workflow_text.index("brew update\n") < workflow_text.index("brew tap ")
+
+
 def test_homebrew_workflow_validates_committed_formula_without_publishing():
     workflow_text = Path(".github/workflows/homebrew.yml").read_text(encoding="utf-8")
 

@@ -11,6 +11,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Update Homebrew metadata
+        run: brew update
       - name: Register exact public tap revision
         run: |
           brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
