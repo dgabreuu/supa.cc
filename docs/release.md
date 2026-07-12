@@ -1,6 +1,6 @@
 # Checklist de release
 
-Este checklist prepara e publica a versão 0.3.0 em uma sequência única. A versão continua não lançada enquanto a GitHub Release `v0.3.0` não for publicada, e `Formula/supa-cc.rb` deve permanecer em `v0.2.0` até a publicação no PyPI ser verificada.
+Este checklist documenta a sequência usada para preparar e publicar a versão 0.3.0. A GitHub Release `v0.3.0`, o pacote no PyPI e a fórmula Homebrew estão publicados.
 
 ## 1. Validar o commit candidato
 

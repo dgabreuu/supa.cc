@@ -308,6 +308,18 @@ def test_readme_stable_installation_uses_platform_release_channels():
         assert not _contains_mutable_ref(stable), f"mutable ref in README {platform} stable section"
 
 
+def test_release_installation_docs_do_not_warn_that_0_3_0_is_unpublished():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+    release = Path("docs/release.md").read_text(encoding="utf-8")
+
+    assert "os canais abaixo estão planejados para a release" not in readme
+    assert "não significam que a versão 0.3.0 já foi publicada" not in installation
+    assert "A GitHub Release `v0.3.0`, o pacote no PyPI e a fórmula Homebrew estão publicados" in release
+    assert "continua não lançada" not in release
+    assert "deve permanecer em `v0.2.0`" not in release
+
+
 def test_stable_installation_uses_exact_lifecycle_commands():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     expected = {

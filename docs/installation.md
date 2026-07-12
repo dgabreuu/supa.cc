@@ -1,6 +1,6 @@
 # Instalação
 
-Este guia cobre pré-requisitos e o ciclo completo de instalação em cada plataforma. Os comandos estáveis são instruções para releases publicadas no respectivo canal; não significam que a versão 0.3.0 já foi publicada.
+Este guia cobre pré-requisitos e o ciclo completo de instalação em cada plataforma. Os comandos estáveis são instruções para releases publicadas no respectivo canal.
 
 Em todas as plataformas, instale antes o [Supabase CLI oficial](https://supabase.com/docs/guides/local-development/cli/getting-started) >= 2.109.1 e confirme que `supabase` está no `PATH`. O Supa.cc requer Python 3.9+.
 

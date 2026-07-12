@@ -23,8 +23,6 @@ Requer Python 3.9+ e o [Supabase CLI oficial](https://supabase.com/docs/guides/l
 
 ## Instalação
 
-> **Atenção:** os canais abaixo estão planejados para a release; a versão 0.3.0 ainda pode não estar publicada.
-
 Pré-requisitos, atualização e desinstalação estão no [guia de instalação](https://github.com/dgabreuu/supa.cc/blob/main/docs/installation.md).
 
 ### macOS

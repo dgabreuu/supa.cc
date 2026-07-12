@@ -305,13 +305,17 @@ def test_readme_links_render_from_pypi_without_repository_relative_targets():
     assert all(target.startswith("https://") for target in targets)
 
 
-def test_changelog_marks_0_3_0_as_prepared_and_only_claims_verified_scope():
+def test_changelog_marks_0_3_0_as_released_and_only_claims_verified_scope():
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
     normalized = changelog.lower()
 
     heading = re.search(r"^##\s+\[?0\.3\.0\]?\s*[-:]\s*(.+)$", changelog, re.MULTILINE)
     assert heading
-    assert "não lançad" in heading.group(1).lower()
+    assert heading.group(1) == "2026-07-12"
+    assert (
+        "[0.3.0]: https://github.com/dgabreuu/supa.cc/compare/v0.2.0...v0.3.0"
+        in changelog
+    )
     for expected in (
         "sessão nativa",
         "linux",

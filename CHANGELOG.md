@@ -3,7 +3,7 @@
 Todas as mudanças relevantes deste projeto serão documentadas neste arquivo.
 O formato segue, de maneira simplificada, o Keep a Changelog.
 
-## [0.3.0] - Não lançado (preparado)
+## [0.3.0] - 2026-07-12
 
 ### Adicionado
 
@@ -28,4 +28,4 @@ O formato segue, de maneira simplificada, o Keep a Changelog.
 - No macOS, a 0.3.0 preserva o serviço de credenciais `supa.cc.supabase.accounts.v2` e o índice `~/.config/supa.cc/accounts.json` usados pela 0.2.0.
 - Linux e Windows são canais novos na 0.3.0 e, portanto, não possuem estado da 0.2.0 para migrar nesses sistemas.
 
-[0.3.0]: https://github.com/dgabreuu/supa.cc/compare/v0.2.0...HEAD
+[0.3.0]: https://github.com/dgabreuu/supa.cc/compare/v0.2.0...v0.3.0
