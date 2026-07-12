@@ -24,15 +24,9 @@ jobs:
           brew update-python-resources "$formula"
           git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb
       - name: Audit formula
-        run: |
-          tap_repo="$(brew --repo dgabreuu/supa-cc)"
-          formula="$tap_repo/Formula/supa-cc.rb"
-          brew audit --strict --formula "$formula"
+        run: brew audit --strict --formula dgabreuu/supa-cc/supa-cc
       - name: Install formula from source
-        run: |
-          tap_repo="$(brew --repo dgabreuu/supa-cc)"
-          formula="$tap_repo/Formula/supa-cc.rb"
-          brew install --build-from-source "$formula"
+        run: brew install --build-from-source dgabreuu/supa-cc/supa-cc
       - name: Verify installed version
         run: |
           test "$(supa.cc --version)" = "supa.cc, version 0.3.0"

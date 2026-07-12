@@ -121,8 +121,8 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
         'formula="$tap_repo/Formula/supa-cc.rb"',
         'brew update-python-resources "$formula"',
         'git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb',
-        'brew audit --strict --formula "$formula"',
-        'brew install --build-from-source "$formula"',
+        "brew audit --strict --formula dgabreuu/supa-cc/supa-cc",
+        "brew install --build-from-source dgabreuu/supa-cc/supa-cc",
         "supa.cc --version",
         "supa.cc version",
         "brew test dgabreuu/supa-cc/supa-cc",
@@ -134,6 +134,8 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
     assert sha_guard < formula_trust < resource_update
     assert workflow_text.count("brew trust --formula dgabreuu/supa-cc/supa-cc") == 1
     assert "brew trust dgabreuu/supa-cc" not in workflow_text
+    assert 'brew audit --strict --formula "$formula"' not in workflow_text
+    assert 'brew install --build-from-source "$formula"' not in workflow_text
     assert "0.3.0" in workflow_text
     for prohibited in (
         "actions/checkout",
