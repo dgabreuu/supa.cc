@@ -1,37 +1,37 @@
-# Instruções para agentes
+# Agent instructions
 
-Mantenha toda contribuição genérica e segura para este repositório open source público.
+Keep every contribution generic and safe for this public open source repository.
 
-## Estrutura
+## Structure
 
-| Caminho | Responsabilidade |
+| Path | Responsibility |
 | --- | --- |
-| `supa_cc/` | Código-fonte Python |
-| `tests/` | Suíte `pytest` |
-| `docs/` | Instalação, uso, segurança, remediação e release |
-| `Formula/` | Fórmula Homebrew |
-| `pyproject.toml` | Metadados, dependências, build e ferramentas |
-| `README.md` | Apresentação pública concisa |
-| `SKILL.md` | Invariantes operacionais para agentes |
+| `supa_cc/` | Python source code |
+| `tests/` | `pytest` suite |
+| `docs/` | Installation, usage, security, remediation, and release documentation |
+| `Formula/` | Homebrew formula |
+| `pyproject.toml` | Metadata, dependencies, build, and tooling |
+| `README.md` | Concise public overview |
+| `SKILL.md` | Operational invariants for agents |
 
-## Convenções
+## Conventions
 
-- Python 3.11+, build com `hatchling` e console script `supa.cc`.
-- Siga os padrões existentes em `supa_cc/`, mantenha arquivos focados e cubra mudanças de comportamento em `tests/`.
-- Dependências de runtime: `click`, `questionary` e `keyring`. Dependências de desenvolvimento são declaradas em `pyproject.toml`.
-- Execute `python3 -m pytest`; veja [Como contribuir](CONTRIBUTING.md) para preparação do ambiente, build e smokes nativos.
-- Atualize o documento canônico correspondente: [Instalação](docs/installation.md), [Uso](docs/usage.md), [Segurança](docs/security.md) ou [Solução de problemas](docs/troubleshooting.md).
+- Python 3.11+, builds with `hatchling`, and the `supa.cc` console script.
+- Follow the existing patterns in `supa_cc/`, keep files focused, and cover behavior changes in `tests/`.
+- Runtime dependencies are `click`, `questionary`, and `keyring`. Development dependencies are declared in `pyproject.toml`.
+- Run `python3 -m pytest`; see [Contributing](CONTRIBUTING.md) for environment setup, builds, and native smoke tests.
+- Update the corresponding canonical document: [Installation](docs/installation.md), [Usage](docs/usage.md), [Security](docs/security.md), or [Troubleshooting](docs/troubleshooting.md).
 
 ## GitHub
 
-- O repositório oficial é `https://github.com/dgabreuu/supa.cc.git`.
-- Operações no GitHub assumem a conta `dgabreuu`; não sugira outra conta, chave SSH ou remote.
-- Use mensagens de commit concisas e alinhadas ao histórico.
+- The official repository is `https://github.com/dgabreuu/supa.cc.git`.
+- GitHub operations use the `dgabreuu` account; do not suggest another account, SSH key, or remote.
+- Use concise commit messages aligned with the existing history.
 
-## Segurança pública
+## Public security
 
-- Nunca exponha PATs reais em código, testes, logs, documentação, prompts ou transcripts. Os formatos aceitos começam com `sbp_` ou `sbp_oauth_` e são validados antes do armazenamento; não publique exemplos com aparência de credencial.
-- Não publique caminhos locais absolutos, e-mails pessoais, nomes de usuário, remotes privados, dumps completos de ambiente ou conteúdo do armazenamento nativo.
-- Não introduza fallback plaintext, `keyrings.alt` ou backends não suportados. Preserve as invariantes detalhadas em [SKILL.md](SKILL.md) e no [modelo de segurança](docs/security.md).
-- Preserve os backends nativos: Keychain no macOS, Secret Service no Linux e Windows Credential Manager por `WinVaultKeyring` no Windows.
-- Antes de publicar, revise histórico, arquivos ignorados, logs, caches, ambientes virtuais, fixtures e capturas de tela em busca de segredos.
+- Never expose real PATs in code, tests, logs, documentation, prompts, or transcripts. Accepted formats begin with `sbp_` or `sbp_oauth_` and are validated before storage; do not publish credential-shaped examples.
+- Do not publish absolute local paths, personal email addresses, usernames, private remotes, complete environment dumps, or native credential-store contents.
+- Do not introduce a plaintext fallback, `keyrings.alt`, or unsupported backends. Preserve the invariants in [SKILL.md](SKILL.md) and the [security model](docs/security.md).
+- Preserve the native backends: Keychain on macOS, Secret Service on Linux, and Windows Credential Manager through `WinVaultKeyring` on Windows.
+- Before publishing, review history, ignored files, logs, caches, virtual environments, fixtures, and screenshots for secrets.

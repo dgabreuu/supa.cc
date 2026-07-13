@@ -1,31 +1,31 @@
-name: Sugerir uma funcionalidade
-description: Proponha uma melhoria ou novo comportamento para o Supa.cc.
-title: "[Funcionalidade]: "
+name: Suggest a feature
+description: Propose an improvement or new behavior for Supa.cc.
+title: "[Feature]: "
 labels: [enhancement]
 body:
   - type: markdown
     attributes:
       value: |
-        Use os formulários específicos para bugs e problemas de instalação.
-        **Nunca inclua PATs, tokens, dumps de credenciais, itens do armazenamento nativo ou dumps completos de ambiente.**
+        Use the dedicated forms for bugs and installation problems.
+        **Do not include PATs, tokens, credential dumps, native credential-store items, or complete environment dumps.**
   - type: textarea
     id: problem
     attributes:
-      label: Problema ou necessidade
-      description: Explique o caso de uso sem incluir dados sensíveis.
+      label: Problem or need
+      description: Explain the use case without including sensitive data.
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Solução proposta
-      description: Descreva o comportamento desejado e alternativas consideradas.
+      label: Proposed solution
+      description: Describe the desired behavior and alternatives considered.
     validations:
       required: true
   - type: checkboxes
     id: safety
     attributes:
-      label: Confirmação de segurança
+      label: Security confirmation
       options:
-        - label: Revisei a proposta e removi PATs, tokens, dumps de credenciais e outros segredos.
+        - label: I reviewed the proposal and removed PATs, tokens, credential dumps, and other secrets.
           required: true

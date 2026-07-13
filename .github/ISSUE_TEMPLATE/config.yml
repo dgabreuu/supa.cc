@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Dúvidas e suporte
+  - name: Questions and support
     url: https://github.com/dgabreuu/supa.cc/issues
-    about: Consulte as issues existentes ou escolha um dos formulários oficiais.
-  - name: Relatar uma vulnerabilidade
+    about: Review existing issues or choose one of the official forms.
+  - name: Report a vulnerability
     url: https://github.com/dgabreuu/supa.cc/security/advisories/new
-    about: Envie problemas de segurança de forma privada; nunca publique tokens.
+    about: Submit security issues privately; never publish tokens.

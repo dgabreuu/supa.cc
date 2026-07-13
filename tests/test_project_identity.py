@@ -97,7 +97,7 @@ def test_agent_conventions_match_supported_runtime_dependencies():
 
     assert "Python 3.11+" in agents
     assert "Python 3.9+" not in agents
-    assert "`click`, `questionary` e `keyring`" in agents
+    assert "`click`, `questionary`, and `keyring`" in agents
     assert "`rich`" not in agents.lower()
 
 

@@ -294,7 +294,7 @@ class TestCLICommands:
         [
             (AuthFailureCode.NATIVE_LOGIN_FAILED, "Native login failed."),
             (AuthFailureCode.NATIVE_VERIFICATION_FAILED, "Native session verification failed."),
-            (AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED, "Fallback plaintext bloqueado."),
+            (AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED, "Plaintext fallback blocked."),
             (AuthFailureCode.SYNC_ROLLBACK_FAILED, "Failed to restore the previous session."),
         ],
     )

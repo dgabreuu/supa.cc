@@ -1,12 +1,12 @@
-# Checklist de release
+# Release checklist
 
-Este checklist documenta a preparação da versão 0.4.0. A versão 0.4.0 ainda não está publicada; a fórmula deve continuar apontando para a versão 0.3.0 até a tag, o PyPI e os smokes de 0.4.0 estarem verificados.
+This checklist documents the preparation of version 0.4.0. Version 0.4.0 has not been published yet; the formula must continue to reference version 0.3.0 until the 0.4.0 tag, PyPI package, and smoke tests have been verified.
 
-## 1. Validar o commit candidato
+## 1. Validate the candidate commit
 
-Revise `git status --short`, `git remote -v` e o histórico. Confirme que não há PAT, caminho absoluto local, cache, ambiente virtual, diff ou documento privado no conteúdo rastreado ou nos artefatos.
+Review `git status --short`, `git remote -v`, and the history. Confirm that tracked content and artifacts contain no PAT, absolute local path, cache, virtual environment, diff, or private document.
 
-Em um checkout limpo do commit candidato, execute:
+Run the following from a clean checkout of the candidate commit:
 
 ```bash
 python3 -m pip install --upgrade "pip>=26.1.2"
@@ -14,50 +14,50 @@ python3 -m pip install -e ".[dev]"
 python3 -m pytest
 python3 -m pip check
 pip-audit --skip-editable
-python scripts/runtime_requirements.py runtime-requirements.txt
+python3 scripts/runtime_requirements.py runtime-requirements.txt
 pip-audit --requirement runtime-requirements.txt
-python scripts/security_scan.py --tracked --history
-python -m pytest --cache-clear --collect-only -q
-python scripts/security_scan.py --path .pytest_cache
+python3 scripts/security_scan.py --tracked --history
+python3 -m pytest --cache-clear --collect-only -q
+python3 scripts/security_scan.py --path .pytest_cache
 rm -rf dist
 python3 -m build
 python3 scripts/inspect_artifacts.py dist
 ```
 
-O scanner relata somente a classe e a localização de um achado, nunca o valor. O inspetor exige exatamente uma wheel e um sdist em `dist/`, valida os caminhos dos membros e aplica o mesmo scanner aos dois artefatos. Instale também a wheel em um ambiente virtual descartável, execute `pip check`, `supa.cc --version` e `supa.cc version`, e confirme `0.4.0`.
+The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Also install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.4.0`.
 
-A matriz CI executa a suíte normal completa em Python 3.11 e na versão estável atual no Ubuntu, macOS e Windows, além dos testes direcionados em Fedora e Arch, sem acessar cofres reais nos runners hospedados. Aguarde a CI validada no commit exato antes de continuar. Smoke tests nativos permanecem opt-in e exigem execução explícita em um host com o armazenamento nativo disponível.
+The CI matrix runs the complete standard suite on Python 3.11 and the current stable Python on Ubuntu, macOS, and Windows, plus targeted tests on Fedora and Arch, without accessing real credential stores on hosted runners. Wait for CI to pass on the exact commit before continuing. Native smoke tests remain opt-in and require explicit execution on a host with the native credential store available.
 
-## 2. Confirmar o contrato operacional
+## 2. Confirm the operational contract
 
-Confirme Supabase CLI >= 2.109.1, perfil oficial `supabase`, confiança do executável, verificação da credencial nativa exata, recuperação mutation-aware, logout ao remover a conta ativa e bloqueio de fallback plaintext. `doctor` deve permanecer não-live por padrão; somente `doctor --account <nome> --live` abre o token para validação explícita. A trava não coordena comandos `supabase` externos concorrentes.
+Confirm Supabase CLI >= 2.109.1, the official `supabase` profile, executable trust, verification of the exact native credential, mutation-aware recovery, logout when removing the active account, and blocking of the plaintext fallback. `doctor` must remain non-live by default; only `doctor --account <name> --live` opens the token for explicit validation. The lock does not coordinate concurrent external `supabase` commands.
 
-## 3. Configurar o Trusted Publisher
+## 3. Configure Trusted Publishing
 
-No PyPI, configure previamente um Trusted Publisher para o projeto `supa.cc` com estes valores:
+Configure a PyPI Trusted Publisher for the `supa.cc` project with these values before publishing:
 
 - Owner: `dgabreuu`
 - Repository: `supa.cc`
 - Workflow: `release.yml`
 - Environment: `pypi`
 
-Proteja o environment `pypi` conforme a política do repositório. O workflow usa OIDC com `id-token: write`; não crie token de API nem secret do PyPI.
+Protect the `pypi` environment according to repository policy. The workflow uses OIDC with `id-token: write`; do not create a PyPI API token or secret.
 
-## 4. Publicar a GitHub Release
+## 4. Publish the GitHub Release
 
-Crie a tag anotada `v0.4.0` somente no commit com CI validada. Crie a GitHub Release correspondente, use a seção 0.4.0 do `CHANGELOG.md` como base das notas e confira o alvo antes de selecionar **Publish release**.
+Create the annotated `v0.4.0` tag only on the CI-validated commit. Create the corresponding GitHub Release, use the 0.4.0 section of `CHANGELOG.md` as the release notes, and verify the target before selecting **Publish release**.
 
-A publicação da GitHub Release dispara `.github/workflows/release.yml`. O job de build faz checkout da tag da release, confirma que ela corresponde à versão do `pyproject.toml`, testa, constrói uma única vez e envia uma wheel e um sdist como artifact. Não anexe builds locais à release.
+Publishing the GitHub Release triggers `.github/workflows/release.yml`. The build job checks out the release tag, confirms that it matches the version in `pyproject.toml`, tests, builds once, and uploads one wheel and one sdist as an artifact. Do not attach local builds to the release.
 
-## 5. Publicar no PyPI por Trusted Publishing
+## 5. Publish to PyPI with Trusted Publishing
 
-O job `build` possui somente `contents: read`. O job `publish` baixa exatamente o artifact produzido pelo build e o envia ao PyPI por Trusted Publishing usando somente `id-token: write`. O job de verificação não recebe permissões do `GITHUB_TOKEN`.
+The `build` job has only `contents: read`. The `publish` job downloads exactly the artifact produced by the build and sends it to PyPI through Trusted Publishing using only `id-token: write`. The verification job receives no `GITHUB_TOKEN` permissions.
 
-Se build, inspeção ou publicação falhar, não recrie a mesma versão no PyPI e não avance para a fórmula. Corrija a causa e prepare uma nova versão conforme a imutabilidade dos artefatos publicados.
+If the build, inspection, or publication fails, do not recreate the same version on PyPI and do not proceed to the formula. Correct the cause and prepare a new version according to the immutability of published artifacts.
 
-## 6. Verificar pipx no Linux e no Windows
+## 6. Verify pipx on Linux and Windows
 
-Após a publicação, o workflow instala `supa.cc==0.4.0` diretamente do PyPI com pipx no Linux e no Windows e executa os dois comandos de versão. Confirme os jobs verdes e faça uma verificação manual independente se a política da release exigir:
+After publication, the workflow installs `supa.cc==0.4.0` directly from PyPI with pipx on Linux and Windows and runs both version commands. Confirm that the jobs pass and perform an independent manual verification if release policy requires it:
 
 ```bash
 pipx install supa.cc==0.4.0
@@ -65,9 +65,9 @@ supa.cc --version
 supa.cc version
 ```
 
-## 7. Atualizar a fórmula Homebrew
+## 7. Update the Homebrew formula
 
-Somente depois da verificação com pipx no Linux e no Windows e após a tag existir, altere `Formula/supa-cc.rb`. Use o tarball real da tag `v0.4.0`, calcule seu SHA256 real e atualize os recursos Python; nunca antecipe ou invente o checksum.
+Only after pipx verification on Linux and Windows and after the tag exists, update `Formula/supa-cc.rb`. Use the real tarball for tag `v0.4.0`, calculate its real SHA256, and update the Python resources; never anticipate or invent the checksum.
 
 ```bash
 archive="${TMPDIR:-.}/supa.cc-v0.4.0.tar.gz"
@@ -81,10 +81,10 @@ brew install --build-from-source supa-cc
 brew test supa-cc
 ```
 
-No macOS, use `shasum -a 256` se `sha256sum` não estiver disponível. Mantenha `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"`.
+On macOS, use `shasum -a 256` if `sha256sum` is unavailable. Keep `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"`.
 
-## 8. Atualizar o texto de disponibilidade
+## 8. Update availability documentation
 
-Somente depois de PyPI e Homebrew estarem verificados, finalize a entrada do changelog trocando `Unreleased` pela data real da release e substituindo `HEAD` pela tag `v0.4.0` no link de comparação. Atualize este checklist para registrar que a release e a fórmula foram publicadas.
+Only after PyPI and Homebrew have been verified, finalize the changelog entry by replacing `Unreleased` with the actual release date and replacing `HEAD` with tag `v0.4.0` in the comparison link. Update this checklist to record that the release and formula were published.
 
-Não crie assets Debian, AUR ou RPM neste processo.
+Do not create Debian, AUR, or RPM assets in this process.

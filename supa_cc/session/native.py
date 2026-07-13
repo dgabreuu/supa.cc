@@ -131,7 +131,7 @@ class NativeSessionSynchronizer:
         if "SUPABASE_ACCESS_TOKEN" in self.env:
             return AuthResult.failure(
                 AuthFailureCode.ENVIRONMENT_BLOCKED,
-                "Remova SUPABASE_ACCESS_TOKEN do ambiente antes de sincronizar.",
+                "Remove SUPABASE_ACCESS_TOKEN from the environment before synchronizing.",
             )
         try:
             if self._fallback_metadata() is not None:
@@ -242,7 +242,7 @@ class NativeSessionSynchronizer:
     def _profile_failure() -> AuthResult:
         return AuthResult.failure(
             AuthFailureCode.PROFILE_MISMATCH,
-            "Use somente o perfil oficial 'supabase' antes de sincronizar.",
+            "Use only the official 'supabase' profile before synchronizing.",
         )
 
     @staticmethod
@@ -256,7 +256,7 @@ class NativeSessionSynchronizer:
     def _fallback_failure() -> AuthResult:
         return AuthResult.failure(
             AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED,
-            "A Supabase CLI tentou usar um fallback de token em texto simples.",
+            "The Supabase CLI attempted to use a plaintext token fallback.",
         )
 
     def _fallback_metadata(self):

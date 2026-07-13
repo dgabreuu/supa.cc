@@ -235,13 +235,13 @@ def test_windows_ci_runs_full_suite_without_claiming_real_vault_coverage():
 def test_release_uses_the_same_audit_and_artifact_inspection_commands_as_ci():
     release = Path("docs/release.md").read_text(encoding="utf-8")
 
-    assert "python scripts/runtime_requirements.py runtime-requirements.txt" in release
+    assert "python3 scripts/runtime_requirements.py runtime-requirements.txt" in release
     assert "pip-audit --requirement runtime-requirements.txt" in release
     assert "pip-audit --skip-editable" in release
     assert "scripts/inspect_artifacts.py dist" in release
-    assert "python scripts/security_scan.py --tracked --history" in release
-    assert "python -m pytest --cache-clear --collect-only -q" in release
-    assert "python scripts/security_scan.py --path .pytest_cache" in release
+    assert "python3 scripts/security_scan.py --tracked --history" in release
+    assert "python3 -m pytest --cache-clear --collect-only -q" in release
+    assert "python3 scripts/security_scan.py --path .pytest_cache" in release
     assert "--ignore-vuln" not in release
 
 
@@ -377,12 +377,12 @@ def test_release_runbook_orders_pypi_verification_before_formula_and_copy_change
     normalized = release.lower()
 
     concepts = (
-        r"^##\s+\d+\..*validar.*candidat",
+        r"^##\s+\d+\..*validate.*candidate",
         r"^##\s+\d+\..*github release",
         r"^##\s+\d+\..*pypi",
         r"^##\s+\d+\..*pipx.*linux.*windows",
-        r"^##\s+\d+\..*fórmula homebrew",
-        r"^##\s+\d+\..*texto.*disponibilidade",
+        r"^##\s+\d+\..*homebrew formula",
+        r"^##\s+\d+\..*availability documentation",
     )
     positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
     assert positions == sorted(positions)
@@ -537,15 +537,9 @@ def test_public_docs_describe_the_opt_in_keychain_smoke_safely():
     assert "supa.cc.tests.<uuid>" in docs
     assert "smoke-<uuid>" in docs
     assert "finally" in docs
-    assert "consentimento explícito" in docs or "explicit consent" in docs
-    assert (
-        "nunca acessa o serviço canônico do Supa.cc" in docs
-        or "never accesses the canonical Supa.cc service" in docs
-    )
-    assert (
-        ("nunca acessa" in docs and "Supabase CLI" in docs)
-        or ("never accesses" in docs and "Supabase CLI" in docs)
-    )
+    assert "explicit consent" in docs
+    assert "never accesses the canonical Supa.cc service" in docs
+    assert "never accesses" in docs and "Supabase CLI" in docs
 
 
 def test_public_support_and_security_surfaces_are_safe_and_official():
@@ -581,8 +575,8 @@ def _assert_safety_contract(form):
         field.get("attributes", {}).get("value", "") for field in form["body"]
     ).lower()
     assert "pat" in public_copy
-    assert "credencia" in public_copy and "dump" in public_copy
-    assert any(term in public_copy for term in ("nunca", "não inclua", "do not"))
+    assert "credential" in public_copy and "dump" in public_copy
+    assert "do not" in public_copy
 
 
 def test_bug_and_install_forms_collect_required_reproduction_context():

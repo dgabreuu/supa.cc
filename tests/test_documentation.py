@@ -315,7 +315,7 @@ def test_release_docs_distinguish_published_0_3_0_from_candidate_0_4_0():
 
     assert "the channels below are planned for the release" not in readme
     assert "do not mean that version 0.3.0 has already been published" not in installation
-    assert "A versão 0.4.0 ainda não está publicada" in release
+    assert "Version 0.4.0 has not been published yet" in release
     assert "v0.4.0" in release
     assert "continua não lançada" not in release
     assert "deve permanecer em `v0.2.0`" not in release

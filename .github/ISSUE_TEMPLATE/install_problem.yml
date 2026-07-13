@@ -1,80 +1,80 @@
-name: Problema de instalação
-description: Peça ajuda para instalar, atualizar ou iniciar o Supa.cc.
-title: "[Instalação]: "
+name: Installation problem
+description: Ask for help installing, upgrading, or starting Supa.cc.
+title: "[Installation]: "
 labels: [installation]
 body:
   - type: markdown
     attributes:
       value: |
-        Para bugs após uma instalação concluída, use o formulário de bug.
-        **Nunca inclua PATs, tokens, dumps de credenciais, itens do armazenamento nativo ou dumps completos de ambiente.**
+        For bugs after a completed installation, use the bug report form.
+        **Do not include PATs, tokens, credential dumps, native credential-store items, or complete environment dumps.**
   - type: input
     id: os
     attributes:
-      label: Sistema operacional
-      placeholder: Inclua distribuição e versão, quando aplicável.
+      label: Operating system
+      placeholder: Include the distribution and version when applicable.
     validations:
       required: true
   - type: input
     id: supa_cc_version
     attributes:
-      label: Versão do Supa.cc
-      description: Informe a saída de `supa.cc --version`, ou "não disponível" se o comando não inicia.
+      label: Supa.cc version
+      description: Provide the output from `supa.cc --version`, or "unavailable" if the command does not start.
     validations:
       required: true
   - type: input
     id: python_version
     attributes:
-      label: Versão do Python
+      label: Python version
     validations:
       required: true
   - type: input
     id: supabase_cli_version
     attributes:
-      label: Versão do Supabase CLI
+      label: Supabase CLI version
     validations:
       required: true
   - type: dropdown
     id: installation_method
     attributes:
-      label: Método de instalação
+      label: Installation method
       options:
         - Homebrew
         - pipx
-        - Instalação de desenvolvimento
-        - Outro
+        - Development installation
+        - Other
     validations:
       required: true
   - type: textarea
     id: reproduction
     attributes:
-      label: Como reproduzir
-      description: Inclua o comando de instalação e os passos executados.
+      label: Reproduction steps
+      description: Include the installation command and the steps performed.
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Comportamento esperado
+      label: Expected behavior
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: Comportamento atual
-      description: Inclua a mensagem de erro completa depois de remover segredos e caminhos pessoais.
+      label: Actual behavior
+      description: Include the complete error message after removing secrets and personal paths.
     validations:
       required: true
   - type: textarea
     id: doctor
     attributes:
-      label: Saída sanitizada de `supa.cc doctor --json`
-      description: Se o comando estiver disponível, remova nomes de contas, caminhos pessoais e dados identificáveis. Nunca use `--live` para este diagnóstico.
+      label: Sanitized `supa.cc doctor --json` output
+      description: If the command is available, remove account names, personal paths, and identifying data. Never use `--live` for this diagnostic.
       render: json
   - type: checkboxes
     id: safety
     attributes:
-      label: Confirmação de segurança
+      label: Security confirmation
       options:
-        - label: Revisei o relato e removi PATs, tokens, dumps de credenciais e outros segredos.
+        - label: I reviewed the report and removed PATs, tokens, credential dumps, and other secrets.
           required: true
