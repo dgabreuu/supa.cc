@@ -7,8 +7,8 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.0.tar.gz"
-TARBALL_SHA256 = "6a1614d5489e1c8ce921d034051601265352dc5322c6e476193ad30346802281"
+TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.1.tar.gz"
+TARBALL_SHA256 = "c80154f72b3d78fe1d8839e5ca13ad8bf06f6bc68929a9aaa0b9054ce7b3b0ab"
 HOMEBREW_TAP = "dgabreuu/supa-cc"
 HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
 HOMEBREW_TAP_COMMAND = f"brew tap {HOMEBREW_TAP} {REPO_URL}"
@@ -91,11 +91,11 @@ def test_installation_uses_stable_release_channels():
         assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
 
 
-def test_release_formula_uses_verified_0_4_0_tag():
+def test_release_formula_uses_verified_0_4_1_tag():
     release = Path("docs/release.md").read_text(encoding="utf-8")
     formula = Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
-    assert "v0.4.0" in formula
+    assert "v0.4.1" in formula
     assert "v0.3.0" not in formula
     assert "brew test dgabreuu/supa-cc/supa-cc" in release
 
@@ -189,7 +189,7 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
     assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in workflow_text
     assert 'brew audit --strict --formula "$formula"' not in workflow_text
     assert 'brew install "$formula"' not in workflow_text
-    assert "0.4.0" in workflow_text
+    assert "0.4.1" in workflow_text
     for prohibited in (
         "actions/checkout",
         "git commit",
@@ -443,7 +443,7 @@ def test_release_runbook_orders_pypi_verification_before_formula_and_copy_change
     )
     positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
     assert positions == sorted(positions)
-    assert "v0.4.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+    assert "v0.4.1" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
 
 def test_troubleshooting_doctor_language_is_credential_store_neutral():

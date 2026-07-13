@@ -1,6 +1,6 @@
 # Release checklist
 
-This checklist documents the preparation of version 0.4.1. Version 0.4.1 has not been published yet; the formula must continue to reference version 0.4.0 (`v0.4.0`) until the 0.4.1 tag, PyPI package, and smoke tests have been verified.
+This checklist documents the publication of version 0.4.1. Version 0.4.1 was published and verified on GitHub and PyPI. Homebrew has not been verified yet; the formula update remains a separate promotion gate.
 
 ## 1. Validate the candidate commit
 
@@ -45,17 +45,23 @@ Protect the `pypi` environment according to repository policy. The workflow uses
 
 ## 4. Publish the GitHub Release
 
+Completed: the annotated tag and stable [GitHub Release v0.4.1](https://github.com/dgabreuu/supa.cc/releases/tag/v0.4.1) point to the CI-validated candidate.
+
 Create the annotated `v0.4.1` tag only on the CI-validated commit. Create the corresponding GitHub Release, use the 0.4.1 section of `CHANGELOG.md` as the release notes, and verify the target before selecting **Publish release**.
 
 Publishing the GitHub Release triggers `.github/workflows/release.yml`. The build job checks out the release tag, confirms that it matches the version in `pyproject.toml`, tests, builds once, and uploads one wheel and one sdist as an artifact. Do not attach local builds to the release.
 
 ## 5. Publish to PyPI with Trusted Publishing
 
+Completed: [supa.cc 0.4.1 on PyPI](https://pypi.org/project/supa.cc/0.4.1/) contains one wheel and one sdist published through OIDC.
+
 The `build` job has only `contents: read`. The `publish` job downloads exactly the artifact produced by the build and sends it to PyPI through Trusted Publishing using only `id-token: write`. The verification job receives no `GITHUB_TOKEN` permissions.
 
 If the build, inspection, or publication fails, do not recreate the same version on PyPI and do not proceed to the formula. Correct the cause and prepare a new version according to the immutability of published artifacts.
 
 ## 6. Verify pipx on Linux and Windows
+
+Completed: the [release workflow](https://github.com/dgabreuu/supa.cc/actions/runs/29291629029) passed build, Trusted Publishing, and both pipx smoke jobs.
 
 After publication, the workflow installs `supa.cc==0.4.1` directly from PyPI with pipx on Linux and Windows and runs both version commands. Confirm that the jobs pass and perform an independent manual verification if release policy requires it:
 
