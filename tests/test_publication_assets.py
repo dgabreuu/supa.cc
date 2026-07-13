@@ -50,7 +50,10 @@ def test_publication_docs_keep_stable_installation_separate_from_development():
     assert "brew install supa-cc" in installation
     assert "brew install --HEAD supa-cc" not in installation
     assert "brew --repo dgabreuu/supa-cc" in release
-    assert "brew update-python-resources Formula/supa-cc.rb" in release
+    assert (
+        "brew update-python-resources --ignore-main-package-cooldown "
+        "Formula/supa-cc.rb"
+    ) in release
     assert "brew audit --strict supa-cc" in release
     assert "brew test supa-cc" in release
     assert "git status --short" in release
@@ -372,6 +375,19 @@ def test_changelog_marks_0_3_0_as_released_and_only_claims_verified_scope():
     assert "re-adicionar" not in normalized
     assert "readicionar" not in normalized
     assert "rollback para 0.2.0" not in normalized
+
+
+def test_changelog_marks_0_4_0_as_released():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    heading = re.search(r"^##\s+\[?0\.4\.0\]?\s*[-:]\s*(.+)$", changelog, re.MULTILINE)
+    assert heading
+    assert heading.group(1) == "2026-07-13"
+    assert (
+        "[0.4.0]: https://github.com/dgabreuu/supa.cc/compare/v0.3.0...v0.4.0"
+        in changelog
+    )
+    assert "## [0.4.0] - Unreleased" not in changelog
 
 
 def test_release_runbook_orders_pypi_verification_before_formula_and_copy_changes():

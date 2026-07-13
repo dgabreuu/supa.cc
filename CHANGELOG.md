@@ -3,7 +3,7 @@
 All notable changes to this project will be documented in this file.
 The format follows Keep a Changelog in a simplified form.
 
-## [0.4.0] - Unreleased
+## [0.4.0] - 2026-07-13
 
 ### Changed
 
@@ -29,7 +29,7 @@ The format follows Keep a Changelog in a simplified form.
 - CI and release gates scan tracked files, full reachable history, pytest metadata, wheel, and sdist without echoing matches.
 - GitHub Actions are pinned by commit, checkout credentials are not persisted, container images are pinned by digest, and dependency auditing has no Python 3.9 exceptions.
 
-[0.4.0]: https://github.com/dgabreuu/supa.cc/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/dgabreuu/supa.cc/compare/v0.3.0...v0.4.0
 
 ## [0.3.0] - 2026-07-12
 

@@ -1,6 +1,6 @@
 # Release checklist
 
-This checklist documents the preparation of version 0.4.0. Version 0.4.0 has not been published yet; the formula must continue to reference version 0.3.0 until the 0.4.0 tag, PyPI package, and smoke tests have been verified.
+This checklist records the publication of version 0.4.0 on 2026-07-13. Version 0.4.0 was published and verified on GitHub, PyPI, and Homebrew. The publication used the canonical workflow below.
 
 ## 1. Validate the candidate commit
 
@@ -45,17 +45,23 @@ Protect the `pypi` environment according to repository policy. The workflow uses
 
 ## 4. Publish the GitHub Release
 
+Completed: the annotated tag and stable [GitHub Release v0.4.0](https://github.com/dgabreuu/supa.cc/releases/tag/v0.4.0) point to the CI-validated candidate.
+
 Create the annotated `v0.4.0` tag only on the CI-validated commit. Create the corresponding GitHub Release, use the 0.4.0 section of `CHANGELOG.md` as the release notes, and verify the target before selecting **Publish release**.
 
 Publishing the GitHub Release triggers `.github/workflows/release.yml`. The build job checks out the release tag, confirms that it matches the version in `pyproject.toml`, tests, builds once, and uploads one wheel and one sdist as an artifact. Do not attach local builds to the release.
 
 ## 5. Publish to PyPI with Trusted Publishing
 
+Completed: [supa.cc 0.4.0 on PyPI](https://pypi.org/project/supa.cc/0.4.0/) contains one wheel and one sdist published through OIDC.
+
 The `build` job has only `contents: read`. The `publish` job downloads exactly the artifact produced by the build and sends it to PyPI through Trusted Publishing using only `id-token: write`. The verification job receives no `GITHUB_TOKEN` permissions.
 
 If the build, inspection, or publication fails, do not recreate the same version on PyPI and do not proceed to the formula. Correct the cause and prepare a new version according to the immutability of published artifacts.
 
 ## 6. Verify pipx on Linux and Windows
+
+Completed: the [release workflow](https://github.com/dgabreuu/supa.cc/actions/runs/29285434653) passed build, Trusted Publishing, and both pipx smoke jobs.
 
 After publication, the workflow installs `supa.cc==0.4.0` directly from PyPI with pipx on Linux and Windows and runs both version commands. Confirm that the jobs pass and perform an independent manual verification if release policy requires it:
 
@@ -67,6 +73,8 @@ supa.cc version
 
 ## 7. Update the Homebrew formula
 
+Completed: the public formula references `v0.4.0`, uses the verified tarball checksum and generated runtime resources, and passed the [Homebrew validation workflow](https://github.com/dgabreuu/supa.cc/actions/runs/29286033968).
+
 Only after pipx verification on Linux and Windows and after the tag exists, update `Formula/supa-cc.rb`. Use the real tarball for tag `v0.4.0`, calculate its real SHA256, and update the Python resources; never anticipate or invent the checksum.
 
 ```bash
@@ -75,7 +83,7 @@ curl -L -o "$archive" https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4
 sha256sum "$archive"
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
 cd "$(brew --repo dgabreuu/supa-cc)"
-brew update-python-resources Formula/supa-cc.rb
+brew update-python-resources --ignore-main-package-cooldown Formula/supa-cc.rb
 brew audit --strict supa-cc
 brew install --build-from-source supa-cc
 brew test supa-cc
@@ -85,6 +93,6 @@ On macOS, use `shasum -a 256` if `sha256sum` is unavailable. Keep `head "https:/
 
 ## 8. Update availability documentation
 
-Only after PyPI and Homebrew have been verified, finalize the changelog entry by replacing `Unreleased` with the actual release date and replacing `HEAD` with tag `v0.4.0` in the comparison link. Update this checklist to record that the release and formula were published.
+Completed on 2026-07-13: the changelog entry is dated, its comparison ends at `v0.4.0`, and this checklist records the verified GitHub, PyPI, and Homebrew publication state.
 
 Do not create Debian, AUR, or RPM assets in this process.
