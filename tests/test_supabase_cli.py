@@ -70,6 +70,7 @@ def test_macos_executes_verified_absolute_binary_path(tmp_path, monkeypatch):
     binary = _executable(tmp_path)
     cli = SupabaseCLI(binary_resolver=lambda _: str(binary))
     monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(supabase_cli, "_has_trusted_path_ancestors", lambda _: True)
 
     def run_at_spawn(argv, _env, *_args, **kwargs):
         assert argv[0] == str(binary.resolve())

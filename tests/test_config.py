@@ -61,6 +61,9 @@ def test_macos_run_process_executes_pre_spawn_revalidation(tmp_path, monkeypatch
     binary = _binary(tmp_path)
     config = SupabaseConfig(binary_resolver=lambda _: binary)
     monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(
+        "supa_cc.supabase_cli._has_trusted_path_ancestors", lambda _: True
+    )
 
     def run_at_spawn(argv, _env, *_args, **kwargs):
         assert argv[0] == str(os.path.realpath(binary))
