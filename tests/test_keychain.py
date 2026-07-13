@@ -4,7 +4,7 @@ import stat
 
 import pytest
 
-import supa_cc.account_store as keychain
+import supa_cc.accounts.store as keychain
 from supa_cc.account_store import AccountStore
 from supa_cc.auth import (
     AccountIndexInvalidError,

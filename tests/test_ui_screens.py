@@ -11,29 +11,17 @@ from supa_cc.auth import (
 )
 from supa_cc.ui.screens import TUIScreens
 from supa_cc.ui.state import MenuAction, NavigationState, PageId
-from supa_cc.strings import UIStrings as Textos
+from supa_cc.strings import UIStrings as Strings
 
 from helpers import fake_pat
 
 
 class FakeConsole:
     def __init__(self):
-        self.is_terminal = True
-        self.status_calls = []
-        self.entered = 0
-        self.exited = 0
+        self.lines = []
 
-    def status(self, message, spinner=None, spinner_style=None):
-        self.status_calls.append(message)
-        return self
-
-    def __enter__(self):
-        self.entered += 1
-        return self
-
-    def __exit__(self, *args):
-        self.exited += 1
-        return False
+    def print(self, message, style=None):
+        self.lines.append((message, style))
 
 
 class FakeRenderer:
@@ -42,7 +30,7 @@ class FakeRenderer:
         self.home_paints = 0
         self.subpage_paints = []
 
-    def paint_home(self, state, account_count):
+    def paint_home(self, state, account_count, active_account=None):
         self.home_paints += 1
 
     def paint_subpage(self, state, title):
@@ -88,10 +76,10 @@ class SequencePrompts:
 
 
 class FakeManager:
-    def __init__(self, accounts=None, activate_result=None):
+    def __init__(self, accounts=None, activate_result=None, active_name=None):
         self._accounts = list(accounts or [])
         self.activate_result = (
-            AuthResult.success("Conta ativada no Supa.cc.")
+            AuthResult.success("Account activated in Supa.cc.")
             if activate_result is None
             else activate_result
         )
@@ -99,6 +87,7 @@ class FakeManager:
         self.added = []
         self.removed = []
         self.list_calls = 0
+        self.active_name = active_name
 
     def add(self, name, token):
         self.added.append((name, token))
@@ -107,6 +96,9 @@ class FakeManager:
     def list(self):
         self.list_calls += 1
         return list(self._accounts)
+
+    def get_active_name(self):
+        return self.active_name
 
     def set_active(self, name):
         self.activated.append(name)
@@ -117,18 +109,18 @@ class FakeManager:
         self._accounts = [a for a in self._accounts if a.name != name]
 
 
-def test_home_opens_list_page():
+def test_home_opens_switch_page():
     screens = TUIScreens(
         manager=FakeManager(),
         renderer=FakeRenderer(),
-        prompts=SequencePrompts(select=[MenuAction.LIST_ACCOUNTS]),
+        prompts=SequencePrompts(select=[MenuAction.SWITCH_ACCOUNT]),
     )
     state = NavigationState()
 
     screens.home(state)
 
     assert screens.renderer.home_paints == 1
-    assert state.current_page == PageId.LIST
+    assert state.current_page == PageId.SWITCH
 
 
 def test_home_exit_stops_app():
@@ -173,66 +165,6 @@ def test_home_select_uses_standard_pointer_without_default_selection():
     assert kwargs.get("use_indicator") is False
 
 
-def test_list_accounts_uses_list_prompt_and_account_choices():
-    accounts = [
-        Account(name="work", token=fake_pat("token")),
-        Account(name="personal", token=fake_pat("token2")),
-    ]
-    prompts = SequencePrompts(select=[MenuAction.BACK])
-    screens = TUIScreens(
-        manager=FakeManager(accounts=accounts),
-        renderer=FakeRenderer(),
-        prompts=prompts,
-    )
-    state = NavigationState()
-    state.open(PageId.LIST)
-
-    screens.list_accounts(state)
-
-    assert screens.renderer.subpage_paints == [Textos.MENU_LIST]
-    call = prompts.select_calls[0]
-    assert call["message"] == Textos.PROMPT_LIST_ACCOUNTS
-    assert call["message"] != Textos.MENU_TITLE
-    values = [c.value for c in call["choices"] if hasattr(c, "value") and c.value is not None]
-    assert "work" in values
-    assert "personal" in values
-    assert MenuAction.BACK in values
-    assert call["kwargs"].get("default") is None
-    assert call["kwargs"].get("pointer") == "»"
-    assert state.current_page == PageId.HOME
-    assert screens.manager.list_calls == 1
-
-
-def test_list_accounts_selecting_account_returns_home():
-    account = Account(name="work", token=fake_pat("token"))
-    screens = TUIScreens(
-        manager=FakeManager(accounts=[account]),
-        renderer=FakeRenderer(),
-        prompts=SequencePrompts(select=["work"]),
-    )
-    state = NavigationState()
-    state.open(PageId.LIST)
-
-    screens.list_accounts(state)
-
-    assert state.current_page == PageId.HOME
-
-
-def test_list_accounts_cancel_returns_home():
-    account = Account(name="work", token=fake_pat("token"))
-    screens = TUIScreens(
-        manager=FakeManager(accounts=[account]),
-        renderer=FakeRenderer(),
-        prompts=SequencePrompts(select=[None]),
-    )
-    state = NavigationState()
-    state.open(PageId.LIST)
-
-    screens.list_accounts(state)
-
-    assert state.current_page == PageId.HOME
-
-
 def test_add_account_success_returns_home_with_message():
     token = fake_pat("token")
     manager = FakeManager()
@@ -248,9 +180,9 @@ def test_add_account_success_returns_home_with_message():
 
     assert manager.added == [("work", token)]
     assert state.current_page == PageId.HOME
-    assert state.last_message.text == "Conta 'work' adicionada."
+    assert state.last_message.text == "Account 'work' added."
     assert state.last_message.level == "success"
-    assert screens.renderer.subpage_paints == [Textos.MENU_ADD]
+    assert screens.renderer.subpage_paints == [Strings.MENU_ADD]
 
 
 def test_add_account_does_not_strip_token_whitespace_before_validation():
@@ -284,7 +216,7 @@ def test_add_account_with_whitespace_pat_is_rejected_by_real_contract():
     screens.add_account(state)
 
     assert state.last_message.level == "error"
-    assert "Token inválido" in state.last_message.text
+    assert "Invalid token" in state.last_message.text
     keychain.add_account.assert_not_called()
 
 
@@ -306,7 +238,7 @@ def test_add_account_cancel_returns_home_without_error_message():
 def test_switch_account_success_returns_home():
     account = Account(name="work", token=fake_pat("token"))
     message = (
-        "Conta 'work' ativada e sessão nativa sincronizada."
+        "Account 'work' activated and native session synchronized."
     )
     manager = FakeManager(
         accounts=[account], activate_result=AuthResult.success(message)
@@ -351,7 +283,7 @@ def test_switch_account_failure_uses_same_typed_message_as_cli():
     account = Account(name="work", token=fake_pat("token"))
     failure = AuthResult.failure(
         AuthFailureCode.TOKEN_REJECTED,
-        "O token foi rejeitado pela API da Supabase.",
+        "The token was rejected by the Supabase API.",
         exit_code=9,
     )
     manager = FakeManager(accounts=[account], activate_result=failure)
@@ -385,7 +317,7 @@ def test_remove_account_success_returns_home():
 
     assert manager.removed == ["work"]
     assert state.current_page == PageId.HOME
-    assert state.last_message.text == "Conta 'work' removida."
+    assert state.last_message.text == "Account 'work' removed."
     assert manager.list_calls == 1
 
 
@@ -407,7 +339,7 @@ def test_add_account_sanitizes_token_like_errors():
     screens.add_account(state)
 
     assert token not in state.last_message.text
-    assert state.last_message.text == "A operação local não pôde ser concluída."
+    assert state.last_message.text == "The local operation could not be completed."
     assert state.current_page == PageId.HOME
 
 
@@ -429,7 +361,7 @@ def test_add_account_reports_invalid_token_format_clearly():
     screens.add_account(state)
 
     assert state.last_message.level == "error"
-    assert "Token inválido: informe um PAT Supabase" in state.last_message.text
+    assert "Invalid token: provide a Supabase PAT" in state.last_message.text
     assert "private token detail" not in state.last_message.text
 
 
@@ -448,7 +380,7 @@ def test_home_maps_index_read_failure_without_traceback():
     screens.home(state)
 
     assert state.last_message.level == "error"
-    assert "Não foi possível ler o índice local de contas." == state.last_message.text
+    assert "Unable to read the local account index." == state.last_message.text
     assert "private" not in state.last_message.text
     assert state.running is False
 
@@ -471,7 +403,7 @@ def test_remove_maps_transaction_failure_without_traceback():
     screens.remove_account(state)
 
     assert state.last_message.level == "error"
-    assert "não pôde ser concluída com segurança" in state.last_message.text
+    assert "could not be completed safely" in state.last_message.text
     assert "private" not in state.last_message.text
 
 
@@ -496,6 +428,6 @@ def test_remove_rejects_pat_like_name_without_echoing_or_keychain_mutation():
 
     assert state.last_message.level == "error"
     assert token_like_name not in state.last_message.text
-    assert "Nome de conta inválido" in state.last_message.text
+    assert "Invalid account name" in state.last_message.text
     assert state.exit_code != 0
     keychain.remove_account.assert_not_called()

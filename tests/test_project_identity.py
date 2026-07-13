@@ -1,7 +1,4 @@
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - exercised on Python < 3.11
-    import tomli as tomllib
+import tomllib
 
 from pathlib import Path
 
@@ -34,13 +31,23 @@ def test_project_metadata_uses_supa_cc_identity():
     }
 
 
-def test_source_version_is_0_3_0_while_formula_remains_on_stable_release():
+def test_project_metadata_declares_english_as_the_only_natural_language():
+    project = load_project_metadata()
+
+    assert [
+        classifier
+        for classifier in project["classifiers"]
+        if classifier.startswith("Natural Language ::")
+    ] == ["Natural Language :: English"]
+
+
+def test_source_version_is_0_4_0_while_formula_remains_on_stable_release():
     project = load_project_metadata()
     with open("Formula/supa-cc.rb", "r", encoding="utf-8") as formula_file:
         formula = formula_file.read()
 
-    assert project["version"] == "0.3.0"
-    assert __version__ == "0.3.0"
+    assert project["version"] == "0.4.0"
+    assert __version__ == "0.4.0"
     assert (
         'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.3.0.tar.gz"'
         in formula
@@ -63,10 +70,35 @@ def test_project_metadata_links_public_repository():
     }
 
 
-def test_python_39_test_dependency_includes_tomli():
+def test_runtime_requires_supported_python_without_tomli_backport():
     project = load_project_metadata()
 
-    assert 'tomli>=2.0.0; python_version < "3.11"' in project["optional-dependencies"]["dev"]
+    assert project["requires-python"] == ">=3.11"
+    assert not any(
+        dependency.startswith("tomli")
+        for dependency in project["optional-dependencies"]["dev"]
+    )
+    assert "Programming Language :: Python :: 3.9" not in project["classifiers"]
+    assert "Programming Language :: Python :: 3.11" in project["classifiers"]
+
+
+def test_runtime_dependencies_exclude_rich_and_its_transitive_stack():
+    dependencies = load_project_metadata()["dependencies"]
+
+    assert dependencies == [
+        "questionary>=2.0.0",
+        "keyring>=24.0.0",
+        "click>=8.0.0",
+    ]
+
+
+def test_agent_conventions_match_supported_runtime_dependencies():
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
+
+    assert "Python 3.11+" in agents
+    assert "Python 3.9+" not in agents
+    assert "`click`, `questionary` e `keyring`" in agents
+    assert "`rich`" not in agents.lower()
 
 
 def test_build_and_audit_dependencies_are_bounded_and_development_only():
@@ -92,6 +124,10 @@ def test_sdist_explicitly_excludes_private_and_local_artifacts():
         "/build",
         "/.venv",
         "/venv",
+        "/tests",
+        "/assets",
+        "/scripts",
+        "/Formula",
     }
     assert required <= exclude
 
@@ -125,6 +161,6 @@ def test_license_uses_mit_with_supa_cc_attribution():
 
     assert license_text.startswith("MIT License")
     assert "Copyright (c) 2026 Supa.cc contributors" in license_text
-    assert "Tradução" not in license_text
+    assert "Translation" not in license_text
     assert license_text.rstrip().endswith("SOFTWARE.")
     assert not Path("docs/license-pt-BR.md").exists()

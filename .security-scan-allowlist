@@ -1,0 +1,4 @@
+# Historical test-fixture blobs with deterministic, non-production PAT values.
+# Keep this list object-specific; new credential-shaped content must fail CI.
+a718152877aaec5cc216116ecd8114da1ea0973d
+cb7c9f75ba509ce18d7b7394ef276899bb5c07a5

@@ -52,11 +52,11 @@ _MISSING_ITEM_MARKERS = (
 )
 _SECRET_SERVICE_PASSWORD_MISSING = "no such password!"
 _SECRET_SERVICE_UNAVAILABLE_MESSAGE = (
-    "O Secret Service não está disponível. Verifique o D-Bus e desbloqueie "
-    "o Secret Service."
+    "The Secret Service is unavailable. Check D-Bus and unlock "
+    "the Secret Service."
 )
 _CREDENTIAL_STORE_UNAVAILABLE_MESSAGE = (
-    "O armazenamento de credenciais não está disponível."
+    "The credential store is unavailable."
 )
 
 
@@ -104,7 +104,7 @@ class CredentialStore:
             saved_token,
         ):
             raise CredentialReadError(
-                "Não foi possível confirmar a credencial no armazenamento de credenciais."
+                "Unable to verify the credential in the credential store."
             )
 
     def delete(self, name: str) -> None:
@@ -131,7 +131,7 @@ def create_credential_store(
     if environment.operating_system is OperatingSystem.WINDOWS:
         return CredentialStore(_WINDOWS_BACKEND_NAME, service=service)
     raise CredentialAccessError(
-        "O armazenamento de credenciais não está disponível neste ambiente."
+        "The credential store is unavailable in this environment."
     )
 
 
@@ -193,6 +193,11 @@ def _probe_backend(backend, backend_name: str) -> CredentialStoreStatus:
             )
         elif backend_name == _MACOS_BACKEND_NAME:
             macOS.Keyring.priority
+            suffix = uuid4().hex
+            backend.get_password(
+                f"supa.cc.probe.{suffix}",
+                f"probe-{suffix}",
+            )
         elif backend_name == _WINDOWS_BACKEND_NAME:
             suffix = uuid4().hex
             backend.get_password(
@@ -228,10 +233,10 @@ def _raise_credential_operation_error(
         marker in message for marker in _PERMISSION_ERROR_MARKERS
     ):
         raise CredentialPermissionDeniedError(
-            "Acesso ao armazenamento de credenciais não autorizado."
+            "Credential-store access was not authorized."
         ) from None
     raise CredentialReadError(
-        "Não foi possível acessar a credencial no armazenamento de credenciais."
+        "Unable to access the credential in the credential store."
     ) from None
 
 

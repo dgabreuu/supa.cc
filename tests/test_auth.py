@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 import supa_cc.auth as auth
+from supa_cc.security import tokens as token_policy
 from supa_cc.auth import (
     ActiveAccountStore,
     ActiveAccountInvalidError,
@@ -23,6 +24,13 @@ from supa_cc.auth import (
 )
 
 from helpers import fake_oauth_pat, fake_pat
+
+
+def test_auth_facade_reexports_canonical_token_policy():
+    assert auth.is_valid_access_token is token_policy.is_valid_access_token
+    assert auth.contains_pat is token_policy.contains_pat
+    assert auth.sanitize_sensitive_text is token_policy.sanitize_sensitive_text
+    assert auth.ACCESS_TOKEN_PREFIX == token_policy.ACCESS_TOKEN_PREFIX
 
 
 def test_auth_failure_code_covers_activation_failures():
@@ -73,7 +81,7 @@ def test_account_names_cannot_overlap_pat_namespace(name):
 def test_auth_result_factories_are_typed_and_keep_messages_out_of_repr():
     token = "sbp_example_token_that_must_not_be_rendered"
 
-    success = AuthResult.success("Conta validada.")
+    success = AuthResult.success("Account validated.")
     failure = AuthResult.failure(
         AuthFailureCode.TOKEN_REJECTED,
         token,
@@ -83,7 +91,7 @@ def test_auth_result_factories_are_typed_and_keep_messages_out_of_repr():
     assert success == AuthResult(
         ok=True,
         code=AuthFailureCode.NONE,
-        message="Conta validada.",
+        message="Account validated.",
         exit_code=0,
     )
     assert failure.ok is False
@@ -95,7 +103,7 @@ def test_auth_result_factories_are_typed_and_keep_messages_out_of_repr():
 def test_auth_result_requires_callers_to_read_ok_explicitly():
     result = AuthResult.failure(
         AuthFailureCode.COMMAND_FAILED,
-        "Falha segura.",
+        "Safe failure.",
     )
 
     with pytest.raises(TypeError, match=r"\.ok"):
@@ -412,5 +420,5 @@ def test_local_failure_classifier_never_exposes_exception_details(failure, expec
 def test_active_account_store_rejects_unsafe_names(tmp_path, name):
     store = ActiveAccountStore(path=tmp_path / "active-account")
 
-    with pytest.raises(ValueError, match="nome de conta"):
+    with pytest.raises(ValueError, match="invalid account name"):
         store.write(name)

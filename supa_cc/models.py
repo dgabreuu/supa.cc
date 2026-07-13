@@ -9,7 +9,7 @@ class Account:
     token: str = field(repr=False)
 
     def validate_token(self) -> bool:
-        """Valida formato do token Supabase."""
+        """Validate the Supabase token format."""
         return is_valid_access_token(self.token)
 
 

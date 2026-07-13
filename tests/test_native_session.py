@@ -60,6 +60,26 @@ def test_preflight_checks_cli_only_after_local_state_is_safe(tmp_path):
     assert synchronizer.mutation_state is MutationState.NONE
 
 
+def test_preflighted_activation_does_not_repeat_cli_preflight(tmp_path):
+    config = Mock()
+    config.preflight.return_value = AuthResult.success()
+    config.login_with_access_token.return_value = AuthResult.success()
+    config.verify_persisted_session.return_value = AuthResult.success()
+    account = Account("work", fake_pat("single-preflight"))
+    synchronizer = NativeSessionSynchronizer(
+        config,
+        env={},
+        supabase_home=tmp_path / "supabase",
+        credential_store=Mock(matches=Mock(return_value=True)),
+    )
+
+    assert synchronizer.preflight().ok
+    result = synchronizer._activate_preflighted(account)
+
+    assert result.ok
+    config.preflight.assert_called_once_with()
+
+
 def test_activate_uses_controlled_home_and_requires_native_credential_match(tmp_path):
     config = Mock()
     config.login_with_access_token.return_value = AuthResult.success()
@@ -218,7 +238,7 @@ def test_activate_succeeds_after_login_and_persisted_verification(tmp_path):
     assert result.ok is True
     assert config.login_with_access_token.call_args.args == (account,)
     assert config.verify_persisted_session.call_count == 1
-    assert "sincronizada" in result.message.lower() or "ativada" in result.message.lower()
+    assert "synchronized" in result.message.lower() or "activated" in result.message.lower()
     assert account.token not in result.message
 
 
@@ -248,7 +268,7 @@ def test_logout_requires_successful_logout_and_failed_verification(tmp_path):
         AuthResult.success("active"),
         AuthResult.failure(
             AuthFailureCode.TOKEN_MISSING,
-            "Token de acesso não foi fornecido à Supabase CLI.",
+            "An access token was not provided to the Supabase CLI.",
         ),
     ]
     synchronizer = NativeSessionSynchronizer(
@@ -503,7 +523,7 @@ def test_journal_read_rejects_oversized_content(tmp_path):
     path.write_text("x" * 4097, encoding="utf-8")
     path.chmod(0o600)
 
-    with pytest.raises(ValueError, match="O journal de sincronização é inválido"):
+    with pytest.raises(ValueError, match="The synchronization journal is invalid"):
         SessionSyncJournal(path).read()
 
 

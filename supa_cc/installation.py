@@ -22,12 +22,12 @@ class InstallationGuidance:
 def installation_guidance(environment: Environment) -> InstallationGuidance:
     if environment.operating_system is OperatingSystem.MACOS:
         return InstallationGuidance(
-            install_hint=f"brew install supa-cc; ou {VCS_INSTALL}",
+            install_hint=f"brew install supa-cc; or {VCS_INSTALL}",
             update_hint=(
-                "brew upgrade supa-cc ou brew upgrade --fetch-HEAD supa-cc; "
-                f"para pipx: {VCS_UPDATE}"
+                "brew upgrade supa-cc or brew upgrade --fetch-HEAD supa-cc; "
+                f"for pipx: {VCS_UPDATE}"
             ),
-            remediation="Verifique se o armazenamento de credenciais do macOS está disponível.",
+            remediation="Check whether the macOS credential store is available.",
         )
 
     if environment.operating_system is OperatingSystem.WINDOWS:
@@ -35,8 +35,8 @@ def installation_guidance(environment: Environment) -> InstallationGuidance:
             install_hint=VCS_INSTALL,
             update_hint=VCS_UPDATE,
             remediation=(
-                "Verifique se o Windows Credential Manager está disponível "
-                "para a sessão do usuário."
+                "Check whether Windows Credential Manager is available "
+                "for the user session."
             ),
         )
 
@@ -49,16 +49,16 @@ def installation_guidance(environment: Environment) -> InstallationGuidance:
     command = commands.get(environment.distribution)
     if command is not None:
         return InstallationGuidance(
-            install_hint=f"Pré-requisitos (apenas informativo): {command}; {VCS_INSTALL}",
+            install_hint=f"Prerequisites (informational only): {command}; {VCS_INSTALL}",
             update_hint=VCS_UPDATE,
             remediation=(
-                "Instale os pré-requisitos indicados e verifique se o Secret "
-                "Service está disponível e desbloqueado."
+                "Install the listed prerequisites and verify that the Secret "
+                "Service is available and unlocked."
             ),
         )
 
     return InstallationGuidance(
-        install_hint="Este sistema Linux não é suportado para instalação automática.",
+        install_hint="This Linux system is not supported for automatic installation.",
         update_hint=VCS_UPDATE,
-        remediation="Use uma distribuição Linux suportada e configure um armazenamento de credenciais compatível.",
+        remediation="Use a supported Linux distribution and configure a compatible credential store.",
     )

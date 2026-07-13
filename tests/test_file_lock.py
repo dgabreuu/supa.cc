@@ -131,3 +131,33 @@ def test_windows_same_file_accepts_matching_native_identities(monkeypatch):
     assert file_lock._same_file(8, "lock", Mock(), Mock()) is True
     assert identity.call_args_list == [((8,),), ((9,),)]
     close.assert_called_once_with(9)
+
+
+def test_locked_file_closes_descriptor_when_unlock_fails(tmp_path):
+    path = tmp_path / "shared.lock"
+    close = Mock(wraps=os.close)
+
+    with pytest.raises(file_lock.LockReleaseError):
+        with file_lock.locked_file(
+            path,
+            release=Mock(side_effect=OSError("private unlock detail")),
+            close_file=close,
+        ):
+            pass
+
+    close.assert_called_once()
+
+
+def test_locked_file_preserves_body_error_over_cleanup_failure(tmp_path):
+    path = tmp_path / "shared.lock"
+    close = Mock(wraps=os.close)
+
+    with pytest.raises(ValueError, match="body failure"):
+        with file_lock.locked_file(
+            path,
+            release=Mock(side_effect=OSError("private unlock detail")),
+            close_file=close,
+        ):
+            raise ValueError("body failure")
+
+    close.assert_called_once()

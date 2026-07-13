@@ -21,7 +21,6 @@ class TUIApp:
         self.routes: Dict[PageId, Callable[[NavigationState], None]] = {
             PageId.HOME: self.screens.home,
             PageId.ADD: self.screens.add_account,
-            PageId.LIST: self.screens.list_accounts,
             PageId.SWITCH: self.screens.switch_account,
             PageId.REMOVE: self.screens.remove_account,
         }

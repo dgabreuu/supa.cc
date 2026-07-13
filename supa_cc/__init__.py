@@ -1,2 +1,2 @@
-"""Supa.cc - CLI para gerenciamento de contas Supabase."""
-__version__ = "0.3.0"
+"""Supa.cc - CLI for managing Supabase accounts."""
+__version__ = "0.4.0"

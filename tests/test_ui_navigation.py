@@ -5,10 +5,9 @@ from supa_cc.ui.navigation import (
     BACK_SPACING_LINES,
     DEFAULT_POINTER,
     choices_with_back,
-    first_selectable_value,
 )
 from supa_cc.ui.state import MenuAction
-from supa_cc.strings import UIStrings as Textos
+from supa_cc.strings import UIStrings as Strings
 
 
 def test_back_spacing_is_two_lines():
@@ -16,8 +15,8 @@ def test_back_spacing_is_two_lines():
 
 
 def test_voltar_text_has_no_embedded_arrow():
-    assert Textos.MENU_BACK == "Voltar"
-    assert "←" not in Textos.MENU_BACK
+    assert Strings.MENU_BACK == "Back"
+    assert "←" not in Strings.MENU_BACK
     assert BACK_ARROW == "←"
     assert DEFAULT_POINTER == "»"
 
@@ -37,7 +36,7 @@ def test_choices_with_back_separates_voltar_by_two_lines():
     voltar = result[2 + BACK_SPACING_LINES]
     assert isinstance(voltar, Choice)
     assert voltar.value == MenuAction.BACK
-    assert voltar.title == [("class:text", "← Voltar")]
+    assert voltar.title == [("class:text", "← Back")]
     assert len(result) == 2 + BACK_SPACING_LINES + 1
 
 
@@ -46,16 +45,6 @@ def test_choices_with_back_only_voltar():
 
     assert len(result) == BACK_SPACING_LINES + 1
     assert result[BACK_SPACING_LINES].value == MenuAction.BACK
-
-
-def test_first_selectable_value_skips_separators():
-    choices = choices_with_back([Choice(title="A", value="a"), Choice(title="B", value="b")])
-    assert first_selectable_value(choices) == "a"
-
-
-def test_first_selectable_value_with_only_back():
-    choices = choices_with_back([])
-    assert first_selectable_value(choices) == MenuAction.BACK
 
 
 def test_questionary_renders_formatted_back_choice_with_spacing_and_selection():
@@ -70,7 +59,7 @@ def test_questionary_renders_formatted_back_choice_with_spacing_and_selection():
     rendered = "".join(text for _, text in tokens)
 
     assert control.get_pointed_at().value is MenuAction.BACK
-    assert f"{BACK_ARROW} {Textos.MENU_BACK}" in rendered
+    assert f"{BACK_ARROW} {Strings.MENU_BACK}" in rendered
     assert sum(style == "class:separator" for style, _ in tokens) == BACK_SPACING_LINES
     assert DEFAULT_POINTER in rendered  # Questionary may show its standard selected pointer.
     assert InquirerControl._get_choice_tokens.__module__.startswith("questionary.")

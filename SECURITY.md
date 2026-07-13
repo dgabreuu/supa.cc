@@ -1,15 +1,15 @@
-# Política de segurança
+# Security policy
 
-## Como relatar uma vulnerabilidade
+## Reporting a vulnerability
 
-Relate vulnerabilidades de forma privada pelo formulário oficial de [Security Advisories](https://github.com/dgabreuu/supa.cc/security/advisories/new). Não abra uma issue pública para falhas de segurança.
+Report vulnerabilities privately through the official [Security Advisories](https://github.com/dgabreuu/supa.cc/security/advisories/new) form. Do not open a public issue for security failures.
 
-Inclua uma descrição do impacto, as etapas mínimas para reproduzir e as versões afetadas. Remova qualquer dado pessoal ou segredo antes de enviar o relato.
+Include an impact description, the minimum reproduction steps, and affected versions. Remove personal data or secrets before submitting the report.
 
-Nunca inclua tokens de acesso pessoal (PATs), tokens do Supabase, conteúdo do Keychain, Secret Service ou Windows Credential Manager, dumps de credenciais ou dumps completos de ambiente. Se um segredo tiver sido exposto, revogue-o imediatamente antes de continuar.
+Never include Personal Access Tokens (PATs), Supabase tokens, Keychain, Secret Service, or Windows Credential Manager contents, credential dumps, or complete environment dumps. If a secret was exposed, revoke it immediately before continuing.
 
-Problemas de uso, instalação ou propostas sem impacto de segurança devem ser enviados pelas [GitHub Issues](https://github.com/dgabreuu/supa.cc/issues).
+Usage and installation problems, or proposals without a security impact, should be submitted through [GitHub Issues](https://github.com/dgabreuu/supa.cc/issues).
 
-## Versões com suporte
+## Supported versions
 
-A manutenção de segurança acompanha a versão mais recente publicada. Atualize para a versão atual e informe a versão exata no relato privado.
+Security maintenance follows the latest published version. Update to the current version and include the exact version in the private report.

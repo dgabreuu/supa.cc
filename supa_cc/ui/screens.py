@@ -10,21 +10,19 @@ from .animations import loading
 from .navigation import DEFAULT_POINTER, choices_with_back
 from .render import UIRenderer
 from .state import MenuAction, NavigationState, PageId
-from ..strings import UIStrings as Textos
+from ..strings import UIStrings as Strings
 from .theme import QUESTIONARY_STYLE
 
 
 MAIN_MENU_CHOICES = [
-    Choice(title=Textos.MENU_ADD, value=MenuAction.ADD_ACCOUNT),
-    Choice(title=Textos.MENU_LIST, value=MenuAction.LIST_ACCOUNTS),
-    Choice(title=Textos.MENU_SWITCH, value=MenuAction.SWITCH_ACCOUNT),
-    Choice(title=Textos.MENU_REMOVE, value=MenuAction.REMOVE_ACCOUNT),
-    Choice(title=Textos.MENU_EXIT, value=MenuAction.EXIT),
+    Choice(title=Strings.MENU_ADD, value=MenuAction.ADD_ACCOUNT),
+    Choice(title=Strings.MENU_SWITCH, value=MenuAction.SWITCH_ACCOUNT),
+    Choice(title=Strings.MENU_REMOVE, value=MenuAction.REMOVE_ACCOUNT),
+    Choice(title=Strings.MENU_EXIT, value=MenuAction.EXIT),
 ]
 
 ACTION_TO_PAGE = {
     MenuAction.ADD_ACCOUNT: PageId.ADD,
-    MenuAction.LIST_ACCOUNTS: PageId.LIST,
     MenuAction.SWITCH_ACCOUNT: PageId.SWITCH,
     MenuAction.REMOVE_ACCOUNT: PageId.REMOVE,
 }
@@ -48,7 +46,7 @@ class TUIScreens:
 
     def _select(self, message: str, choices: List) -> Any:
         # No default: avoids "selected" highlight on first option.
-        # Standard pointer for normal items; Voltar carries its arrow in its formatted title.
+        # Standard pointer for normal items; Back carries its arrow in its formatted title.
         return self._ask(
             self.prompts.select(
                 message,
@@ -87,8 +85,21 @@ class TUIScreens:
         accounts = self._load_accounts(state)
         if accounts is None:
             return
-        self.renderer.paint_home(state, account_count=len(accounts))
-        action = self._select(Textos.MENU_TITLE, MAIN_MENU_CHOICES)
+        try:
+            active_account = self.manager.get_active_name()
+        except AttributeError:
+            active_account = None
+        except Exception as error:
+            result = classify_local_failure(error)
+            state.set_message(result.message, "error")
+            state.record_failure(result.exit_code)
+            active_account = None
+        self.renderer.paint_home(
+            state,
+            account_count=len(accounts),
+            active_account=active_account,
+        )
+        action = self._select(Strings.MENU_TITLE, MAIN_MENU_CHOICES)
 
         if action is None or action == MenuAction.EXIT:
             state.stop()
@@ -96,62 +107,40 @@ class TUIScreens:
 
         page = ACTION_TO_PAGE.get(action)
         if page is None:
-            state.set_message(Textos.MSG_UNKNOWN_OPTION, "error")
+            state.set_message(Strings.MSG_UNKNOWN_OPTION, "error")
             return
 
         state.open(page)
 
     def add_account(self, state: NavigationState) -> None:
-        self.renderer.paint_subpage(state, title=Textos.MENU_ADD)
+        self.renderer.paint_subpage(state, title=Strings.MENU_ADD)
 
-        name = self._text(Textos.PROMPT_ACCOUNT_NAME)
+        name = self._text(Strings.PROMPT_ACCOUNT_NAME)
         if name is None:
             state.go_home()
             return
         if not name.strip():
-            state.set_message(Textos.MSG_ACCOUNT_REQUIRED, "warning")
+            state.set_message(Strings.MSG_ACCOUNT_REQUIRED, "warning")
             state.go_home()
             return
 
-        token = self._password(Textos.PROMPT_ACCESS_TOKEN)
+        token = self._password(Strings.PROMPT_ACCESS_TOKEN)
         if token is None:
             state.go_home()
             return
         if not token:
-            state.set_message(Textos.MSG_TOKEN_REQUIRED, "warning")
+            state.set_message(Strings.MSG_TOKEN_REQUIRED, "warning")
             state.go_home()
             return
 
         name = name.strip()
         try:
             self.manager.add(name, token)
-            state.set_message(Textos.MSG_ACCOUNT_ADDED.format(name), "success")
+            state.set_message(Strings.MSG_ACCOUNT_ADDED.format(name), "success")
         except Exception as error:
             result = classify_local_failure(error)
             state.set_message(result.message, "error")
             state.record_failure(result.exit_code)
-
-        state.go_home()
-
-    def list_accounts(self, state: NavigationState) -> None:
-        accounts = self._load_accounts(state)
-        if accounts is None:
-            state.go_home()
-            return
-        if not accounts:
-            state.set_message(Textos.MSG_NO_ACCOUNTS, "warning")
-            state.go_home()
-            return
-
-        self.renderer.paint_subpage(state, title=Textos.MENU_LIST)
-        selection = self._select(
-            Textos.PROMPT_LIST_ACCOUNTS,
-            self._account_choices(accounts),
-        )
-
-        if selection is None or selection == MenuAction.BACK:
-            state.go_home()
-            return
 
         state.go_home()
 
@@ -161,13 +150,13 @@ class TUIScreens:
             state.go_home()
             return
         if not accounts:
-            state.set_message(Textos.MSG_NO_ACCOUNTS_SWITCH, "warning")
+            state.set_message(Strings.MSG_NO_ACCOUNTS_SWITCH, "warning")
             state.go_home()
             return
 
-        self.renderer.paint_subpage(state, title=Textos.MENU_SWITCH)
+        self.renderer.paint_subpage(state, title=Strings.MENU_SWITCH)
         name = self._select(
-            Textos.PROMPT_SELECT_ACCOUNT,
+            Strings.PROMPT_SELECT_ACCOUNT,
             self._account_choices(accounts),
         )
 
@@ -176,7 +165,7 @@ class TUIScreens:
             return
 
         try:
-            with loading(Textos.LOADING_SWITCH_ACCOUNT, console=self.renderer.console):
+            with loading(Strings.LOADING_SWITCH_ACCOUNT, console=self.renderer.console):
                 result = self.manager.set_active(name)
         except Exception as error:
             result = classify_local_failure(error)
@@ -195,13 +184,13 @@ class TUIScreens:
             state.go_home()
             return
         if not accounts:
-            state.set_message(Textos.MSG_NO_ACCOUNTS_REMOVE, "warning")
+            state.set_message(Strings.MSG_NO_ACCOUNTS_REMOVE, "warning")
             state.go_home()
             return
 
-        self.renderer.paint_subpage(state, title=Textos.MENU_REMOVE)
+        self.renderer.paint_subpage(state, title=Strings.MENU_REMOVE)
         name = self._select(
-            Textos.PROMPT_SELECT_REMOVE,
+            Strings.PROMPT_SELECT_REMOVE,
             self._account_choices(accounts),
         )
 
@@ -209,7 +198,7 @@ class TUIScreens:
             state.go_home()
             return
 
-        confirmed = self._confirm(Textos.PROMPT_CONFIRM_REMOVE.format(name), default=False)
+        confirmed = self._confirm(Strings.PROMPT_CONFIRM_REMOVE.format(name), default=False)
         if confirmed is None or not confirmed:
             state.go_home()
             return
@@ -221,5 +210,5 @@ class TUIScreens:
             state.set_message(result.message, "error")
             state.record_failure(result.exit_code)
         else:
-            state.set_message(Textos.MSG_ACCOUNT_REMOVED.format(name), "success")
+            state.set_message(Strings.MSG_ACCOUNT_REMOVED.format(name), "success")
         state.go_home()

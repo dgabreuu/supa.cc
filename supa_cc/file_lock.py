@@ -1,5 +1,6 @@
 import os
 import stat
+from contextlib import contextmanager
 from pathlib import Path
 
 try:
@@ -128,3 +129,62 @@ def release_file_lock(descriptor: int) -> None:
         _release_windows(descriptor)
     else:
         _release_posix(descriptor)
+
+
+class LockReleaseError(OSError):
+    """The lock body completed but releasing the lock failed."""
+
+
+class LockCloseError(OSError):
+    """The lock body completed but closing its descriptor failed."""
+
+
+@contextmanager
+def locked_file(
+    path: Path,
+    *,
+    open_file=os.open,
+    close_file=os.close,
+    acquire=acquire_file_lock,
+    release=release_file_lock,
+    validate=validate_lock_file,
+):
+    """Open, validate, hold, and reliably finalize a private file lock."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not _is_windows():
+        path.parent.chmod(0o700)
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = open_file(path, flags, 0o600)
+    locked = False
+    body_error = None
+    unlock_failed = False
+    close_failed = False
+    try:
+        validate(descriptor, path)
+        if not _is_windows():
+            os.fchmod(descriptor, 0o600)
+        acquire(descriptor)
+        locked = True
+        validate(descriptor, path)
+        try:
+            yield
+        except BaseException as error:
+            body_error = error
+    finally:
+        try:
+            if locked:
+                release(descriptor)
+        except OSError:
+            unlock_failed = True
+        finally:
+            try:
+                close_file(descriptor)
+            except OSError:
+                close_failed = True
+    if body_error is not None:
+        raise body_error
+    if unlock_failed:
+        raise LockReleaseError()
+    if close_failed:
+        raise LockCloseError()

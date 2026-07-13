@@ -1,70 +1,72 @@
-# Uso
+# Usage
 
-## Primeiro uso pela TUI
+## First use with the TUI
 
-Crie um Personal Access Token na [página oficial de tokens do Supabase](https://supabase.com/dashboard/account/tokens). Não coloque o PAT em comandos, arquivos, logs ou relatórios.
+Create a Personal Access Token on the [official Supabase token page](https://supabase.com/dashboard/account/tokens). Do not put the PAT in commands, files, logs, or reports.
 
-Abra a interface interativa:
+Open the interactive interface:
 
 ```bash
 supa.cc
 ```
 
-1. Escolha **Adicionar conta**, informe um nome local e forneça o PAT no prompt oculto. O nome deve ter de 1 a 50 letras ASCII, números, underscores ou hífens (`[a-zA-Z0-9_-]{1,50}`).
-2. Escolha **Alternar conta** e selecione a conta cadastrada.
-3. Verifique a sessão ativada:
+The home keeps only the compact brand banner, account count, active-account state, and the four useful actions: Add, Switch, Remove, and Exit. Switch and Remove present the account list when needed, avoiding a separate list-only screen. Arrow-key navigation and the existing green visual identity are preserved; smaller terminals receive the compact banner automatically.
+
+1. Choose **Add account**, enter a local name, and provide the PAT in the hidden prompt. The name must contain 1 to 50 ASCII letters, numbers, underscores, or hyphens (`[a-zA-Z0-9_-]{1,50}`).
+2. Choose **Switch active account** and select the registered account.
+3. Verify the activated session:
 
 ```bash
 supabase projects list
 ```
 
-A ativação valida o PAT, sincroniza o perfil oficial `supabase`, verifica a credencial nativa persistida e somente então grava a conta ativa. Se houver falha, siga a [solução de problemas](troubleshooting.md); para garantias e limites, consulte [segurança](security.md).
+Activation validates the PAT, synchronizes the official `supabase` profile, verifies the persisted native credential, and only then records the active account. If it fails, follow [Troubleshooting](troubleshooting.md); see [Security](security.md) for guarantees and limits.
 
-## Fluxos
+## Workflows
 
-### Gerenciar contas
+### Manage accounts
 
 ```bash
-supa.cc add <nome>
+supa.cc add <name>
 supa.cc list
-supa.cc switch <nome>
-supa.cc remove <nome>
-supa.cc remove <nome> --yes
+supa.cc switch <name>
+supa.cc remove <name>
+supa.cc remove <name> --yes
 ```
 
-`add` solicita o PAT em prompt oculto. `list` mostra somente nomes. `switch` valida e ativa a conta. `remove` pede confirmação, exceto com `--yes`; remover a conta ativa também encerra a sessão oficial associada.
+`add` requests the PAT in a hidden prompt. `list` shows names only. `switch` validates and activates the account. `remove` asks for confirmation except with `--yes`; removing the active account also ends its associated official session.
 
-### Usar a conta ativa
+### Use the active account
 
-Depois de `switch`, use o Supabase CLI normalmente. Para uma execução isolada opcional, sem alterar argumentos:
+After `switch`, use the Supabase CLI normally. For an optional isolated execution without changing arguments:
 
 ```bash
 supa.cc run -- projects list
 ```
 
-### Diagnosticar
+### Diagnose
 
 ```bash
 supa.cc doctor
 supa.cc doctor --json
-supa.cc doctor --account <nome> --live
+supa.cc doctor --account <name> --live
 ```
 
-Os dois primeiros comandos são não-live e não abrem token. `--live` exige `--account` e autoriza a leitura e validação online da credencial escolhida. Consulte a [remediação por plataforma](troubleshooting.md#macos) antes de inspecionar manualmente qualquer armazenamento.
+The first two commands are non-live and do not open a token. Their standard human and JSON output omits the account name and sanitizes local paths. In JSON, `active_account` is an object with the booleans `selected` and `indexed`; executable path objects include `path_relation`. `--live` requires `--account` and authorizes reading and online validation of the selected credential. See [platform remediation](troubleshooting.md#macos) before manually inspecting any storage.
 
-## Comandos
+## Commands
 
-| Comando | Finalidade |
+| Command | Purpose |
 | --- | --- |
-| `supa.cc` | Abrir a TUI |
-| `supa.cc add <nome>` | Adicionar ou atualizar uma conta |
-| `supa.cc list` | Listar nomes cadastrados |
-| `supa.cc switch <nome>` | Validar e ativar uma conta |
-| `supa.cc remove <nome> [--yes]` | Remover uma conta |
-| `supa.cc run -- <argumentos>` | Executar o Supabase CLI com a conta ativa |
-| `supa.cc doctor [--json]` | Gerar diagnóstico local não-live |
-| `supa.cc doctor --account <nome> --live` | Autorizar diagnóstico autenticado |
-| `supa.cc --version` | Mostrar a versão |
-| `supa.cc version` | Mostrar a versão e também verificar atualizações |
+| `supa.cc` | Open the TUI |
+| `supa.cc add <name>` | Add or update an account |
+| `supa.cc list` | List registered names |
+| `supa.cc switch <name>` | Validate and activate an account |
+| `supa.cc remove <name> [--yes]` | Remove an account |
+| `supa.cc run -- <arguments>` | Run the Supabase CLI with the active account |
+| `supa.cc doctor [--json]` | Generate a local non-live diagnostic |
+| `supa.cc doctor --account <name> --live` | Authorize an authenticated diagnostic |
+| `supa.cc --version` | Show the version |
+| `supa.cc version` | Show the installed version and deterministic official update guidance, without network access |
 
-Instalação, atualização e desinstalação ficam no [guia de instalação](installation.md).
+Installation, upgrades, and uninstallation are covered in the [installation guide](installation.md).

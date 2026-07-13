@@ -1,67 +1,60 @@
-# Centralização de todos os textos da aplicação
+# Centralized application text.
 
 class CommonStrings:
-    """Textos compartilhados entre CLI e TUI."""
+    """Text shared by the CLI and TUI."""
 
-    MSG_ACCOUNT_ADDED = "Conta '{}' adicionada."
-    MSG_ACCOUNT_ACTIVATED = "Conta '{}' ativada e sessão nativa sincronizada."
-    MSG_ACTIVATE_FAILED = "Falha ao sincronizar a sessão da conta '{}'."
-    MSG_ACCOUNT_REMOVED = "Conta '{}' removida."
-    MSG_NO_ACCOUNTS = "Nenhuma conta cadastrada."
+    MSG_ACCOUNT_ADDED = "Account '{}' added."
+    MSG_ACCOUNT_REMOVED = "Account '{}' removed."
+    MSG_NO_ACCOUNTS = "No accounts registered."
 
 
 class UIStrings(CommonStrings):
-    """Textos da interface TUI."""
+    """Text for the TUI."""
 
     # Home
     APP_NAME = "Supa.cc"
-    APP_DESCRIPTION = "Gerenciamento local de contas Supabase com segurança."
-    APP_SUBTITLE = "Quem é você hoje?"
-    PANEL_TITLE = "Supa.cc"
-    ACCOUNT_COUNT_ONE = "conta salva"
-    ACCOUNT_COUNT_MANY = "contas salvas"
+    APP_DESCRIPTION = "Secure local management for Supabase accounts."
+    ACCOUNT_COUNT_ONE = "saved account"
+    ACCOUNT_COUNT_MANY = "saved accounts"
+    ACTIVE_ACCOUNT = "Active"
+    ACTIVE_ACCOUNT_NONE = "not selected"
 
     # Menu
-    MENU_TITLE = "Escolha uma ação:"
-    MENU_ADD = "Adicionar conta"
-    MENU_LIST = "Listar contas"
-    MENU_SWITCH = "Alternar conta ativa"
-    MENU_REMOVE = "Remover conta"
-    MENU_BACK = "Voltar"
-    MENU_EXIT = "Sair"
+    MENU_TITLE = "Choose an action:"
+    MENU_ADD = "Add account"
+    MENU_SWITCH = "Switch active account"
+    MENU_REMOVE = "Remove account"
+    MENU_BACK = "Back"
+    MENU_EXIT = "Exit"
 
     # Prompts
-    PROMPT_ACCOUNT_NAME = "Nome da conta:"
-    PROMPT_ACCESS_TOKEN = "Token de acesso:"
-    PROMPT_LIST_ACCOUNTS = "Contas cadastradas:"
-    PROMPT_SELECT_ACCOUNT = "Selecione a conta:"
-    PROMPT_SELECT_REMOVE = "Selecione a conta para remover:"
-    PROMPT_CONFIRM_REMOVE = "Remover conta '{}'?"
+    PROMPT_ACCOUNT_NAME = "Account name:"
+    PROMPT_ACCESS_TOKEN = "Access token:"
+    PROMPT_SELECT_ACCOUNT = "Select an account:"
+    PROMPT_SELECT_REMOVE = "Select an account to remove:"
+    PROMPT_CONFIRM_REMOVE = "Remove account '{}'?"
 
-    # Mensagens de feedback
-    MSG_ACCOUNT_REQUIRED = "Nome da conta é obrigatório."
-    MSG_TOKEN_REQUIRED = "Token de acesso é obrigatório."
-    MSG_NO_ACCOUNTS_SWITCH = "Nenhuma conta para alternar."
-    MSG_NO_ACCOUNTS_REMOVE = "Nenhuma conta para remover."
-    MSG_LISTED_ACCOUNTS = "Listadas {} {}."
-    MSG_SWITCH_CANCELLED = "Alternância de conta cancelada."
-    MSG_REMOVE_CANCELLED = "Remoção de conta cancelada."
-    MSG_UNKNOWN_OPTION = "Opção de menu desconhecida."
-    MSG_GOODBYE = "Até logo!"
+    # Feedback messages
+    MSG_ACCOUNT_REQUIRED = "Account name is required."
+    MSG_TOKEN_REQUIRED = "Access token is required."
+    MSG_NO_ACCOUNTS_SWITCH = "No accounts available to switch."
+    MSG_NO_ACCOUNTS_REMOVE = "No accounts available to remove."
+    MSG_UNKNOWN_OPTION = "Unknown menu option."
+    MSG_GOODBYE = "Goodbye!"
 
     # Loading
-    LOADING_SWITCH_ACCOUNT = "Ativando conta..."
+    LOADING_SWITCH_ACCOUNT = "Activating account… (up to 30s)"
 
 
 
 class CLIStrings(CommonStrings):
-    """Textos do CLI não-interativo."""
+    """Text for the non-interactive CLI."""
 
-    APP_DESCRIPTION = "Supa.cc - Gerenciamento local de contas Supabase"
-    CMD_ADD_HELP = "Adicionar nova conta."
-    CMD_LIST_HELP = "Listar contas cadastradas."
-    CMD_SWITCH_HELP = "Alternar conta ativa."
-    CMD_REMOVE_HELP = "Remover conta cadastrada."
-    MSG_ERROR = "Erro: {}"
-    MSG_CONFIRM_REMOVE = "Remover conta?"
-    PROMPT_ACCESS_TOKEN = "Token de acesso"
+    APP_DESCRIPTION = "Supa.cc - Local Supabase account management"
+    CMD_ADD_HELP = "Add a new account."
+    CMD_LIST_HELP = "List registered accounts."
+    CMD_SWITCH_HELP = "Switch the active account."
+    CMD_REMOVE_HELP = "Remove a registered account."
+    MSG_ERROR = "Error: {}"
+    MSG_CONFIRM_REMOVE = "Remove account?"
+    PROMPT_ACCESS_TOKEN = "Access token"

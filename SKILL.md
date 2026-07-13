@@ -1,23 +1,23 @@
 ---
 name: supa-cc-cli
-description: Use ao operar ou manter autenticação, armazenamento nativo, diagnóstico ou integração com o Supabase CLI no Supa.cc
+description: Use when operating or maintaining authentication, native storage, diagnostics, or Supabase CLI integration in Supa.cc
 ---
 
 # Supa.cc CLI
 
-Use [Instalação](docs/installation.md) para o ciclo de instalação, [Uso](docs/usage.md) para fluxos e comandos, [Segurança](docs/security.md) para o contrato interno e [Solução de problemas](docs/troubleshooting.md) para remediação.
+Use [Installation](docs/installation.md) for the installation lifecycle, [Usage](docs/usage.md) for flows and commands, [Security](docs/security.md) for the internal contract, and [Troubleshooting](docs/troubleshooting.md) for remediation.
 
-## Invariantes para agentes
+## Agent invariants
 
-- Nunca coloque PATs reais ou exemplos com formato de credencial em comandos, código, fixtures, arquivos, logs, erros, documentação, prompts ou transcripts. O PAT é solicitado por entrada oculta e aceito somente por `^(?:sbp_|sbp_oauth_)[0-9a-f]{40}$`.
-- No macOS, use somente o Keychain; no Linux, somente Secret Service com D-Bus de usuário e coleção desbloqueada; no Windows, somente Windows Credential Manager pelo backend exato `WinVaultKeyring`.
-- Nunca habilite fallback plaintext, `keyrings.alt` ou outro backend. Ambientes Linux headless sem os serviços exigidos devem falhar com orientação segura.
-- Nenhum arquivo local contém PAT. Índice, seleção, journal e locks contêm somente nomes ou metadados; backups temporários de rollback permanecem no armazenamento nativo.
-- Passe o PAT ao Supabase CLI somente por `SUPABASE_ACCESS_TOKEN` no ambiente do processo filho, nunca em `argv`. Um `SUPABASE_ACCESS_TOKEN` herdado bloqueia a sincronização.
-- Use somente o perfil oficial `supabase` e o Supabase CLI >= 2.109.1. Verifique a confiança do executável e a credencial nativa exata; não edite diretamente credenciais ou perfis do CLI.
-- Rollback e recuperação devem ser mutation-aware. A trava coordena processos Supa.cc cooperantes, não comandos `supabase` externos concorrentes.
-- `doctor` e `doctor --json` são não-live, não abrem token e não comprovam disponibilidade do backend. Somente `doctor --account <nome> --live` autoriza leitura e validação autenticada da conta escolhida.
-- Não afrouxe ACLs, exporte itens, despeje ambientes ou credenciais, nem apague itens legados, journals, locks ou credenciais sem estado prévio exato e aprovação explícita.
-- No macOS e Linux, aceite apenas executável regular, executável, pertencente ao usuário ou root e sem escrita por grupo/outros. No Windows, compare a identidade do caminho e do descritor após abrir e imediatamente antes de criar o processo; a API executa o caminho, portanto não alegue execução vinculada ao descritor nem validação de ACL ou modos POSIX.
+- Never place real PATs or credential-shaped examples in commands, code, fixtures, files, logs, errors, documentation, prompts, or transcripts. PATs are requested through hidden input and accepted only when matching `^(?:sbp_|sbp_oauth_)[0-9a-f]{40}$`.
+- On macOS, use only Keychain; on Linux, only Secret Service with user D-Bus and an unlocked collection; on Windows, only Windows Credential Manager through the exact `WinVaultKeyring` backend.
+- Never enable a plaintext fallback, `keyrings.alt`, or another backend. Headless Linux environments without the required services must fail with safe guidance.
+- No local file contains a PAT. The index, selection, journal, and locks contain only names or metadata; temporary rollback backups remain in native storage.
+- Pass the PAT to the Supabase CLI only through `SUPABASE_ACCESS_TOKEN` in the child process environment, never in `argv`. An inherited `SUPABASE_ACCESS_TOKEN` blocks synchronization.
+- Use only the official `supabase` profile and Supabase CLI >= 2.109.1. Verify executable trust and the exact native credential; do not edit CLI credentials or profiles directly.
+- Rollback and recovery must be mutation-aware. The lock coordinates cooperating Supa.cc processes, not concurrent external `supabase` commands.
+- `doctor` and `doctor --json` are non-live, do not open a token, and do not prove backend availability. Only `doctor --account <name> --live` authorizes reading and authenticated validation of the selected account.
+- Do not weaken ACLs, export items, dump environments or credentials, or delete legacy items, journals, locks, or credentials without the exact prior state and explicit approval.
+- On Linux, validate ownership and modes and execute the open descriptor. On macOS, keep the validated file open, reject writable ancestors, revalidate identity immediately before spawn, and execute the validated path; do not claim descriptor binding. On Windows, compare path and descriptor identity before process creation and execute the validated path without claiming ACL or POSIX-mode validation.
 
-Identidades canônicas: `macOS: Keychain service supa.cc.supabase.accounts.v2`; `Linux: Secret Service supa.cc.supabase.accounts.v2`; `Windows: Windows Credential Manager (WinVaultKeyring) service supa.cc.supabase.accounts.v2`.
+Canonical identities: `macOS: Keychain service supa.cc.supabase.accounts.v2`; `Linux: Secret Service supa.cc.supabase.accounts.v2`; `Windows: Windows Credential Manager (WinVaultKeyring) service supa.cc.supabase.accounts.v2`.

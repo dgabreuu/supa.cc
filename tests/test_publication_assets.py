@@ -2,10 +2,7 @@ from pathlib import Path
 import re
 
 import yaml
-try:
-    import tomllib
-except ModuleNotFoundError:  # pragma: no cover - Python 3.9/3.10
-    import tomli as tomllib
+import tomllib
 
 
 
@@ -64,15 +61,15 @@ def test_docs_describe_supported_runtime_and_state_without_claiming_name_only_fi
     normalized = security.lower()
 
     assert "2.109.1" in security
-    assert "perfil oficial" in normalized
-    assert "executável" in normalized
-    assert "nenhum arquivo local contém" in normalized and "pat" in normalized
+    assert "official `supabase` profile" in normalized
+    assert "executable" in normalized
+    assert "no local file contains" in normalized and "pat" in normalized
     for state in ("accounts.json", "active-account", "session-sync", ".lock"):
         assert state in security
     assert "backup" in normalized
-    assert "mutation" in normalized or "mutaç" in normalized
-    assert "somente nomes de contas" not in normalized
-    assert "arquivos locais contêm somente nomes" not in normalized
+    assert "mutation" in normalized
+    assert "only account names" not in normalized
+    assert "local files contain only names" not in normalized
 
 
 def test_installation_uses_stable_release_channels():
@@ -193,26 +190,26 @@ def test_ci_has_least_privilege_cross_platform_build_and_security_jobs():
 
     assert re.search(r"permissions:\s*\n\s+contents: read", workflow)
     assert "ubuntu-latest" in workflow and "macos-latest" in workflow
-    assert '"3.9"' in workflow and '"3.x"' in workflow
+    assert '"3.11"' in workflow and '"3.x"' in workflow
+    assert '"3.9"' not in workflow
     assert "fedora" in workflow.lower() and "archlinux" in workflow.lower()
+    assert "fedora@sha256:" in workflow
+    assert "archlinux@sha256:" in workflow
+    assert "fedora:latest" not in workflow
+    assert "archlinux:latest" not in workflow
     assert "pip check" in workflow
     assert "python scripts/runtime_requirements.py runtime-requirements.txt" in workflow
     assert "pip-audit --requirement runtime-requirements.txt" in workflow
     assert "pip-audit --skip-editable" in workflow
-    assert "matrix.python-version == '3.9'" in workflow
-    for vulnerability in (
-        "PYSEC-2026-1375",
-        "PYSEC-2026-1374",
-        "GHSA-6v7p-g79w-8964",
-        "PYSEC-2026-196",
-        "GHSA-58qw-9mgm-455v",
-        "GHSA-jp4c-xjxw-mgf9",
-        "PYSEC-2026-1845",
-        "GHSA-gc5v-m9x4-r6x2",
-        "PYSEC-2026-142",
-        "PYSEC-2026-141",
-    ):
-        assert workflow.count(f"--ignore-vuln {vulnerability}") == 1
+    assert "--ignore-vuln" not in workflow
+    assert "pip>=26.1.2" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "python scripts/security_scan.py --tracked --history" in workflow
+    assert "python -m pytest --cache-clear --collect-only -q" in workflow
+    assert "python scripts/security_scan.py --path .pytest_cache" in workflow
+    assert "actions/checkout@v4" not in workflow
+    assert "actions/setup-python@v5" not in workflow
+    assert "actions/upload-artifact@v4" not in workflow
     assert "PYSEC-2022-43012" not in workflow
     assert "PYSEC-2025-49" not in workflow
     assert "PYSEC-2026-1918" not in workflow
@@ -242,6 +239,10 @@ def test_release_uses_the_same_audit_and_artifact_inspection_commands_as_ci():
     assert "pip-audit --requirement runtime-requirements.txt" in release
     assert "pip-audit --skip-editable" in release
     assert "scripts/inspect_artifacts.py dist" in release
+    assert "python scripts/security_scan.py --tracked --history" in release
+    assert "python -m pytest --cache-clear --collect-only -q" in release
+    assert "python scripts/security_scan.py --path .pytest_cache" in release
+    assert "--ignore-vuln" not in release
 
 
 def test_release_workflow_uses_published_release_and_least_privilege_oidc():
@@ -324,7 +325,7 @@ def test_release_workflow_builds_once_and_publishes_the_same_artifact():
         "ubuntu-latest",
         "windows-latest",
     ]
-    assert "pipx install supa.cc==0.3.0" in workflow_text
+    assert "pipx install supa.cc==0.4.0" in workflow_text
 
 
 def test_pypi_metadata_has_explicit_markdown_and_public_links():
@@ -358,12 +359,12 @@ def test_changelog_marks_0_3_0_as_released_and_only_claims_verified_scope():
         in changelog
     )
     for expected in (
-        "sessão nativa",
+        "native session",
         "linux",
         "windows",
         "doctor",
-        "segurança",
-        "recuperação",
+        "security",
+        "recovery",
     ):
         assert expected in normalized
     assert "re-adicionar" not in normalized
@@ -392,9 +393,9 @@ def test_troubleshooting_doctor_language_is_credential_store_neutral():
     troubleshooting = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
     normalized = troubleshooting.lower()
 
-    assert "armazenamento de credenciais" in normalized
+    assert "credential-store" in normalized
     assert "configur" in normalized
-    assert "não" in normalized and ("test" in normalized or "verific" in normalized)
+    assert "does not" in normalized and ("test" in normalized or "verif" in normalized)
 
 
 def test_public_docs_do_not_claim_default_doctor_probes_credential_availability():
@@ -404,8 +405,8 @@ def test_public_docs_do_not_claim_default_doctor_probes_credential_availability(
     for contents in (skill, troubleshooting):
         normalized = contents.lower()
         assert "doctor" in normalized
-        assert "não" in normalized
-        assert "credencial" in normalized
+        assert "does not" in normalized or "do not" in normalized
+        assert "credential" in normalized
         assert "live" in normalized
 
 
@@ -436,8 +437,8 @@ def test_public_docs_keep_installation_routes_and_credential_flow_platform_speci
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     skill = Path("SKILL.md").read_text(encoding="utf-8")
 
-    assert "Homebrew (somente macOS)" in installation
-    assert "Linux (somente pipx)" in installation
+    assert "Homebrew (macOS only)" in installation
+    assert "Linux (pipx only)" in installation
     assert "macOS: Keychain service supa.cc.supabase.accounts.v2" in skill
     assert "Linux: Secret Service supa.cc.supabase.accounts.v2" in skill
     assert "plaintext" in skill.lower()
@@ -469,7 +470,7 @@ def test_public_authentication_contract_is_safe_and_current():
         "supa.cc add <name> --token",
         "supa.cc add <nome> --token",
         "supabase login --name",
-        "repair automático",
+        "automatic credential repair",
         "credential repair is automatic",
         "memoizes both loaded tokens and missing",
         "ativa a conta informada no supabase cli",
@@ -493,12 +494,12 @@ def test_public_authentication_contract_is_safe_and_current():
     skill = surfaces["SKILL.md"]
     usage = surfaces["docs/usage.md"]
     security = surfaces["docs/security.md"]
-    assert "supa.cc run --" in usage and "prompt oculto" in usage.lower()
-    assert "doctor --json" in usage and "--account <nome> --live" in usage
+    assert "supa.cc run --" in usage and "hidden prompt" in usage.lower()
+    assert "doctor --json" in usage and "--account <name> --live" in usage
     live_access = re.compile(
-        r"(?:somente|apenas|exige|required|only)?.{0,100}"
+        r"(?:only|required)?.{0,100}"
         r"(?:--account\s+<[^>]+>.{0,20}--live|--live.{0,30}--account)"
-        r".{0,120}(?:abre|l[eê]|opens?|reads?).{0,40}(?:pat|token|credencia)",
+        r".{0,120}(?:opens?|reads?).{0,40}(?:pat|token|credential)",
         re.IGNORECASE | re.DOTALL,
     )
     for path, document in (
@@ -515,12 +516,12 @@ def test_public_authentication_contract_is_safe_and_current():
         "plaintext",
         "logout",
         "journal",
-        "concorr",
+        "concurrent",
         "login",
         "projects list",
     ):
         assert detail.lower() in security.lower()
-    assert "precedência" in security.lower() or "override" in security.lower()
+    assert "precedence" in security.lower() or "override" in security.lower()
     assert "sbp_oauth_" in skill and "[0-9a-f]{40}" in skill
 
 
@@ -552,8 +553,8 @@ def test_public_support_and_security_surfaces_are_safe_and_official():
     contributing = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
     assert "https://github.com/dgabreuu/supa.cc/issues" in contributing
     assert "https://github.com/dgabreuu/supa.cc/security/advisories/new" in security
-    assert "não abra uma issue pública" in security.lower()
-    assert "python 3.9" in contributing.lower()
+    assert "do not open a public issue" in security.lower()
+    assert "python 3.11" in contributing.lower()
     assert 'python3 -m pip install -e ".[dev]"' in contributing
     assert 'py -m pip install -e ".[dev]"' in contributing
     assert "python3 -m pytest" in contributing

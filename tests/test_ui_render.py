@@ -1,8 +1,7 @@
-from rich.console import Console
-
 from supa_cc.ui.render import UIRenderer
 from supa_cc.ui.state import NavigationState
 from supa_cc.ui.theme import BANNER_MEDIUM, BANNER_COMPACT
+from helpers import RecordingConsole
 
 def test_stylized_banner_uses_project_name():
     expected = r"""
@@ -22,7 +21,7 @@ def _normalize_banner(banner: str) -> str:
 
 
 def test_home_screen_renders_medium_banner_in_wide_terminal():
-    console = Console(record=True, width=100)
+    console = RecordingConsole(width=100, height=30)
     renderer = UIRenderer(console=console)
     state = NavigationState()
     state.set_message("Account switched", "success")
@@ -31,12 +30,12 @@ def test_home_screen_renders_medium_banner_in_wide_terminal():
 
     output = console.export_text()
     assert "Supa.cc" in output
-    assert "2 contas salvas" in output
+    assert "2 saved accounts" in output
     assert "Account switched" in output
 
 
 def test_home_screen_renders_compact_banner_in_narrow_terminal():
-    console = Console(record=True, width=40)
+    console = RecordingConsole(width=40, height=30)
     renderer = UIRenderer(console=console)
     state = NavigationState()
 
@@ -44,6 +43,6 @@ def test_home_screen_renders_compact_banner_in_narrow_terminal():
 
     output = console.export_text()
     assert "Supa.cc" in output
-    assert "1 conta salva" in output
+    assert "1 saved account" in output
     for line in BANNER_COMPACT.splitlines():
         assert line.strip() in output or line.lstrip() in output

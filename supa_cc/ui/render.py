@@ -1,67 +1,68 @@
-from typing import Optional
-
-from rich.align import Align
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
-
-from ..strings import UIStrings as Textos
+from ..strings import UIStrings as Strings
 from .console import console as default_console
-from .layout import center_banner_lines, clear_screen, create_header, create_message_panel
+from .layout import center_banner_lines, clear_screen, create_header, create_message
 from .state import NavigationState, UIMessage
-from .theme import RICH_STYLES, get_banner
+from .theme import OUTPUT_STYLES, get_banner
 
 
 class UIRenderer:
-    def __init__(self, console: Console = None):
+    def __init__(self, console=None):
         self.console = console or default_console
 
     def clear(self) -> None:
         clear_screen(self.console)
 
-    def paint_home(self, state: NavigationState, account_count: int) -> None:
-        self.clear()
-        self.show_home(state, account_count=account_count)
-
-    def paint_subpage(
+    def paint_home(
         self,
         state: NavigationState,
-        title: str,
+        account_count: int,
+        active_account=None,
     ) -> None:
         self.clear()
-        self.console.print(create_header(title, Textos.APP_NAME))
+        self.show_home(state, account_count, active_account=active_account)
 
-    def show_home(self, state: NavigationState, account_count: int) -> None:
-        account_label = Textos.ACCOUNT_COUNT_ONE if account_count == 1 else Textos.ACCOUNT_COUNT_MANY
-        banner = center_banner_lines(get_banner(self.console.width))
-        body = Text()
-        body.append(banner, style=RICH_STYLES["banner"])
-        body.append(f"\n{Textos.APP_NAME}", style="bold white")
-        body.append(f"\n{Textos.APP_DESCRIPTION}", style=RICH_STYLES["dim"])
-        body.append(f"\n\n{account_count} {account_label}", style=RICH_STYLES["info"])
-
+    def paint_subpage(self, state: NavigationState, title: str) -> None:
+        self.clear()
         self.console.print(
-            Panel(
-                Align.center(body),
-                title=f"[bold {RICH_STYLES['border']}]{Textos.PANEL_TITLE}[/bold {RICH_STYLES['border']}]",
-                subtitle=f"[{RICH_STYLES['subtitle']}]{Textos.APP_SUBTITLE}[/{RICH_STYLES['subtitle']}]",
-                border_style=RICH_STYLES["border"],
-                padding=(1, 2),
-            )
+            create_header(title, Strings.APP_NAME),
+            style=OUTPUT_STYLES["title"],
         )
 
+    def show_home(
+        self,
+        state: NavigationState,
+        account_count: int,
+        active_account=None,
+    ) -> None:
+        account_label = (
+            Strings.ACCOUNT_COUNT_ONE
+            if account_count == 1
+            else Strings.ACCOUNT_COUNT_MANY
+        )
+        banner = center_banner_lines(
+            get_banner(self.console.width, self.console.height)
+        )
+        self.console.print(banner, style=OUTPUT_STYLES["banner"])
+        self.console.print(
+            f"{Strings.APP_NAME} · {Strings.APP_DESCRIPTION}",
+            style=OUTPUT_STYLES["title"],
+        )
+        active = active_account or Strings.ACTIVE_ACCOUNT_NONE
+        self.console.print(
+            f"{account_count} {account_label} · {Strings.ACTIVE_ACCOUNT}: {active}",
+            style=OUTPUT_STYLES["info"],
+        )
         if state.last_message:
             self.show_message(state.last_message)
 
     def show_message(self, message: UIMessage) -> None:
-        panel = create_message_panel(message.text, message.level)
-        self.console.print(panel)
+        self.console.print(
+            create_message(message.text, message.level),
+            style=OUTPUT_STYLES.get(message.level, OUTPUT_STYLES["info"]),
+        )
 
     def show_goodbye(self) -> None:
         self.console.print(
-            Panel(
-                Align.center(Text(Textos.MSG_GOODBYE, style=RICH_STYLES["highlight"])),
-                border_style=RICH_STYLES["highlight"],
-                padding=(1, 2),
-            )
+            Strings.MSG_GOODBYE,
+            style=OUTPUT_STYLES["highlight"],
         )

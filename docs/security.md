@@ -1,40 +1,50 @@
-# Modelo de segurança
+# Security model
 
-Este é o documento canônico das garantias e limites de segurança do Supa.cc.
+This is the canonical document for Supa.cc security guarantees and limits.
 
-## Armazenamento
+## Storage
 
-- O serviço canônico é `supa.cc.supabase.accounts.v2`.
-- PATs ficam no Keychain do macOS, Secret Service do Linux ou Windows Credential Manager por `WinVaultKeyring`.
-- Nenhum arquivo local contém PAT. `accounts.json` e `active-account` guardam nomes; `session-sync.json`, `.session-sync.lock` e `.accounts.json.lock` guardam metadados de recuperação e coordenação.
-- Backups de rollback ficam no armazenamento nativo sob identidade reservada, nunca no índice ou journal.
-- Leituras de credenciais não usam cache: cada leitura consulta diretamente `CredentialStore.get()` e o backend nativo. Índices inválidos ou ilegíveis são preservados para diagnóstico.
-- Não há fallback plaintext, `keyrings.alt` ou backend alternativo. Namespaces anteriores não são migrados implicitamente.
+- The canonical service is `supa.cc.supabase.accounts.v2`.
+- PATs are stored in macOS Keychain, Linux Secret Service, or Windows Credential Manager through `WinVaultKeyring`.
+- No local file contains a PAT. `accounts.json` and `active-account` store names; `session-sync.json`, `.session-sync.lock`, and `.accounts.json.lock` store recovery and coordination metadata.
+- Rollback backups remain in native storage under a reserved identity, never in the index or journal.
+- Credential reads do not use a cache: every read queries `CredentialStore.get()` and the native backend directly. Invalid or unreadable indexes are preserved for diagnostics.
+- There is no plaintext fallback, `keyrings.alt`, or alternative backend. Previous namespaces are not migrated implicitly.
 
-## Ativação e sessão nativa
+## Activation and native session
 
-`switch` valida o PAT, usa somente o perfil oficial `supabase` e os comandos públicos `login`, `logout --yes` e `projects list` do Supabase CLI >= 2.109.1. O PAT é passado por `SUPABASE_ACCESS_TOKEN` no ambiente do processo filho e nunca em `argv`.
+`switch` validates the PAT, uses only the official `supabase` profile and the public `login`, `logout --yes`, and `projects list` commands from Supabase CLI >= 2.109.1. The PAT is passed through `SUPABASE_ACCESS_TOKEN` in the child process environment and never in `argv`.
 
-No macOS e Linux, o executável resolvido deve ser arquivo regular executável, pertencente ao usuário ou root e sem escrita por grupo/outros; a execução usa o descritor aberto. No Windows, a API de criação de processo executa um caminho, não o descritor verificado. O Supa.cc exige arquivo regular e compara a identidade do caminho com o descritor após a abertura e novamente imediatamente antes da criação do processo, reduzindo a janela de substituição sem alegar execução vinculada ao descritor, validação de proprietário, ACL ou modos POSIX. A proteção contra troca concorrente também depende dos controles de acesso do diretório que contém o executável. A verificação pós-login confirma a credencial nativa exata persistida. O Supa.cc não edita diretamente credenciais ou perfis do CLI.
+Executable binding is explicit per platform:
 
-Um `SUPABASE_ACCESS_TOKEN` herdado tem precedência e bloqueia a sincronização. Um fallback `access-token` plaintext é bloqueado sem leitura ou migração. Saída, erros e exceções são sanitizados.
+- Linux accepts only a regular executable owned by the user or root and not writable by group or others, then executes the open descriptor.
+- macOS applies the same file checks, keeps the file open, rejects group- or world-writable ancestors, revalidates identity immediately before spawning, and executes the validated path. `/dev/fd` is not assumed to be executable on macOS.
+- Windows opens a regular file and compares path identity with the descriptor after opening and again immediately before process creation. The API executes the validated path; Supa.cc does not claim descriptor-bound execution, owner validation, ACL validation, or POSIX-mode validation.
 
-Remover a conta ativa executa `logout --yes`; isso pode remover credenciais auxiliares de projeto gerenciadas pelo próprio Supabase CLI.
+Post-login verification confirms the exact persisted native credential. Supa.cc does not edit CLI credentials or profiles directly.
 
-## Rollback, recuperação e concorrência
+An inherited `SUPABASE_ACCESS_TOKEN` takes precedence and blocks synchronization. A plaintext `access-token` fallback is blocked without reading or migrating it. Output, errors, and exceptions are sanitized.
 
-Rollback e recuperação são mutation-aware. O journal sem token registra operação, fase e nomes; um backup seguro permite restaurar a credencial anterior exata quando a fase exige. A trava coordena processos Supa.cc cooperantes, mas não comandos `supabase` externos concorrentes.
+Removing the active account runs `logout --yes`; this may remove project-support credentials managed by the Supabase CLI itself.
 
-## Diagnóstico
+## Rollback, recovery, and concurrency
 
-`supa.cc doctor` e `supa.cc doctor --json` são não-live por padrão: não abrem token e não realizam operação autenticada. O backend aparece como configurado, mas não verificado; essa execução não testa a disponibilidade do armazenamento de credenciais.
+Rollback and recovery are mutation-aware. The token-free journal records the operation, phase, and names; a secure backup can restore the exact previous credential when required by the phase. The lock coordinates cooperating Supa.cc processes but not concurrent external `supabase` commands.
 
-Somente `supa.cc doctor --account <nome> --live` abre uma vez a credencial escolhida e realiza validação online explícita com `projects list`.
+## Diagnostics
 
-## Limites por plataforma
+`supa.cc doctor` and `supa.cc doctor --json` are non-live by default: they do not open a token or perform an authenticated operation. The backend appears as configured but not verified; this execution does not test credential-store availability. Standard output is designed to be shareable: it reports only whether an account is selected and indexed, sanitizes local paths, and never includes the account name or PAT. The `invoked` and `realpath` fields remain present and `path_relation` reports `same`, `symlinked`, or `unavailable`.
 
-- macOS: o runtime Python é o acessor do Keychain; o Supa.cc não contorna bloqueio nem amplia ACLs.
-- Linux: requer D-Bus de usuário e Secret Service desbloqueado; ambientes headless sem ambos falham com orientação segura.
-- Windows: aceita somente Windows Credential Manager por `WinVaultKeyring`; `%APPDATA%` guarda apenas metadados sem segredo. Locks rejeitam caminhos de reparse, links adicionais e mudanças de identidade detectáveis antes e depois da aquisição. O diretório e os arquivos herdam os controles de acesso do diretório `%APPDATA%`; o Supa.cc não cria uma ACL privada e não impõe modos POSIX no Windows.
+Only `supa.cc doctor --account <name> --live` opens the selected credential once and performs explicit online validation with `projects list`.
 
-Para remediação sem expor segredos, consulte [Solução de problemas](troubleshooting.md).
+## Platform limits
+
+- macOS: the Python runtime is the Keychain accessor; Supa.cc does not bypass locks or expand ACLs.
+- Linux: user D-Bus and an unlocked Secret Service are required; headless environments without both fail with safe guidance.
+- Windows: only Windows Credential Manager through `WinVaultKeyring` is accepted; `%APPDATA%` stores metadata without secrets. Locks reject reparse paths, additional links, and detectable identity changes before and after acquisition. The directory and files inherit the access controls of `%APPDATA%`; Supa.cc does not create a private ACL or impose POSIX modes on Windows.
+
+For remediation without exposing secrets, see [Troubleshooting](troubleshooting.md).
+
+## Repository and artifact scanning
+
+The release gate scans tracked files, reachable Git history, the pytest cache, wheel, and sdist for high-confidence credential and private-key patterns. Findings report only the secret class and location, never the matching value. Historical synthetic fixtures require an exact object allowlist; new credential-shaped examples are rejected.

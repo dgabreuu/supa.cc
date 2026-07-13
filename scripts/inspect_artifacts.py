@@ -4,6 +4,11 @@ import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
+try:
+    from scripts.security_scan import scan_bytes
+except ModuleNotFoundError:  # Running the script directly from scripts/.
+    from security_scan import scan_bytes
+
 
 FORBIDDEN_COMPONENTS = {
     ".superpowers",
@@ -20,6 +25,7 @@ POLICY_FILES = (
     ".gitignore",
     "pyproject.toml",
     "scripts/inspect_artifacts.py",
+    "scripts/security_scan.py",
     "tests/test_artifact_inspection.py",
     "tests/test_project_identity.py",
     "tests/test_publication_assets.py",
@@ -54,10 +60,19 @@ def _check_member(name, data):
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return
-    if any(name == policy or name.endswith(f"/{policy}") for policy in POLICY_FILES):
-        return
-    if any(reference in text for reference in FORBIDDEN_TEXT) or LOCAL_PATH.search(text):
+    is_policy_file = any(
+        name == policy or name.endswith(f"/{policy}") for policy in POLICY_FILES
+    )
+    if not is_policy_file and (
+        any(reference in text for reference in FORBIDDEN_TEXT)
+        or LOCAL_PATH.search(text)
+    ):
         raise ArtifactInspectionError(f"forbidden text in artifact member: {name}")
+    findings = scan_bytes(data, name)
+    if findings:
+        raise ArtifactInspectionError(
+            f"forbidden secret class {findings[0].kind} in artifact member: {name}"
+        )
 
 
 def inspect_artifacts(directory):

@@ -1,4 +1,5 @@
 import subprocess
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,19 +25,45 @@ from helpers import click_runner, fake_pat
 
 
 class TestCLICommands:
-    def test_version_shows_version_and_update_status(self):
+    def test_help_uses_english_product_text(self):
+        result = CliRunner().invoke(main, ["--help"])
+
+        assert result.exit_code == 0
+        assert "Supabase account manager" in result.output
+        assert "Add a new account." in result.output
+        assert "Adicionar" not in result.output
+
+    def test_help_import_path_does_not_load_tui_or_keyring(self):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; import supa_cc.__main__; "
+                    "print(','.join(sorted(name for name in sys.modules "
+                    "if name == 'questionary' or name == 'keyring' "
+                    "or name.startswith('supa_cc.ui') or name == 'supa_cc.tui')))"
+                ),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        assert completed.stdout.strip() == ""
+
+    def test_version_shows_version_and_deterministic_update_guidance(self):
         runner = CliRunner()
-        with patch("supa_cc.__main__._check_for_updates", return_value="up-to-date"):
+        with patch("subprocess.run", side_effect=AssertionError("no subprocess")):
             result = runner.invoke(main, ["version"])
         assert result.exit_code == 0
         assert f"Supa.cc v{supa_cc.__version__}" in result.output
-        assert "up-to-date" in result.output
+        assert "Update:" in result.output
 
     def test_version_command_reads_package_version(self, monkeypatch):
         runner = CliRunner()
         monkeypatch.setattr(supa_cc, "__version__", "9.9.9")
-        with patch("supa_cc.__main__._check_for_updates", return_value="up-to-date"):
-            result = runner.invoke(main, ["version"])
+        result = runner.invoke(main, ["version"])
         assert result.exit_code == 0
         assert "Supa.cc v9.9.9" in result.output
 
@@ -44,9 +71,9 @@ class TestCLICommands:
         from supa_cc.environment import detect_environment
 
         with patch(
-            "supa_cc.__main__.detect_environment",
+            "supa_cc.environment.detect_environment",
             return_value=detect_environment(system_name="Darwin"),
-        ), patch("os.path.isdir", return_value=False):
+        ):
             message = _check_for_updates()
 
         assert "brew upgrade supa-cc" in message
@@ -57,24 +84,20 @@ class TestCLICommands:
         from supa_cc.environment import detect_environment
 
         monkeypatch.setattr(
-            "supa_cc.__main__.detect_environment",
+            "supa_cc.environment.detect_environment",
             lambda: detect_environment(system_name="Linux", os_release="ID=arch\n"),
         )
-        with patch("os.path.isdir", return_value=False):
-            message = _check_for_updates()
+        message = _check_for_updates()
 
         assert 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"' in message
         assert "pipx upgrade supa.cc" not in message
         assert "brew" not in message
 
-    def test_update_check_tolerates_network_timeout(self):
-        with patch("os.path.isdir", return_value=True), patch(
-            "supa_cc.__main__.subprocess.run",
-            side_effect=subprocess.TimeoutExpired("git", 5),
-        ):
+    def test_update_check_never_invokes_subprocess(self):
+        with patch("subprocess.run", side_effect=AssertionError("no subprocess")):
             message = _check_for_updates()
 
-        assert "Não foi possível verificar atualizações" in message
+        assert "Update:" in message
 
     def test_list_empty_accounts(self):
         runner = CliRunner()
@@ -84,7 +107,7 @@ class TestCLICommands:
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["list"])
         assert result.exit_code == 0
-        assert "Nenhuma conta cadastrada." in result.output
+        assert "No accounts registered." in result.output
 
     def test_list_shows_account_names(self):
         runner = CliRunner()
@@ -108,7 +131,7 @@ class TestCLICommands:
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["add", "work"], input=f"{token}\n")
         assert result.exit_code == 0
-        assert "Conta 'work' adicionada." in result.output
+        assert "Account 'work' added." in result.output
         assert token not in result.output
         mock_manager.add.assert_called_once_with("work", token)
 
@@ -131,19 +154,19 @@ class TestCLICommands:
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["add", "work"], input="bad\n")
         assert result.exit_code != 0
-        assert "Token inválido: informe um PAT Supabase em formato sbp_ válido." in result.output
+        assert "Invalid token: provide a Supabase PAT in valid sbp_ format." in result.output
 
     def test_add_invalid_name_shows_error(self):
         runner = CliRunner()
         with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.add.side_effect = InvalidAccountNameError(
-                "Nome da conta deve ter entre 1 e 50 caracteres."
+                "Account name must contain between 1 and 50 characters."
             )
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["add", ""], input=f"{fake_pat()}\n")
         assert result.exit_code != 0
-        assert "Nome de conta inválido: use entre 1 e 50 caracteres" in result.output
+        assert "Invalid account name: use 1 to 50 characters" in result.output
 
     def test_add_keychain_failure_is_nonzero_and_sanitized(self):
         token = fake_pat("keychain_failure")
@@ -158,7 +181,7 @@ class TestCLICommands:
 
         assert result.exit_code != 0
         assert token not in result.output
-        assert "Acesso ao Keychain não autorizado." in result.output
+        assert "Keychain access was not authorized." in result.output
 
     def test_list_maps_index_failure_without_traceback(self):
         runner = CliRunner()
@@ -169,7 +192,7 @@ class TestCLICommands:
             result = runner.invoke(main, ["list"])
 
         assert result.exit_code != 0
-        assert "O índice local de contas é inválido." in result.output
+        assert "The local account index is invalid." in result.output
         assert "private index detail" not in result.output
 
     def test_remove_maps_transaction_failure_without_traceback(self):
@@ -181,7 +204,7 @@ class TestCLICommands:
             result = runner.invoke(main, ["remove", "work", "--yes"])
 
         assert result.exit_code != 0
-        assert "não pôde ser concluída com segurança" in result.output
+        assert "could not be completed safely" in result.output
         assert "private transaction detail" not in result.output
 
     @pytest.mark.parametrize(
@@ -203,7 +226,7 @@ class TestCLICommands:
             result = runner.invoke(main, command, input=input_text)
 
         assert result.exit_code != 0
-        assert "Não foi possível acessar a credencial no armazenamento de credenciais." in result.output
+        assert "Unable to access the credential-store credential." in result.output
         assert "private backend detail" not in result.output
 
     def test_add_sanitizes_typed_credential_store_failure(self):
@@ -217,7 +240,7 @@ class TestCLICommands:
             )
 
         assert result.exit_code != 0
-        assert "Não foi possível acessar a credencial no armazenamento de credenciais." in result.output
+        assert "Unable to access the credential-store credential." in result.output
         assert "private backend detail" not in result.output
 
     @pytest.mark.parametrize(
@@ -236,7 +259,7 @@ class TestCLICommands:
 
         assert result.exit_code != 0
         assert token_like_name not in result.output
-        assert "Nome de conta inválido" in result.output
+        assert "Invalid account name" in result.output
 
     def test_switch_nonexistent_account_shows_failure(self):
         runner = CliRunner()
@@ -244,35 +267,35 @@ class TestCLICommands:
             mock_manager = MagicMock()
             mock_manager.set_active.return_value = AuthResult.failure(
                 AuthFailureCode.TOKEN_MISSING,
-                "Token não encontrado para a conta selecionada.",
+                "Token not found for the selected account.",
                 exit_code=7,
             )
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["switch", "missing"])
         assert result.exit_code == 7
-        assert "Token não encontrado para a conta selecionada." in result.output
+        assert "Token not found for the selected account." in result.output
 
     def test_switch_valid_account(self):
         runner = CliRunner()
         with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.set_active.return_value = AuthResult.success(
-                "Conta 'work' ativada e sessão nativa sincronizada."
+                "Account 'work' activated and native session synchronized."
             )
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["switch", "work"])
         assert result.exit_code == 0
-        assert "Conta 'work' ativada e sessão nativa sincronizada." in result.output
+        assert "Account 'work' activated and native session synchronized." in result.output
         assert "supa.cc run" not in result.output
         mock_manager.set_active.assert_called_once_with("work")
 
     @pytest.mark.parametrize(
         "code,message",
         [
-            (AuthFailureCode.NATIVE_LOGIN_FAILED, "Falha no login da sessão nativa."),
-            (AuthFailureCode.NATIVE_VERIFICATION_FAILED, "Falha ao verificar a sessão nativa."),
+            (AuthFailureCode.NATIVE_LOGIN_FAILED, "Native login failed."),
+            (AuthFailureCode.NATIVE_VERIFICATION_FAILED, "Native session verification failed."),
             (AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED, "Fallback plaintext bloqueado."),
-            (AuthFailureCode.SYNC_ROLLBACK_FAILED, "Falha ao restaurar a sessão anterior."),
+            (AuthFailureCode.SYNC_ROLLBACK_FAILED, "Failed to restore the previous session."),
         ],
     )
     def test_switch_preserves_native_sync_failure_category(self, code, message):
@@ -329,7 +352,7 @@ class TestCLICommands:
         runner = click_runner()
         command_result = CommandResult.failure(
             AuthFailureCode.TOKEN_REJECTED,
-            "O token foi rejeitado pela API da Supabase.",
+            "The token was rejected by the Supabase API.",
             exit_code=17,
             stdout="partial\n",
             stderr="401 Unauthorized [REDACTED]\n",
@@ -343,7 +366,7 @@ class TestCLICommands:
         assert result.exit_code == 17
         assert result.stdout == ""
         assert "401 Unauthorized [REDACTED]" not in result.stderr
-        assert "O token foi rejeitado" in result.stderr
+        assert "The token was rejected" in result.stderr
 
     def test_remove_prompts_for_confirmation(self):
         runner = CliRunner()
@@ -352,7 +375,7 @@ class TestCLICommands:
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["remove", "work"], input="y\n")
         assert result.exit_code == 0
-        assert "Conta 'work' removida." in result.output
+        assert "Account 'work' removed." in result.output
         mock_manager.remove.assert_called_once_with("work")
 
     def test_remove_with_yes_flag_skips_confirmation(self):
@@ -362,7 +385,7 @@ class TestCLICommands:
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["remove", "work", "--yes"])
         assert result.exit_code == 0
-        assert "Conta 'work' removida." in result.output
+        assert "Account 'work' removed." in result.output
         mock_manager.remove.assert_called_once_with("work")
 
     def test_doctor_default_renders_human_report(self):
@@ -375,7 +398,7 @@ class TestCLICommands:
             keychain_service="supa.cc.supabase.accounts.v2",
             keychain_backend="macOS",
             index={"path": "/safe/accounts.json", "state": "valid", "account_count": 1},
-            active_account="work",
+            active_account={"selected": True, "indexed": True},
             environment={"supabase_access_token_present": False},
             diagnostic_codes=[],
         )
@@ -400,7 +423,7 @@ class TestCLICommands:
             keychain_service="supa.cc.supabase.accounts.v2",
             keychain_backend="macOS",
             index={"state": "valid"},
-            active_account="work",
+            active_account={"selected": True, "indexed": True},
             environment={"supabase_access_token_present": False},
             diagnostic_codes=[AuthFailureCode.TOKEN_REJECTED.value],
             live_result=AuthResult.failure(
@@ -423,14 +446,14 @@ class TestCLICommands:
 
     def test_main_without_command_launches_tui(self):
         runner = CliRunner()
-        with patch("supa_cc.__main__.run_tui", return_value=0) as mock_run_tui:
+        with patch("supa_cc.__main__._run_tui", return_value=0) as mock_run_tui:
             result = runner.invoke(main, [])
         assert result.exit_code == 0
         mock_run_tui.assert_called_once()
 
     def test_main_without_command_propagates_tui_failure_exit(self):
         runner = CliRunner()
-        with patch("supa_cc.__main__.run_tui", return_value=7):
+        with patch("supa_cc.__main__._run_tui", return_value=7):
             result = runner.invoke(main, [])
 
         assert result.exit_code == 7

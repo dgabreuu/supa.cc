@@ -2,6 +2,6 @@ from .ui.app import TUIApp
 
 
 def run() -> int:
-    """Entrypoint para a aplicação TUI."""
+    """Entry point for the TUI application."""
     app = TUIApp()
     return app.run()

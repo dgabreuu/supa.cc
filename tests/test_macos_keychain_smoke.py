@@ -71,7 +71,7 @@ def test_disposable_macos_keychain_round_trip(tmp_path):
             manager.delete_account(account_name)
         except Exception as error:  # pragma: no cover - real backend only
             pytest.fail(
-                "Falha ao limpar o item temporário isolado do smoke Keychain: "
+                "Failed to clean up the isolated temporary Keychain smoke item: "
                 f"service={service}, account={account_name}, "
                 f"error={type(error).__name__}",
                 pytrace=False,

@@ -9,21 +9,21 @@
 
 # Supa.cc
 
-Supa.cc é uma CLI local para alternar entre várias contas do Supabase sem espalhar Personal Access Tokens (PATs) por arquivos ou comandos. A experiência principal é uma TUI; depois da ativação, o próprio `supabase` usa a conta escolhida.
+Supa.cc is a local CLI for switching between multiple Supabase accounts without spreading Personal Access Tokens (PATs) across files or commands. The primary experience is a TUI; after activation, `supabase` itself uses the selected account.
 
-| Plataforma | Suporte | Credencial nativa |
+| Platform | Support | Native credential |
 | --- | --- | --- |
-| macOS | Suportado | Keychain |
-| Debian/Ubuntu, Arch Linux e Fedora | Suportado; derivados best-effort | Secret Service |
-| Windows | Suportado | Windows Credential Manager |
+| macOS | Supported | Keychain |
+| Debian/Ubuntu, Arch Linux, and Fedora | Supported; derivatives are best-effort | Secret Service |
+| Windows | Supported | Windows Credential Manager |
 
-Requer Python 3.9+ e o [Supabase CLI oficial](https://supabase.com/docs/guides/local-development/cli/getting-started) >= 2.109.1 no `PATH`.
+Requires Python 3.11+ and the [official Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) >= 2.109.1 on `PATH`.
 
-![Supa.cc exibindo o painel inicial e as ações disponíveis no terminal](https://raw.githubusercontent.com/dgabreuu/supa.cc/main/assets/terminal.png)
+![Supa.cc showing the compact home and available terminal actions](https://raw.githubusercontent.com/dgabreuu/supa.cc/main/assets/terminal.svg)
 
-## Instalação
+## Installation
 
-Pré-requisitos, atualização e desinstalação estão no [guia de instalação](https://github.com/dgabreuu/supa.cc/blob/main/docs/installation.md).
+Prerequisites, upgrades, and uninstallation are covered in the [installation guide](https://github.com/dgabreuu/supa.cc/blob/main/docs/installation.md).
 
 ### macOS
 
@@ -44,10 +44,10 @@ pipx install supa.cc
 pipx install supa.cc
 ```
 
-## Segurança
+## Security
 
-PATs ficam somente no armazenamento nativo de credenciais de cada plataforma; nenhum arquivo local contém PAT. O token chega ao Supabase CLI pelo ambiente do processo, nunca por argumento de linha de comando. Consulte o [modelo de segurança](https://github.com/dgabreuu/supa.cc/blob/main/docs/security.md) para garantias e limites.
+PATs remain only in each platform's native credential store; no local file contains a PAT. The token reaches the Supabase CLI through the process environment, never through a command-line argument. See the [security model](https://github.com/dgabreuu/supa.cc/blob/main/docs/security.md) for guarantees and limits.
 
-## Licença
+## License
 
-MIT. Veja a [licença completa](https://github.com/dgabreuu/supa.cc/blob/main/LICENSE).
+MIT. See the [full license](https://github.com/dgabreuu/supa.cc/blob/main/LICENSE).

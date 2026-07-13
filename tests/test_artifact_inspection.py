@@ -26,6 +26,18 @@ def test_inspection_accepts_one_clean_wheel_and_sdist_with_urls(tmp_path):
     assert inspect_artifacts(tmp_path) == (1, 1)
 
 
+def test_inspection_rejects_credential_shaped_text_without_echoing_it(tmp_path):
+    import hashlib
+
+    secret = "sbp" + "_" + hashlib.sha256(b"artifact").hexdigest()[:40]
+    write_artifacts(tmp_path, secret)
+
+    with pytest.raises(ArtifactInspectionError, match="supabase_pat") as error:
+        inspect_artifacts(tmp_path)
+
+    assert secret not in str(error.value)
+
+
 def test_inspection_requires_exactly_one_wheel_and_one_sdist(tmp_path):
     write_artifacts(tmp_path)
     (tmp_path / "extra.whl").write_bytes(b"")
@@ -72,6 +84,21 @@ def test_inspection_allows_scanner_policy_literals_only_in_policy_files(tmp_path
         )
 
     assert inspect_artifacts(tmp_path) == (1, 1)
+
+
+def test_inspection_still_scans_policy_files_for_secrets(tmp_path):
+    import hashlib
+
+    write_artifacts(tmp_path)
+    secret = "sbp" + "_" + hashlib.sha256(b"policy-artifact").hexdigest()[:40]
+    wheel = next(tmp_path.glob("*.whl"))
+    with zipfile.ZipFile(wheel, "a") as archive:
+        archive.writestr("example-1.0/scripts/inspect_artifacts.py", secret)
+
+    with pytest.raises(ArtifactInspectionError, match="supabase_pat") as error:
+        inspect_artifacts(tmp_path)
+
+    assert secret not in str(error.value)
 
 
 @pytest.mark.parametrize(

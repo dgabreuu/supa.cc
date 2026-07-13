@@ -12,7 +12,7 @@ class FakeRenderer:
         self.home_paints = 0
         self.subpage_paints = []
 
-    def paint_home(self, state, account_count):
+    def paint_home(self, state, account_count, active_account=None):
         self.home_paints += 1
 
     def paint_subpage(self, state, title):
@@ -36,10 +36,6 @@ class FakeScreens:
         self.calls.append("add_account")
         self.script.pop(0)(state)
 
-    def list_accounts(self, state):
-        self.calls.append("list_accounts")
-        self.script.pop(0)(state)
-
     def switch_account(self, state):
         self.calls.append("switch_account")
         self.script.pop(0)(state)
@@ -49,9 +45,9 @@ class FakeScreens:
         self.script.pop(0)(state)
 
 
-def test_run_routes_home_to_list_and_back_until_exit():
-    def open_list(state):
-        state.open(PageId.LIST)
+def test_run_routes_home_to_switch_and_back_until_exit():
+    def open_switch(state):
+        state.open(PageId.SWITCH)
 
     def back_home(state):
         state.go_home()
@@ -59,14 +55,14 @@ def test_run_routes_home_to_list_and_back_until_exit():
     def exit_app(state):
         state.stop()
 
-    screens = FakeScreens([open_list, back_home, exit_app])
+    screens = FakeScreens([open_switch, back_home, exit_app])
     renderer = FakeRenderer()
     state = NavigationState()
     app = TUIApp(screens=screens, renderer=renderer, state=state)
 
     exit_code = app.run()
 
-    assert screens.calls == ["home", "list_accounts", "home"]
+    assert screens.calls == ["home", "switch_account", "home"]
     assert state.running is False
     assert renderer.goodbye_calls == 1
     assert exit_code == 0
@@ -114,7 +110,7 @@ def test_run_opens_add_page_from_home():
 def test_run_preserves_nonzero_exit_after_later_success_and_goodbye():
     def fail_then_continue(state):
         state.record_failure(9)
-        state.open(PageId.LIST)
+        state.open(PageId.SWITCH)
 
     def recover(state):
         state.go_home()
@@ -141,13 +137,13 @@ def test_real_screens_paint_classified_failure_before_goodbye_from_subpage():
             raise AccountIndexReadError("private")
 
     class OrderedRenderer(FakeRenderer):
-        def paint_home(self, state, account_count):
+        def paint_home(self, state, account_count, active_account=None):
             events.append(("paint", state.last_message.text))
 
         def show_goodbye(self):
             events.append(("goodbye", None))
 
-    state = NavigationState(current_page=PageId.LIST)
+    state = NavigationState(current_page=PageId.SWITCH)
     app = TUIApp(
         manager=FailingManager(),
         renderer=OrderedRenderer(),
@@ -158,7 +154,7 @@ def test_real_screens_paint_classified_failure_before_goodbye_from_subpage():
 
     assert exit_code != 0
     assert events == [
-        ("paint", "Não foi possível ler o índice local de contas."),
+        ("paint", "Unable to read the local account index."),
         ("goodbye", None),
     ]
 

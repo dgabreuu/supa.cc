@@ -49,6 +49,24 @@ class MemoryActiveAccountStore:
         self.name = None
 
 
+class RecordingConsole:
+    def __init__(self, width=80, height=24, is_terminal=False):
+        self.width = width
+        self.height = height
+        self.is_terminal = is_terminal
+        self.lines = []
+        self.clear_calls = 0
+
+    def print(self, text="", style=None):
+        self.lines.append((str(text), style))
+
+    def clear(self):
+        self.clear_calls += 1
+
+    def export_text(self):
+        return "\n".join(text for text, _style in self.lines)
+
+
 class FaultInjectingJournal:
     def __init__(self, journal, failure_method=None, failure_call=1):
         self.journal = journal

@@ -1,4 +1,4 @@
-from supa_cc.ui.layout import center_banner_lines, create_message_panel
+from supa_cc.ui.layout import center_banner_lines, create_message
 from supa_cc.ui.theme import BANNER_COMPACT, BANNER_MEDIUM, get_banner
 
 
@@ -23,3 +23,7 @@ def test_center_banner_lines_preserves_content():
     lines = centered.splitlines()
     assert len(lines) >= 4
     assert any(line.strip() for line in lines)
+
+
+def test_create_message_uses_a_stable_level_icon():
+    assert create_message("Saved", "success") == "✓ Saved"

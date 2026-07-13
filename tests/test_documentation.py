@@ -193,30 +193,30 @@ def test_readme_has_a_focused_public_overview():
         for heading in re.findall(r"^##\s+(.+?)\s*$", readme, re.MULTILINE)
     ]
 
-    for topic in ("instala", "seguran", "licen"):
+    for topic in ("install", "security", "licen"):
         assert any(topic in heading for heading in headings), (
             f"README must retain a {topic} section"
         )
     assert all(
-        any(topic in heading for topic in ("instala", "seguran", "licen"))
+        any(topic in heading for topic in ("install", "security", "licen"))
         for heading in headings
     ), "README sections must be limited to installation, security, and license"
 
     assert "|____/ \\__,_| .__/ \\__,_(_)___\\___|" in readme
     assert re.search(r"(?m)^\s+\|_\|\s*$", readme)
-    assert "https://raw.githubusercontent.com/dgabreuu/supa.cc/main/assets/terminal.png" in readme
+    assert "https://raw.githubusercontent.com/dgabreuu/supa.cc/main/assets/terminal.svg" in readme
     assert "assets/logo.svg" not in readme
 
     all_headings = "\n".join(
         re.findall(r"^#{1,6}\s+(.+?)\s*$", readme, re.MULTILINE)
     ).lower()
     for delegated_section in (
-        "primeiros passos",
-        "uso",
-        "diagnóstico",
-        "documentação",
-        "suporte",
-        "desenvolvimento",
+        "first use",
+        "usage",
+        "diagnostic",
+        "documentation",
+        "support",
+        "development",
         "branding",
         "release",
     ):
@@ -253,12 +253,12 @@ def test_canonical_documents_own_technical_and_diagnostic_contracts():
     for detail in ("accounts.json", "active-account", "session-sync", "rollback", "mutation-aware"):
         assert detail in security, f"security guide must own technical detail: {detail}"
     assert "doctor --json" in security and "doctor --account" in security
-    assert "não-live" in security and "não abrem token" in security
+    assert "non-live" in security and "do not open a token" in security
 
     for platform in ("macos", "linux", "windows"):
         assert re.search(rf"^##\s+{platform}\b", troubleshooting, re.MULTILINE)
     assert "doctor --json" in troubleshooting and "doctor --account" in troubleshooting
-    assert "não abre pat" in troubleshooting
+    assert "does not open a pat" in troubleshooting
 
     for command in ("supa.cc add", "supa.cc switch", "supa.cc run --", "supa.cc doctor"):
         assert command in usage, f"usage guide must own command: {command}"
@@ -292,14 +292,14 @@ def test_installation_covers_each_platform_lifecycle():
 
     for platform in ("macOS", "Linux", "Windows"):
         section = _section(installation, platform).lower()
-        for lifecycle_term in ("instal", "verific", "atualiz", "desinstal"):
+        for lifecycle_term in ("install", "verif", "upgrad", "uninstall"):
             assert lifecycle_term in section, (
                 f"{platform} installation section must cover {lifecycle_term}"
             )
 
 
 def test_readme_stable_installation_uses_platform_release_channels():
-    readme = _section(Path("README.md").read_text(encoding="utf-8"), "Instalação")
+    readme = _section(Path("README.md").read_text(encoding="utf-8"), "Installation")
 
     expected = {"macOS": "brew install supa-cc", "Linux": "pipx install supa.cc", "Windows": "pipx install supa.cc"}
     for platform, command in expected.items():
@@ -308,14 +308,15 @@ def test_readme_stable_installation_uses_platform_release_channels():
         assert not _contains_mutable_ref(stable), f"mutable ref in README {platform} stable section"
 
 
-def test_release_installation_docs_do_not_warn_that_0_3_0_is_unpublished():
+def test_release_docs_distinguish_published_0_3_0_from_candidate_0_4_0():
     readme = Path("README.md").read_text(encoding="utf-8")
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     release = Path("docs/release.md").read_text(encoding="utf-8")
 
-    assert "os canais abaixo estão planejados para a release" not in readme
-    assert "não significam que a versão 0.3.0 já foi publicada" not in installation
-    assert "A GitHub Release `v0.3.0`, o pacote no PyPI e a fórmula Homebrew estão publicados" in release
+    assert "the channels below are planned for the release" not in readme
+    assert "do not mean that version 0.3.0 has already been published" not in installation
+    assert "A versão 0.4.0 ainda não está publicada" in release
+    assert "v0.4.0" in release
     assert "continua não lançada" not in release
     assert "deve permanecer em `v0.2.0`" not in release
 
@@ -340,7 +341,7 @@ def test_platform_lifecycle_commands_use_separately_labeled_blocks():
     for platform in ("macOS", "Linux", "Windows"):
         stable = _stable_content(_section(installation, platform))
         headings = re.findall(r"^####\s+(.+)$", stable, re.MULTILINE)
-        for label in ("Instalar", "Verificar", "Atualizar", "Desinstalar"):
+        for label in ("Install", "Verify", "Upgrade", "Uninstall"):
             assert any(label.lower() == heading.lower() for heading in headings), (
                 f"{platform} must label {label} separately"
             )
@@ -350,13 +351,15 @@ def test_security_claims_distinguish_posix_checks_from_windows_guarantees():
     security = Path("docs/security.md").read_text(encoding="utf-8").lower()
     skill = Path("SKILL.md").read_text(encoding="utf-8").lower()
 
-    assert "macos e linux" in security
-    assert "pertencente ao usuário ou root" in security
-    assert "windows" in security and "antes da criação do processo" in security
-    assert "caminho" in security and "descritor" in security
-    assert "%appdata%" in security and "herda" in security
-    assert "não impõe modos posix" in security
-    assert not re.search(r"windows[^\n]+privad[oa] para o usuário atual", security)
+    assert "linux" in security and "open descriptor" in security
+    assert "macos" in security and "executes the validated path" in security
+    assert "owned by the user or root" in security
+    assert "windows" in security and "before process creation" in security
+    assert "path" in security and "descriptor" in security
+    assert "%appdata%" in security and "inherit" in security
+    assert "does not create a private acl" in security
+    assert "impose posix modes" in security
+    assert not re.search(r"windows[^\n]+private[^\n]+current user", security)
     for document in (security, skill):
         assert not re.search(
             r"windows[^\n]+(?:preserva|garante)[^\n]+identidade[^\n]+execução",
@@ -368,7 +371,7 @@ def test_stable_installation_does_not_use_mutable_repository_revisions():
     documents = (Path("README.md"), Path("docs/installation.md"))
 
     for path in documents:
-        installation = _section(path.read_text(encoding="utf-8"), "Instalação")
+        installation = _section(path.read_text(encoding="utf-8"), "Installation")
         for platform in ("macOS", "Linux", "Windows"):
             stable = _stable_content(_section(installation, platform)).lower()
             assert not _contains_mutable_ref(stable), (
@@ -396,24 +399,24 @@ def test_usage_documents_account_names_and_version_update_check():
     usage = Path("docs/usage.md").read_text(encoding="utf-8")
 
     assert "[a-zA-Z0-9_-]{1,50}" in usage
-    assert re.search(r"version.{0,100}atualiza", usage, re.IGNORECASE | re.DOTALL)
+    assert re.search(r"version.{0,100}update", usage, re.IGNORECASE | re.DOTALL)
 
 
 def test_troubleshooting_owns_safe_reinstallation_guidance():
     troubleshooting = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
-    reinstall = _section(troubleshooting, "Reinstalação segura").lower()
+    reinstall = _section(troubleshooting, "Safe reinstallation").lower()
 
-    for detail in ("proveniência", "versão", "homebrew", "pipx", "editáve"):
+    for detail in ("provenance", "version", "homebrew", "pipx", "editable"):
         assert detail in reinstall
-    assert "não" in reinstall and "simult" in reinstall
-    assert "preserv" in reinstall and "estado" in reinstall and "diagnóstico" in reinstall
-    assert "não" in reinstall and "credenciais nativas" in reinstall
+    assert "not" in reinstall and "simult" in reinstall
+    assert "preserv" in reinstall and "state" in reinstall and "diagnostic" in reinstall
+    assert "not" in reinstall and "native credentials" in reinstall
 
 
 def test_installation_links_directly_to_safe_reinstallation():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
 
-    assert "(troubleshooting.md#reinstalação-segura)" in installation
+    assert "(troubleshooting.md#safe-reinstallation)" in installation
 
 
 def test_skill_names_every_supported_native_credential_backend():

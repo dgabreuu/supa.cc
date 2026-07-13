@@ -6,18 +6,18 @@ from pathlib import Path
 from typing import Optional
 
 from supa_cc.environment import config_directory
+from supa_cc.security.tokens import (
+    ACCESS_TOKEN_BODY_CHARACTERS,
+    ACCESS_TOKEN_PREFIX,
+    REDACTED,
+    contains_pat,
+    is_access_token_body_character,
+    is_valid_access_token,
+    sanitize_sensitive_text,
+)
 from supa_cc.state import atomic_write_text, read_text, secure_remove
 
 _ACCOUNT_NAME_REGEX = re.compile(r"[a-zA-Z0-9_-]{1,50}")
-ACCESS_TOKEN_PREFIX = "sbp_"
-ACCESS_TOKEN_BODY_CHARACTERS = frozenset(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~-"
-)
-_PAT_CANDIDATE_REGEX = re.compile(
-    r"sbp_(?:oauth_)?[a-f0-9]{40}",
-    re.ASCII,
-)
-REDACTED = "[REDACTED]"
 _ACTIVE_ACCOUNT_MAX_BYTES = 256
 
 
@@ -28,18 +28,6 @@ def is_valid_account_name(name: object) -> bool:
         and not contains_pat(name)
         and _ACCOUNT_NAME_REGEX.fullmatch(name) is not None
     )
-
-
-def is_valid_access_token(token: object) -> bool:
-    """Valida o formato oficial aceito pelas Supabase CLI 2.98.2/2.109.1."""
-    return (
-        isinstance(token, str)
-        and _PAT_CANDIDATE_REGEX.fullmatch(token) is not None
-    )
-
-
-def is_access_token_body_character(value: str) -> bool:
-    return len(value) == 1 and value in ACCESS_TOKEN_BODY_CHARACTERS
 
 
 class AuthFailureCode(str, Enum):
@@ -93,67 +81,67 @@ class SecretServiceUnavailableError(CredentialAccessError):
 
     def __init__(self):
         super().__init__(
-            "O Secret Service não está disponível. Verifique o D-Bus e "
-            "desbloqueie o Secret Service."
+            "The Secret Service is unavailable. Check D-Bus and unlock "
+            "the Secret Service."
         )
 
 
 class KeychainAccessError(CredentialAccessError):
-    """Base segura para falhas de acesso ao Keychain."""
+    """Safe base for Keychain access failures."""
 
 
 class KeychainPermissionDeniedError(
     KeychainAccessError, CredentialPermissionDeniedError
 ):
-    """O Keychain recusou acesso à credencial."""
+    """The Keychain denied access to the credential."""
 
 
 class KeychainReadError(KeychainAccessError, CredentialReadError):
-    """A credencial não pôde ser lida ou confirmada."""
+    """The credential could not be read or verified."""
 
 
 class AccountIndexError(RuntimeError):
-    """Base segura para falhas do índice local de contas."""
+    """Safe base for local account index failures."""
 
 
 class AccountIndexInvalidError(AccountIndexError):
-    """O índice existe, mas não respeita o formato esperado."""
+    """The index exists but does not use the expected format."""
 
 
 class AccountIndexReadError(AccountIndexError):
-    """O índice existe, mas não pôde ser lido."""
+    """The index exists but could not be read."""
 
 
 class AccountTransactionError(RuntimeError):
-    """Uma mutação falhou e sua compensação não pôde ser confirmada."""
+    """A mutation failed and its compensation could not be verified."""
 
 
 class ActiveAccountError(RuntimeError):
-    """Base segura para falhas do arquivo de conta ativa."""
+    """Safe base for active-account file failures."""
 
 
 class ActiveAccountPermissionDeniedError(ActiveAccountError):
-    """O arquivo de conta ativa não pôde ser lido por permissão."""
+    """The active-account file could not be read because of permissions."""
 
 
 class ActiveAccountReadError(ActiveAccountError):
-    """O arquivo de conta ativa não pôde ser lido."""
+    """The active-account file could not be read."""
 
 
 class ActiveAccountWriteError(ActiveAccountError):
-    """O arquivo de conta ativa não pôde ser gravado."""
+    """The active-account file could not be written."""
 
 
 class ActiveAccountInvalidError(ActiveAccountError):
-    """O arquivo de conta ativa contém um nome inválido."""
+    """The active-account file contains an invalid name."""
 
 
 class InvalidAccessTokenError(ValueError):
-    """O PAT fornecido não atende ao contrato seguro."""
+    """The supplied PAT does not meet the secure contract."""
 
 
 class InvalidAccountNameError(ValueError):
-    """O nome de conta fornecido não atende ao contrato."""
+    """The supplied account name does not meet the contract."""
 
 
 @dataclass(frozen=True)
@@ -164,10 +152,10 @@ class AuthResult:
     exit_code: int = 0
 
     def __bool__(self) -> bool:
-        raise TypeError("AuthResult não é booleano; use .ok explicitamente.")
+        raise TypeError("AuthResult is not boolean; use .ok explicitly.")
 
     @classmethod
-    def success(cls, message: str = "Autenticação validada.") -> "AuthResult":
+    def success(cls, message: str = "Authentication validated.") -> "AuthResult":
         return cls(
             ok=True,
             code=AuthFailureCode.NONE,
@@ -191,39 +179,39 @@ class AuthResult:
 
 
 def classify_local_failure(error: BaseException) -> AuthResult:
-    """Converte falhas locais em códigos e mensagens públicas sem detalhes."""
+    """Convert local failures to public codes and sanitized messages."""
     if isinstance(error, InvalidAccessTokenError):
         return AuthResult.failure(
             AuthFailureCode.TOKEN_FORMAT_INVALID,
-            "Token inválido: informe um PAT Supabase em formato sbp_ válido.",
+            "Invalid token: provide a Supabase PAT in valid sbp_ format.",
             exit_code=2,
         )
     if isinstance(error, InvalidAccountNameError):
         return AuthResult.failure(
             AuthFailureCode.INVALID_INPUT,
-            "Nome de conta inválido: use entre 1 e 50 caracteres, apenas "
-            "letras, números, hífens e underscores.",
+            "Invalid account name: use 1 to 50 characters containing only "
+            "letters, numbers, hyphens, and underscores.",
             exit_code=2,
         )
     if isinstance(error, KeychainPermissionDeniedError):
         return AuthResult.failure(
             AuthFailureCode.KEYCHAIN_PERMISSION_DENIED,
-            "Acesso ao Keychain não autorizado.",
+            "Keychain access was not authorized.",
         )
     if isinstance(error, CredentialPermissionDeniedError):
         return AuthResult.failure(
             AuthFailureCode.KEYCHAIN_PERMISSION_DENIED,
-            "Acesso ao armazenamento de credenciais não autorizado.",
+            "Credential-store access was not authorized.",
         )
     if isinstance(error, KeychainReadError):
         return AuthResult.failure(
             AuthFailureCode.KEYCHAIN_READ_FAILED,
-            "Não foi possível acessar a credencial no Keychain.",
+            "Unable to access the Keychain credential.",
         )
     if isinstance(error, CredentialReadError):
         return AuthResult.failure(
             AuthFailureCode.KEYCHAIN_READ_FAILED,
-            "Não foi possível acessar a credencial no armazenamento de credenciais.",
+            "Unable to access the credential-store credential.",
         )
     if isinstance(error, SecretServiceUnavailableError):
         return AuthResult.failure(
@@ -233,69 +221,56 @@ def classify_local_failure(error: BaseException) -> AuthResult:
     if isinstance(error, CredentialAccessError):
         return AuthResult.failure(
             AuthFailureCode.KEYCHAIN_READ_FAILED,
-            "Não foi possível acessar a credencial no armazenamento de credenciais.",
+            "Unable to access the credential-store credential.",
         )
     if isinstance(error, AccountIndexInvalidError):
         return AuthResult.failure(
             AuthFailureCode.INDEX_INVALID,
-            "O índice local de contas é inválido.",
+            "The local account index is invalid.",
         )
     if isinstance(error, AccountIndexReadError):
         return AuthResult.failure(
             AuthFailureCode.INDEX_READ_FAILED,
-            "Não foi possível ler o índice local de contas.",
+            "Unable to read the local account index.",
         )
     if isinstance(error, AccountTransactionError):
         return AuthResult.failure(
             AuthFailureCode.ACCOUNT_TRANSACTION_FAILED,
-            "A operação no Keychain não pôde ser concluída com segurança.",
+            "The Keychain operation could not be completed safely.",
         )
     if isinstance(error, ActiveAccountPermissionDeniedError):
         return AuthResult.failure(
             AuthFailureCode.ACTIVE_ACCOUNT_PERMISSION_DENIED,
-            "Acesso ao arquivo de conta ativa não autorizado.",
+            "Access to the active-account file was not authorized.",
         )
     if isinstance(error, ActiveAccountReadError):
         return AuthResult.failure(
             AuthFailureCode.ACTIVE_ACCOUNT_READ_FAILED,
-            "Não foi possível ler o arquivo de conta ativa.",
+            "Unable to read the active-account file.",
         )
     if isinstance(error, ActiveAccountWriteError):
         return AuthResult.failure(
             AuthFailureCode.ACTIVE_ACCOUNT_WRITE_FAILED,
-            "Não foi possível gravar o arquivo de conta ativa.",
+            "Unable to write the active-account file.",
         )
     if isinstance(error, ActiveAccountInvalidError):
         return AuthResult.failure(
             AuthFailureCode.ACTIVE_ACCOUNT_INVALID,
-            "O arquivo de conta ativa contém um nome inválido.",
+            "The active-account file contains an invalid name.",
         )
     if isinstance(error, PermissionError):
         return AuthResult.failure(
             AuthFailureCode.ENVIRONMENT_BLOCKED,
-            "O ambiente não autorizou a operação local.",
+            "The environment did not authorize the local operation.",
         )
     return AuthResult.failure(
         AuthFailureCode.COMMAND_FAILED,
-        "A operação local não pôde ser concluída.",
+        "The local operation could not be completed.",
     )
 
 
-def sanitize_sensitive_text(value: object, secret: Optional[str] = None) -> str:
-    """Remove PATs conhecidos e PATs com formato reconhecível de texto externo."""
-    text = "" if value is None else str(value)
-    if secret:
-        text = text.replace(secret, REDACTED)
-    return _PAT_CANDIDATE_REGEX.sub(REDACTED, text)
-
-
-def contains_pat(value: object) -> bool:
-    """Indica se um valor destinado a argv contém um PAT reconhecível."""
-    return _PAT_CANDIDATE_REGEX.search(str(value)) is not None
-
-
 def normalize_exit_code(value: object, default: int = 1) -> int:
-    """Converte o retorno do processo para o intervalo portátil da CLI."""
+    """Convert a process return value to the CLI's portable range."""
     try:
         code = int(value)
     except (TypeError, ValueError):
@@ -319,12 +294,12 @@ class CommandResult:
     stderr: str = field(default="", repr=False)
 
     def __bool__(self) -> bool:
-        raise TypeError("CommandResult não é booleano; use .ok explicitamente.")
+        raise TypeError("CommandResult is not boolean; use .ok explicitly.")
 
     @classmethod
     def success(
         cls,
-        message: str = "Comando autenticado executado.",
+        message: str = "Authenticated command executed.",
         stdout: str = "",
         stderr: str = "",
     ) -> "CommandResult":
@@ -366,24 +341,24 @@ class ActiveAccountStore:
             contents = read_text(self.path, _ACTIVE_ACCOUNT_MAX_BYTES)
         except PermissionError:
             raise ActiveAccountPermissionDeniedError(
-                "Acesso ao arquivo de conta ativa não autorizado."
+                "Access to the active-account file was not authorized."
             ) from None
         except OSError:
             raise ActiveAccountReadError(
-                "Não foi possível ler o arquivo de conta ativa."
+                "Unable to read the active-account file."
             ) from None
         if contents is None:
             return None
         name = contents[:-1] if contents.endswith("\n") else contents
         if not is_valid_account_name(name):
             raise ActiveAccountInvalidError(
-                "O arquivo de conta ativa contém um nome inválido."
+                "The active-account file contains an invalid name."
             )
         return name
 
     def write(self, name: str) -> None:
         if not is_valid_account_name(name):
-            raise ValueError("nome de conta inválido para persistência.")
+            raise ValueError("invalid account name for persistence.")
 
         atomic_write_text(self.path, f"{name}\n")
 
@@ -392,9 +367,9 @@ class ActiveAccountStore:
             secure_remove(self.path)
         except PermissionError:
             raise ActiveAccountPermissionDeniedError(
-                "Acesso ao arquivo de conta ativa não autorizado."
+                "Access to the active-account file was not authorized."
             ) from None
         except OSError:
             raise ActiveAccountWriteError(
-                "Não foi possível remover o arquivo de conta ativa."
+                "Unable to remove the active-account file."
             ) from None

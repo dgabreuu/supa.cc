@@ -6,14 +6,12 @@ from typing import Optional
 class PageId(Enum):
     HOME = "home"
     ADD = "add"
-    LIST = "list"
     SWITCH = "switch"
     REMOVE = "remove"
 
 
 class MenuAction(Enum):
     ADD_ACCOUNT = "add_account"
-    LIST_ACCOUNTS = "list_accounts"
     SWITCH_ACCOUNT = "switch_account"
     REMOVE_ACCOUNT = "remove_account"
     BACK = "back"

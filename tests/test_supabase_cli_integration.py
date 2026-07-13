@@ -308,10 +308,10 @@ token = os.environ['SUPABASE_ACCESS_TOKEN']
 if token in sys.argv:
     sys.exit(91)
 os.write(1, b'prompt> ')
-time.sleep(1.5)
+time.sleep(0.05)
 cut = len(token) // 2
 os.write(1, token[:cut].encode())
-time.sleep(0.03)
+time.sleep(0.005)
 os.write(1, token[cut:].encode())
 os.write(1, b' done\\n')
 """,
@@ -337,9 +337,9 @@ os.write(1, b' done\\n')
     worker = threading.Thread(target=execute)
     worker.start()
 
-    assert first_output.wait(timeout=1.0) is True
+    assert first_output.wait(timeout=3.0) is True
     assert worker.is_alive() is True
-    worker.join(timeout=2)
+    worker.join(timeout=3)
 
     assert worker.is_alive() is False
     result = holder["result"]
@@ -426,7 +426,7 @@ def test_streaming_does_not_invent_401_across_sample_gap(tmp_path):
 def test_streaming_detects_marker_split_between_real_chunks(tmp_path):
     executable = _fake_cli(
         tmp_path,
-        "os.write(2, b'HTTP 40'); time.sleep(0.03); "
+        "os.write(2, b'HTTP 40'); time.sleep(0.005); "
         "os.write(2, b'1 Unauthorized'); sys.exit(17)",
     )
     config = SupabaseConfig(binary_resolver=lambda _: str(executable))
@@ -492,7 +492,7 @@ def test_normal_completion_waits_for_slow_sink_and_preserves_complete_output(tmp
     chunks = []
 
     def slow_sink(chunk):
-        time.sleep(1.5)
+        time.sleep(0.03)
         chunks.append(chunk)
 
     started = time.monotonic()
@@ -505,7 +505,7 @@ def test_normal_completion_waits_for_slow_sink_and_preserves_complete_output(tmp
     elapsed = time.monotonic() - started
 
     assert result.ok is True
-    assert elapsed >= 1.4
+    assert elapsed >= 0.02
     assert "".join(chunks) == "complete-output"
 
 
@@ -579,7 +579,7 @@ def test_validation_timeout_kills_process_group_including_grandchild(tmp_path):
         result = config.execute_authenticated(
             Account(name="work", token=fake_pat("group_timeout")),
             ["projects", "list"],
-            timeout_seconds=0.2,
+            timeout_seconds=1.0,
         )
         fields = dict(part.split("=") for part in result.stdout.split())
         pids.extend([int(fields["parent"]), int(fields["child"])])

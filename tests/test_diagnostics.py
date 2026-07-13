@@ -93,13 +93,39 @@ def test_default_doctor_is_read_only_and_never_reads_token_or_authenticates(tmp_
     manager.validate_named_account.assert_not_called()
     assert report.environment["supabase_access_token_present"] is True
     assert fake_pat("env") not in report.to_json()
-    assert report.active_account == "work"
+    assert report.active_account == {"selected": True, "indexed": False}
     assert report.keychain_service == KEYCHAIN_SERVICE
 
     report_with_account_but_not_live = service.run(account="work", live=False)
     manager.get.assert_not_called()
     manager.validate_named_account.assert_not_called()
     assert report_with_account_but_not_live.live_result is None
+
+
+def test_doctor_output_is_shareable_without_account_name_or_private_paths(tmp_path):
+    manager = Mock(spec=AccountManager)
+    manager.keychain = Mock()
+    manager.active_store = Mock()
+    manager.keychain.index_path = tmp_path / "private-user" / "accounts.json"
+    manager.keychain.service = KEYCHAIN_SERVICE
+    manager.active_store.read.return_value = "private-account-name"
+    manager.config = SupabaseConfig(binary_resolver=lambda _: None)
+    manager.sync_journal = SessionSyncJournal(tmp_path / "session-sync.json")
+    manager.native_session = NativeSessionSynchronizer(
+        manager.config, env={}, supabase_home=tmp_path / ".supabase"
+    )
+    service = _service(tmp_path, manager=manager)
+
+    payload = service.run().to_dict()
+    rendered = json.dumps(payload)
+
+    assert payload["active_account"] == {"selected": True, "indexed": False}
+    assert payload["index"]["path"] == "<temp>/accounts.json"
+    assert payload["runtime"]["launcher"]["path_relation"] == "same"
+    assert payload["runtime"]["python"]["path_relation"] == "same"
+    assert payload["supabase_cli"]["path_relation"] == "unavailable"
+    assert "private-account-name" not in rendered
+    assert str(tmp_path) not in rendered
 
 
 def test_doctor_reports_effective_custom_keychain_service(tmp_path):
@@ -178,16 +204,19 @@ def test_doctor_reports_verified_runtime_identity_and_homebrew_receipt(tmp_path)
 
     assert payload["runtime"]["supa_cc_version"] == supa_cc.__version__
     assert payload["runtime"]["launcher"] == {
-        "invoked": str(launcher),
-        "realpath": str(launcher_target),
+        "invoked": "<temp>/supa.cc",
+        "realpath": "<temp>/supa-cc-real",
+        "path_relation": "symlinked",
         "signature": {"status": "signed", "identifier": "supa-cc-real"},
     }
-    assert payload["runtime"]["python"]["invoked"] == str(python_link)
-    assert payload["runtime"]["python"]["realpath"] == str(python_target)
+    assert payload["runtime"]["python"]["invoked"] == "<temp>/python"
+    assert payload["runtime"]["python"]["realpath"] == "<temp>/python3"
+    assert payload["runtime"]["python"]["path_relation"] == "symlinked"
     assert payload["runtime"]["python"]["implementation"] == "CPython"
     assert payload["runtime"]["python"]["version"] == "3.14.0"
-    assert payload["supabase_cli"]["invoked"] == str(invoked)
-    assert payload["supabase_cli"]["realpath"] == str(binary)
+    assert payload["supabase_cli"]["invoked"] == "<temp>/supabase"
+    assert payload["supabase_cli"]["realpath"] == "<temp>/supabase-real"
+    assert payload["supabase_cli"]["path_relation"] == "symlinked"
     assert payload["supabase_cli"]["version"] == "2.109.1"
     assert payload["supabase_cli"]["provenance"] == "homebrew"
     assert payload["activation"] == {
@@ -206,11 +235,12 @@ def test_doctor_reports_verified_runtime_identity_and_homebrew_receipt(tmp_path)
         str(binary),
     }
     human = report.to_human()
-    assert f"{launcher} -> {launcher_target}" in human
-    assert f"{python_link} -> {python_target}" in human
-    assert f"{invoked} -> {binary}" in human
-    assert human.count("assinatura: signed") == 3
-    assert "Ativação: native_session" in human
+    assert "<temp>/supa.cc -> <temp>/supa-cc-real" in human
+    assert "<temp>/python -> <temp>/python3" in human
+    assert "<temp>/supabase -> <temp>/supabase-real" in human
+    assert str(tmp_path) not in human
+    assert human.count("signature: signed") == 3
+    assert "Activation: native_session" in human
 
 
 def test_doctor_reports_sync_metadata_by_presence_without_reading_contents(tmp_path):
@@ -428,7 +458,7 @@ def test_doctor_reports_inaccessible_sync_metadata_without_reading_secrets(
     assert report.exit_code != 0
     assert payload["activation"][state_key] == "inaccessible"
     assert AuthFailureCode.ENVIRONMENT_BLOCKED.value in payload["diagnostic_codes"]
-    assert "inacessível" in human
+    assert "inaccessible" in human
     manager.sync_journal.read.assert_not_called()
     manager.get.assert_not_called()
     rendered = report.to_json() + human
@@ -485,6 +515,7 @@ def test_live_doctor_requires_explicit_account(tmp_path):
 
     assert report.ok is False
     assert report.live_result.code is AuthFailureCode.ACCOUNT_REQUIRED
+    assert report.live_result.message == "Provide --account <name> when using --live."
     assert report.exit_code != 0
 
 
@@ -499,7 +530,7 @@ def test_doctor_maps_invalid_active_store_without_calling_it_missing(tmp_path):
     report = _service(tmp_path, manager=manager).run()
 
     assert report.ok is False
-    assert report.active_account is None
+    assert report.active_account == {"selected": False, "indexed": False}
     assert AuthFailureCode.ACTIVE_ACCOUNT_INVALID.value in report.diagnostic_codes
     assert AuthFailureCode.ACTIVE_ACCOUNT_MISSING.value not in report.diagnostic_codes
 
@@ -519,7 +550,7 @@ def test_live_doctor_reads_and_validates_selected_account_once(tmp_path):
         manager.config, env={}, supabase_home=tmp_path / ".supabase"
     )
     manager.validate_named_account.return_value = AuthResult.success(
-        "Conta autenticada pela API da Supabase."
+        "Account authenticated by the Supabase API."
     )
     service = _service(tmp_path, manager=manager)
 
@@ -572,8 +603,8 @@ def test_macos_doctor_human_output_reports_operating_system(tmp_path):
 
     human = report.to_human()
 
-    assert "Sistema operacional: macos" in human
-    assert "Distribuição Linux" not in human
+    assert "Operating system: macos" in human
+    assert "Linux distribution" not in human
     assert "keychain" not in human.lower()
 
 
@@ -635,10 +666,10 @@ def test_default_doctor_preserves_legacy_status_but_marks_availability_unverifie
     assert report.credentials["configured"] is True
     assert report.credentials["availability"] == "unverified"
     human = report.to_human().lower()
-    assert "configurado" in human
-    assert "não verificado" in human
+    assert "configured" in human
+    assert "not verified" in human
     assert "(available)" not in human
-    assert "(disponível)" not in human
+    assert "(available)" not in human
     credential_store.probe.assert_not_called()
 
 
@@ -661,9 +692,9 @@ def test_linux_doctor_human_output_reports_distribution_and_remediation(
 
     human = report.to_human()
 
-    assert "Sistema operacional: linux" in human
-    assert "Distribuição Linux: ubuntu" in human
-    assert "Remediação: Instale os pré-requisitos indicados" in human
+    assert "Operating system: linux" in human
+    assert "Linux distribution: ubuntu" in human
+    assert "Remediation: Install the listed prerequisites" in human
     assert "Secret Service" in human
     assert "keychain" not in human.lower()
 

@@ -50,9 +50,9 @@ def report_to_dict(report):
 def render_human(report) -> str:
     def identity_line(label, invoked, realpath, signature):
         status = signature.get("status", "unknown") if isinstance(signature, dict) else "unknown"
-        return f"{label}: {invoked or 'não identificado'} -> {realpath or 'não identificado'} (assinatura: {status})"
+        return f"{label}: {invoked or 'not identified'} -> {realpath or 'not identified'} (signature: {status})"
 
-    cli_path = report.supabase_cli.get("realpath") or report.supabase_cli.get("path") or "não encontrada"
+    cli_path = report.supabase_cli.get("realpath") or report.supabase_cli.get("path") or "not found"
     launcher = report.runtime.get("launcher")
     python = report.runtime.get("python")
     launcher = launcher if isinstance(launcher, dict) else {"invoked": launcher, "realpath": launcher}
@@ -60,36 +60,43 @@ def render_human(report) -> str:
         "invoked": report.runtime.get("python_executable"),
         "realpath": report.runtime.get("python_realpath"),
     }
-    states = {"present": "presente", "absent": "ausente", "inaccessible": "inacessível"}
+    states = {"present": "present", "absent": "absent", "inaccessible": "inaccessible"}
     diagnostics = ", ".join(code.replace("keychain", "credential_store") for code in report.diagnostic_codes) or "none"
     availability = report.credentials.get("availability")
     credential_state = {
-        "available": "disponível (verificado)",
-        "unavailable": "indisponível (verificado)",
-        "unverified": "configurado (não verificado; sem probe)",
-    }.get(availability, "desconhecido")
+        "available": "available (verified)",
+        "unavailable": "unavailable (verified)",
+        "unverified": "configured (not verified; no probe)",
+    }.get(availability, "unknown")
     lines = [
         "Supa.cc doctor",
-        f"Supa.cc versão: {report.runtime.get('supa_cc_version') or 'unknown'}",
-        f"Sistema operacional: {report.runtime.get('operating_system') or 'unknown'}",
+        f"Supa.cc version: {report.runtime.get('supa_cc_version') or 'unknown'}",
+        f"Operating system: {report.runtime.get('operating_system') or 'unknown'}",
         identity_line("Supa.cc launcher", launcher.get("invoked"), launcher.get("realpath"), launcher.get("signature")),
         identity_line("Python", python.get("invoked"), python.get("realpath"), python.get("signature")),
         identity_line("Supabase CLI", report.supabase_cli.get("invoked") or cli_path, report.supabase_cli.get("realpath") or cli_path, report.supabase_cli.get("signature")),
-        f"Versão da Supabase CLI: {report.supabase_cli.get('version') or 'unknown'}",
-        f"Proveniência: {report.supabase_cli.get('provenance') or 'unknown'}",
-        f"Armazenamento de credenciais: {report.credentials.get('backend', report.keychain_backend)} ({credential_state})",
-        f"Índice: {report.index.get('state')} ({report.index.get('account_count', 0)} contas)",
-        f"Conta ativa: {report.active_account or 'não selecionada'}",
-        "SUPABASE_ACCESS_TOKEN no ambiente: " + ("presente" if report.environment.get("supabase_access_token_present") else "ausente"),
-        f"Diagnósticos: {diagnostics}",
-        f"Ativação: {report.activation.get('mode', 'unknown')} (sessão nativa: {report.activation.get('native_session', 'unknown')}; perfil: {report.activation.get('profile', 'unknown')})",
-        "Journal de sincronização: " + states.get(report.activation.get("journal_state", "absent"), "desconhecido"),
-        "Fallback plaintext: " + states.get(report.activation.get("plaintext_fallback_state", "absent"), "desconhecido"),
+        f"Supabase CLI version: {report.supabase_cli.get('version') or 'unknown'}",
+        f"Provenance: {report.supabase_cli.get('provenance') or 'unknown'}",
+        f"Credential store: {report.credentials.get('backend', report.keychain_backend)} ({credential_state})",
+        f"Index: {report.index.get('state')} ({report.index.get('account_count', 0)} accounts)",
+        "Active account: "
+        + (
+            "selected (indexed)"
+            if report.active_account.get("selected") and report.active_account.get("indexed")
+            else "selected (not indexed)"
+            if report.active_account.get("selected")
+            else "not selected"
+        ),
+        "SUPABASE_ACCESS_TOKEN in environment: " + ("present" if report.environment.get("supabase_access_token_present") else "absent"),
+        f"Diagnostics: {diagnostics}",
+        f"Activation: {report.activation.get('mode', 'unknown')} (native session: {report.activation.get('native_session', 'unknown')}; profile: {report.activation.get('profile', 'unknown')})",
+        "Synchronization journal: " + states.get(report.activation.get("journal_state", "absent"), "unknown"),
+        "Plaintext fallback: " + states.get(report.activation.get("plaintext_fallback_state", "absent"), "unknown"),
     ]
     if report.runtime.get("linux_distribution"):
-        lines.append(f"Distribuição Linux: {report.runtime['linux_distribution']}")
+        lines.append(f"Linux distribution: {report.runtime['linux_distribution']}")
     if report.credentials.get("remediation"):
-        lines.append(f"Remediação: {report.credentials['remediation']}")
+        lines.append(f"Remediation: {report.credentials['remediation']}")
     if report.live_result is not None:
-        lines.append(f"Validação live: {report.live_result.code.value} - {sanitize_sensitive_text(report.live_result.message)}")
+        lines.append(f"Live validation: {report.live_result.code.value} - {sanitize_sensitive_text(report.live_result.message)}")
     return sanitize_sensitive_text("\n".join(lines))

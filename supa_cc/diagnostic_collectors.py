@@ -52,6 +52,62 @@ def _safe_realpath(value: object) -> str:
     return os.path.realpath(invoked) if invoked else ""
 
 
+def _path_relation(invoked: object, realpath: object) -> str:
+    if not invoked or not realpath:
+        return "unavailable"
+    if os.path.normcase(os.path.abspath(str(invoked))) == os.path.normcase(
+        os.path.abspath(str(realpath))
+    ):
+        return "same"
+    return "symlinked"
+
+
+def _public_path(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value)
+    if not text:
+        return ""
+    path = Path(text)
+    if not path.is_absolute():
+        return f"<local-path>/{path.name}"
+
+    normalized = os.path.normcase(os.path.abspath(text))
+    home = os.path.normcase(os.path.abspath(os.path.expanduser("~")))
+    if normalized == home or normalized.startswith(home + os.path.sep):
+        relative = os.path.relpath(normalized, home)
+        return "~" if relative == "." else f"~/{relative.replace(os.path.sep, '/')}"
+
+    temporary_prefixes = (
+        "/tmp",
+        "/private/tmp",
+        "/var/folders",
+        "/private/var/folders",
+    )
+    if any(
+        normalized == prefix or normalized.startswith(prefix + os.path.sep)
+        for prefix in temporary_prefixes
+    ):
+        return f"<temp>/{path.name}"
+
+    public_prefixes = (
+        "/usr",
+        "/bin",
+        "/sbin",
+        "/opt",
+        "/Applications",
+        "/Library",
+        "/System",
+    )
+    if any(
+        normalized == os.path.normcase(prefix)
+        or normalized.startswith(os.path.normcase(prefix) + os.path.sep)
+        for prefix in public_prefixes
+    ):
+        return text
+    return f"<local-path>/{path.name}"
+
+
 def _path_writable(path: Path) -> bool:
     candidate = path
     while not candidate.exists() and candidate != candidate.parent:
@@ -210,16 +266,18 @@ def _supabase_identity(
     )
     if realpath is None:
         return {
-            "invoked": invoked,
+            "invoked": _public_path(invoked),
             "realpath": None,
+            "path_relation": "unavailable",
             "version": "unknown",
             "provenance": "unknown",
             "signature": signature,
         }
     metadata = _verified_cli_metadata(Path(realpath))
     return {
-        "invoked": invoked,
-        "realpath": realpath,
+        "invoked": _public_path(invoked),
+        "realpath": _public_path(realpath),
+        "path_relation": _path_relation(invoked, realpath),
         **metadata,
         "signature": signature,
     }
@@ -234,7 +292,7 @@ class _DoctorReportFields:
     keychain_service: str
     keychain_backend: str
     index: Dict[str, object]
-    active_account: Optional[str]
+    active_account: Dict[str, bool]
     environment: Dict[str, object] = field(repr=False)
     diagnostic_codes: List[str]
     credentials: Dict[str, object] = field(default_factory=dict, repr=False)
@@ -316,13 +374,15 @@ class DiagnosticService:
                 else None
             ),
             "launcher": {
-                "invoked": launcher_invoked,
-                "realpath": launcher_realpath,
+                "invoked": _public_path(launcher_invoked),
+                "realpath": _public_path(launcher_realpath),
+                "path_relation": _path_relation(launcher_invoked, launcher_realpath),
                 "signature": {"status": "not_applicable"},
             },
             "python": {
-                "invoked": python_invoked,
-                "realpath": python_realpath,
+                "invoked": _public_path(python_invoked),
+                "realpath": _public_path(python_realpath),
+                "path_relation": _path_relation(python_invoked, python_realpath),
                 "implementation": self.python_implementation,
                 "version": self.python_version,
                 "signature": {"status": "not_applicable"},
@@ -340,23 +400,23 @@ class DiagnosticService:
                 "signature": {"status": "not_applicable"},
             },
             keychain_service=KEYCHAIN_SERVICE,
-            keychain_backend="indisponível",
+            keychain_backend="unavailable",
             credentials={
                 "service": KEYCHAIN_SERVICE,
-                "backend": "indisponível",
+                "backend": "unavailable",
                 "available": False,
                 "status": "unavailable",
-                "message": "O armazenamento de credenciais não está disponível neste ambiente.",
+                "message": "The credential store is unavailable in this environment.",
                 "remediation": guidance.remediation,
             },
             index={
-                "path": str(
+                "path": _public_path(
                     self.environment.config_directory() / "accounts.json"
                 ),
                 "state": "not_checked",
                 "account_count": 0,
             },
-            active_account=None,
+            active_account={"selected": False, "indexed": False},
             environment={
                 "supabase_access_token_present": "SUPABASE_ACCESS_TOKEN" in self.env,
                 "telemetry_directory_exists": self.telemetry_path.exists(),
@@ -424,7 +484,7 @@ class DiagnosticService:
             try:
                 backend = self.backend_resolver()
             except Exception:
-                backend = "indisponível"
+                backend = "unavailable"
                 codes.append(AuthFailureCode.KEYCHAIN_READ_FAILED.value)
                 ok = False
                 exit_code = 1
@@ -452,7 +512,7 @@ class DiagnosticService:
             if not account:
                 live_result = AuthResult.failure(
                     AuthFailureCode.ACCOUNT_REQUIRED,
-                    "Informe --account <nome> ao usar --live.",
+                    "Provide --account <name> when using --live.",
                     exit_code=2,
                 )
             else:
@@ -481,20 +541,22 @@ class DiagnosticService:
                 else None
             ),
             "launcher": {
-                "invoked": launcher_invoked,
-                "realpath": launcher_realpath,
+                "invoked": _public_path(launcher_invoked),
+                "realpath": _public_path(launcher_realpath),
+                "path_relation": _path_relation(launcher_invoked, launcher_realpath),
                 "signature": signature(Path(launcher_realpath)),
             },
             "python": {
-                "invoked": python_invoked,
-                "realpath": python_realpath,
+                "invoked": _public_path(python_invoked),
+                "realpath": _public_path(python_realpath),
+                "path_relation": _path_relation(python_invoked, python_realpath),
                 "implementation": self.python_implementation,
                 "version": self.python_version,
                 "signature": signature(Path(python_realpath)),
             },
         }
         index = {
-            "path": str(manager.keychain.index_path),
+            "path": _public_path(manager.keychain.index_path),
             "state": index_state,
             "account_count": account_count,
         }
@@ -585,7 +647,14 @@ class DiagnosticService:
             keychain_backend=backend,
             credentials=credentials,
             index=index,
-            active_account=active_account,
+            active_account={
+                "selected": active_account is not None,
+                "indexed": (
+                    active_account is not None
+                    and names is not None
+                    and active_account in names
+                ),
+            },
             environment=environment,
             diagnostic_codes=codes,
             live_result=live_result,

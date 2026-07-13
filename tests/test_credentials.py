@@ -197,6 +197,28 @@ def test_darwin_selects_only_macos_backend(monkeypatch):
     ]
 
 
+def test_macos_probe_reads_only_an_isolated_nonexistent_identity(monkeypatch):
+    FakeMacOSKeyring.instances.clear()
+    FakeMacOSKeyring.next_get_error = None
+    monkeypatch.setattr(credentials.macOS, "Keyring", FakeMacOSKeyring)
+    store = create_credential_store(detect_environment(system_name="Darwin"))
+    fake = FakeMacOSKeyring.instances[0]
+
+    status = store.probe()
+
+    assert status.available is True
+    assert status.live_probed is True
+    assert len(fake.calls) == 1
+    operation, service, name = fake.calls[0]
+    assert operation == "get"
+    assert service.startswith("supa.cc.probe.")
+    assert name.startswith("probe-")
+    assert service not in {
+        "supa.cc.supabase.accounts.v2",
+        credentials.SUPABASE_CLI_CREDENTIAL_SERVICE,
+    }
+
+
 def test_linux_rejects_unavailable_secret_service(monkeypatch):
     class RaisingSecretServiceKeyring:
         def __init__(self):
@@ -315,7 +337,7 @@ def test_unavailable_provider_probe_reports_safe_remediation(
 
     assert status.available is False
     assert "D-Bus" in status.message
-    assert "desbloqueie" in status.message
+    assert "unlock" in status.message
     assert "detail" not in status.message
     assert fake.calls == []
 
@@ -337,7 +359,7 @@ def test_unavailable_collection_probe_reports_safe_remediation(
 
     assert status.available is False
     assert "D-Bus" in status.message
-    assert "desbloqueie" in status.message
+    assert "unlock" in status.message
     assert "detail" not in status.message
     assert len(fake.calls) == 1
     assert fake.calls[0][1] != "supa.cc.supabase.accounts.v2"
@@ -376,8 +398,8 @@ def test_secret_service_operation_unavailability_survives_classification(
 
     result = classify_local_failure(raised.value)
     expected_message = (
-        "O Secret Service não está disponível. Verifique o D-Bus e desbloqueie "
-        "o Secret Service."
+        "The Secret Service is unavailable. Check D-Bus and unlock the Secret "
+        "Service."
     )
 
     assert result.code is AuthFailureCode.KEYCHAIN_READ_FAILED
@@ -521,15 +543,15 @@ def test_linux_post_probe_failures_keep_secret_service_remediation_public(
 
     result = classify_local_failure(raised.value)
     expected_message = (
-        "O Secret Service não está disponível. Verifique o D-Bus e desbloqueie "
-        "o Secret Service."
+        "The Secret Service is unavailable. Check D-Bus and unlock the Secret "
+        "Service."
     )
 
     assert str(raised.value) == expected_message
     assert result.code is AuthFailureCode.KEYCHAIN_READ_FAILED
     assert result.message == expected_message
     assert "D-Bus" in result.message
-    assert "desbloqueie" in result.message
+    assert "unlock" in result.message
     assert "backend detail" not in result.message
     assert account.token not in result.message
 
@@ -547,7 +569,7 @@ def test_macos_operation_failures_keep_neutral_credential_message(monkeypatch):
     result = classify_local_failure(raised.value)
 
     assert result.code is AuthFailureCode.KEYCHAIN_PERMISSION_DENIED
-    assert result.message == "Acesso ao armazenamento de credenciais não autorizado."
+    assert result.message == "Credential-store access was not authorized."
     assert "D-Bus" not in result.message
     assert "backend detail" not in result.message
 
@@ -620,6 +642,6 @@ def test_neutral_credential_errors_keep_failure_codes_and_safe_messages(
     result = classify_local_failure(failure)
 
     assert result.code is expected_code
-    assert "armazenamento de credenciais" in result.message
+    assert "credential" in result.message.lower()
     assert "Keychain" not in result.message
     assert "fake backend detail" not in result.message

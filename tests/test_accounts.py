@@ -34,6 +34,8 @@ from helpers import (
 from supa_cc.native_session import SessionSyncJournal
 from supa_cc.native_session import MutationState, NativeSessionSynchronizer
 from supa_cc.transactions import AccountTransactionCoordinator
+from supa_cc.accounts.mutations import AccountMutationService
+from supa_cc.session.mutations import SessionMutationService
 
 
 class InterruptingJournal:
@@ -63,16 +65,16 @@ def test_default_stores_use_one_detected_environment(monkeypatch):
     keychain_arguments = []
     active_store_arguments = []
     monkeypatch.setattr(
-        "supa_cc.accounts.detect_environment",
+        "supa_cc.accounts.manager.detect_environment",
         lambda: environment,
         raising=False,
     )
     monkeypatch.setattr(
-        "supa_cc.accounts.AccountStore",
+        "supa_cc.accounts.manager.AccountStore",
         lambda **kwargs: keychain_arguments.append(kwargs) or created_keychain,
     )
     monkeypatch.setattr(
-        "supa_cc.accounts.ActiveAccountStore",
+        "supa_cc.accounts.manager.ActiveAccountStore",
         lambda **kwargs: active_store_arguments.append(kwargs) or created_active_store,
     )
 
@@ -127,6 +129,12 @@ class TestAccountManager:
         manager = self.transactional_manager(tmp_path)
 
         assert isinstance(manager.transactions, AccountTransactionCoordinator)
+        assert isinstance(
+            manager.transactions.account_mutations, AccountMutationService
+        )
+        assert isinstance(
+            manager.transactions.session_mutations, SessionMutationService
+        )
 
     def test_coordinator_exposes_only_transaction_entry_points(self, tmp_path):
         coordinator = self.transactional_manager(tmp_path).transactions
@@ -432,8 +440,8 @@ class TestAccountManager:
         target = {
             "mkdir": "pathlib.Path.mkdir",
             "chmod": "pathlib.Path.chmod",
-            "open": "supa_cc.accounts.os.open",
-            "lock": "supa_cc.accounts.acquire_file_lock",
+            "open": "supa_cc.accounts.manager.os.open",
+            "lock": "supa_cc.accounts.manager.acquire_file_lock",
         }[operation]
         with patch(target, side_effect=OSError("private lock path")):
             result = manager.set_active("work")
@@ -514,9 +522,9 @@ class TestAccountManager:
                 raise OSError("private close path")
 
         return (
-            patch("supa_cc.accounts.release_file_lock", side_effect=release),
-            patch("supa_cc.accounts.os.open", side_effect=open_lock),
-            patch("supa_cc.accounts.os.close", side_effect=close),
+            patch("supa_cc.accounts.manager.release_file_lock", side_effect=release),
+            patch("supa_cc.accounts.manager.os.open", side_effect=open_lock),
+            patch("supa_cc.accounts.manager.os.close", side_effect=close),
             descriptors,
         )
 
@@ -598,7 +606,7 @@ class TestAccountManager:
         first_thread.start()
         assert entered.wait(timeout=1)
         second_thread.start()
-        time.sleep(0.05)
+        time.sleep(0.01)
         assert second.native_session.activate.called is False
         release.set()
         first_thread.join(timeout=2)
@@ -631,7 +639,7 @@ class TestAccountManager:
         switch_thread.start()
         assert entered.wait(timeout=1)
         mutation_thread.start()
-        time.sleep(0.05)
+        time.sleep(0.01)
         mutator.keychain.add_account.assert_not_called()
         mutator.keychain.remove_account.assert_not_called()
         release.set()
@@ -663,7 +671,7 @@ class TestAccountManager:
         recovery_thread.start()
         assert entered.wait(timeout=1)
         selection_thread.start()
-        time.sleep(0.05)
+        time.sleep(0.01)
         selection.config.validate_access_token.assert_not_called()
         release.set()
         recovery_thread.join(timeout=2)
@@ -735,7 +743,7 @@ class TestAccountManager:
         assert not result.ok
         assert result.code is AuthFailureCode.ACCOUNT_REQUIRED
         assert result.exit_code == 2
-        assert result.message == "Informe um nome de conta válido."
+        assert result.message == "Provide a valid account name."
         assert keychain.method_calls == []
         assert journal.method_calls == []
         assert active_store.method_calls == []
@@ -891,7 +899,7 @@ class TestAccountManager:
 
     def test_add_invalid_token(self):
         manager = AccountManager()
-        with pytest.raises(ValueError, match="Token inválido"):
+        with pytest.raises(ValueError, match="Invalid token"):
             manager.add("test", "invalid_token")
 
     def test_list_accounts(self):
@@ -1673,12 +1681,12 @@ class TestAccountManager:
         config.validate_access_token.assert_called_once_with(account)
 
     @pytest.mark.parametrize("name,expected_error", [
-        ("", "Nome da conta deve ter entre 1 e 50 caracteres"),
-        ("a" * 51, "Nome da conta deve ter entre 1 e 50 caracteres"),
-        ("name with space", "Nome da conta contém caracteres inválidos"),
-        ("work\n", "Nome da conta contém caracteres inválidos"),
-        ("café", "Nome da conta contém caracteres inválidos"),
-        ("emoji\ud83d\ude00", "Nome da conta contém caracteres inválidos"),
+        ("", "Account name must contain between 1 and 50 characters"),
+        ("a" * 51, "Account name must contain between 1 and 50 characters"),
+        ("name with space", "Account name contains invalid characters"),
+        ("work\n", "Account name contains invalid characters"),
+        ("café", "Account name contains invalid characters"),
+        ("emoji\ud83d\ude00", "Account name contains invalid characters"),
     ])
     def test_add_invalid_name(self, name, expected_error):
         manager = AccountManager()

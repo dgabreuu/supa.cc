@@ -52,7 +52,7 @@ class Environment:
         if self.operating_system is OperatingSystem.WINDOWS:
             appdata = values.get("APPDATA")
             if not appdata or not Path(appdata).is_absolute():
-                raise OSError("APPDATA não define um diretório absoluto confiável.")
+                raise OSError("APPDATA does not define a trusted absolute directory.")
             return Path(appdata) / "supa.cc"
         if self.operating_system is OperatingSystem.LINUX:
             xdg_home = values.get("XDG_CONFIG_HOME")

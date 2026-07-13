@@ -1,50 +1,50 @@
-# Solução de problemas
+# Troubleshooting
 
-Comece sempre com o diagnóstico não-live:
+Always start with the non-live diagnostic:
 
 ```bash
 supa.cc doctor
 supa.cc doctor --json
 ```
 
-Ele não abre PAT nem testa ou verifica a disponibilidade do armazenamento de credenciais; mostra somente o backend configurado. Compartilhe a saída, mas não dumps completos de ambiente ou armazenamento de credenciais.
+It does not open a PAT or test credential-store availability; it shows only the configured backend. Standard `doctor` output is safe to share because account names are reduced to selected/indexed booleans and local paths are sanitized. Never share live diagnostic output, complete environments, or credential-store dumps without reviewing them separately.
 
-## Reinstalação segura
+## Safe reinstallation
 
-Antes de reinstalar, registre o método de instalação, a proveniência e a versão mostradas pelo diagnóstico. Não mantenha instalações Homebrew, `pipx` e editáveis simultâneas no `PATH`. Preserve estado inválido para diagnóstico e não apague credenciais nativas; reinstalar o pacote não exige remover PATs do armazenamento da plataforma.
+Before reinstalling, record the installation method, provenance, and version shown by the diagnostic. Do not keep Homebrew, `pipx`, and editable installations active simultaneously on `PATH`. Preserve invalid state for diagnostics and do not delete native credentials; reinstalling the package does not require removing platform-stored PATs.
 
 ## macOS
 
-O Keychain autoriza o runtime Python que executa o Supa.cc. Recriar um ambiente `pipx`, mudar o caminho ou a assinatura desse runtime pode provocar uma nova autorização única. Prompts repetidos com o mesmo runtime indicam permissão ou controle de acesso inconsistente.
+Keychain authorizes the Python runtime that runs Supa.cc. Recreating a `pipx` environment or changing that runtime's path or signature may trigger one new authorization. Repeated prompts with the same runtime indicate inconsistent permissions or access control.
 
-Não exporte o item, não conceda acesso a todos os aplicativos e não afrouxe ACLs. Use `doctor` para comparar os caminhos invocado e real do launcher, Python e Supabase CLI. Se o Keychain estiver bloqueado, desbloqueie-o na sessão gráfica e tente novamente.
+Do not export the item, grant access to all applications, or weaken ACLs. Use `doctor` to compare the invoked and real paths for the launcher, Python, and Supabase CLI. If Keychain is locked, unlock it in the graphical session and try again.
 
 ## Linux
 
-O backend aceito é somente Secret Service no D-Bus da sessão de usuário. Confirme que o D-Bus existe, que `gnome-keyring` ou outro provedor compatível está em execução e que a coleção está desbloqueada. Em SSH, contêiner ou ambiente headless, encaminhar apenas variáveis de D-Bus sem um serviço real e desbloqueado não resolve.
+The accepted backend is only Secret Service on the user-session D-Bus. Confirm that D-Bus exists, that `gnome-keyring` or another compatible provider is running, and that the collection is unlocked. In SSH, containers, or headless environments, forwarding D-Bus variables without a real unlocked service does not help.
 
-Não instale `keyrings.alt` nem configure armazenamento plaintext. Debian/Ubuntu, Arch Linux e Fedora são suportados; confira os pacotes em [Instalação](installation.md#linux-somente-pipx). O estado sem segredo usa `$XDG_CONFIG_HOME/supa.cc` ou `~/.config/supa.cc`.
+Do not install `keyrings.alt` or configure plaintext storage. Debian/Ubuntu, Arch Linux, and Fedora are supported; see the packages in [Installation](installation.md#linux-pipx-only). Secret-free state uses `$XDG_CONFIG_HOME/supa.cc` or `~/.config/supa.cc`.
 
 ## Windows
 
-O backend deve ser exatamente Windows Credential Manager por `WinVaultKeyring`. Não habilite backends alternativos. Verifique no Credential Manager se o cofre está disponível para a mesma conta de usuário, sem copiar ou expor o valor da credencial.
+The backend must be exactly Windows Credential Manager through `WinVaultKeyring`. Do not enable alternative backends. Check Credential Manager for availability under the same user account without copying or exposing the credential value.
 
-Se `pipx` ou `supa.cc` não estiver no `PATH`, execute no PowerShell:
+If `pipx` or `supa.cc` is not on `PATH`, run this in PowerShell:
 
 ```powershell
 py -m pipx ensurepath
 ```
 
-Feche e reabra o PowerShell. `%APPDATA%` precisa estar definido como caminho absoluto; os metadados sem segredo ficam em `%APPDATA%\supa.cc`. Ausência ou caminho relativo causa falha segura.
+Close and reopen PowerShell. `%APPDATA%` must be defined as an absolute path; secret-free metadata is stored in `%APPDATA%\supa.cc`. Missing or relative paths cause a safe failure.
 
-## Variáveis herdadas
+## Inherited variables
 
-Um `SUPABASE_ACCESS_TOKEN` já definido faz override da sessão persistida e bloqueia `switch`. Remova-o do shell atual e da configuração que o injeta, sem imprimir seu valor. Procure somente a presença da variável com ferramentas adequadas ao seu shell.
+An already-defined `SUPABASE_ACCESS_TOKEN` overrides the persisted session and blocks `switch`. Remove it from the current shell and from the configuration that injects it without printing its value. Check only whether the variable is present using tools appropriate for your shell.
 
-O Supa.cc bloqueia o fallback plaintext `access-token` da Supabase CLI sem ler seu conteúdo. Não cole esse arquivo em relatórios e não tente migrá-lo para o Supa.cc.
+Supa.cc blocks the Supabase CLI plaintext `access-token` fallback without reading its contents. Do not paste that file into reports and do not attempt to migrate it to Supa.cc.
 
-## Diagnóstico live e erros comuns
+## Live diagnostics and common errors
 
-Use `supa.cc doctor --account <nome> --live` apenas quando quiser autorizar leitura e validação online da conta escolhida. Um HTTP 401 indica PAT rejeitado; falha de rede, CLI ausente/incompatível, armazenamento bloqueado e `EPERM` são categorias distintas. Um `EPERM` restrito a sandbox não comprova token inválido.
+Use `supa.cc doctor --account <name> --live` only when you want to authorize reading and online validation of the selected account. HTTP 401 indicates a rejected PAT; network failure, missing or incompatible CLI, locked storage, and `EPERM` are distinct categories. An `EPERM` restricted to a sandbox does not prove that the token is invalid.
 
-Operações interrompidas podem deixar journal de recuperação sem token. Execute novamente um comando mutável do Supa.cc; não apague journal, locks, índice ou credenciais manualmente. A trava não coordena comandos `supabase` externos, portanto evite executá-los simultaneamente com uma ativação.
+Interrupted operations may leave a token-free recovery journal. Run a mutating Supa.cc command again; do not manually delete the journal, locks, index, or credentials. The lock does not coordinate external `supabase` commands, so avoid running them at the same time as an activation.

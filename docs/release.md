@@ -1,6 +1,6 @@
 # Checklist de release
 
-Este checklist documenta a sequência usada para preparar e publicar a versão 0.3.0. A GitHub Release `v0.3.0`, o pacote no PyPI e a fórmula Homebrew estão publicados.
+Este checklist documenta a preparação da versão 0.4.0. A versão 0.4.0 ainda não está publicada; a fórmula deve continuar apontando para a versão 0.3.0 até a tag, o PyPI e os smokes de 0.4.0 estarem verificados.
 
 ## 1. Validar o commit candidato
 
@@ -9,29 +9,24 @@ Revise `git status --short`, `git remote -v` e o histórico. Confirme que não h
 Em um checkout limpo do commit candidato, execute:
 
 ```bash
-python3 -m pip install --upgrade pip
+python3 -m pip install --upgrade "pip>=26.1.2"
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
 python3 -m pip check
 pip-audit --skip-editable
 python scripts/runtime_requirements.py runtime-requirements.txt
 pip-audit --requirement runtime-requirements.txt
+python scripts/security_scan.py --tracked --history
+python -m pytest --cache-clear --collect-only -q
+python scripts/security_scan.py --path .pytest_cache
 rm -rf dist
 python3 -m build
 python3 scripts/inspect_artifacts.py dist
 ```
 
-No Python 3.9, execute a auditoria do ambiente com as exceções abaixo. As
-versões corrigidas exigem Python 3.10 ou superior; não adicione exceções para
-outros jobs nem para a auditoria separada das dependências de runtime:
+O scanner relata somente a classe e a localização de um achado, nunca o valor. O inspetor exige exatamente uma wheel e um sdist em `dist/`, valida os caminhos dos membros e aplica o mesmo scanner aos dois artefatos. Instale também a wheel em um ambiente virtual descartável, execute `pip check`, `supa.cc --version` e `supa.cc version`, e confirme `0.4.0`.
 
-```bash
-pip-audit --skip-editable --ignore-vuln PYSEC-2026-1375 --ignore-vuln PYSEC-2026-1374 --ignore-vuln GHSA-6v7p-g79w-8964 --ignore-vuln PYSEC-2026-196 --ignore-vuln GHSA-58qw-9mgm-455v --ignore-vuln GHSA-jp4c-xjxw-mgf9 --ignore-vuln PYSEC-2026-1845 --ignore-vuln GHSA-gc5v-m9x4-r6x2 --ignore-vuln PYSEC-2026-142 --ignore-vuln PYSEC-2026-141
-```
-
-O inspetor exige exatamente uma wheel e um sdist em `dist/`, valida os caminhos dos membros e procura referências privadas e caminhos absolutos locais. Instale também a wheel em um ambiente virtual descartável, execute `pip check`, `supa.cc --version` e `supa.cc version`, e confirme `0.3.0`.
-
-A matriz CI executa a suíte normal completa em Python 3.9 e atual no Ubuntu, macOS e Windows, além dos testes direcionados em Fedora e Arch, sem acessar cofres reais nos runners hospedados. Aguarde a CI validada no commit exato antes de continuar. Smoke tests nativos permanecem opt-in e exigem execução explícita em um host com o armazenamento nativo disponível.
+A matriz CI executa a suíte normal completa em Python 3.11 e na versão estável atual no Ubuntu, macOS e Windows, além dos testes direcionados em Fedora e Arch, sem acessar cofres reais nos runners hospedados. Aguarde a CI validada no commit exato antes de continuar. Smoke tests nativos permanecem opt-in e exigem execução explícita em um host com o armazenamento nativo disponível.
 
 ## 2. Confirmar o contrato operacional
 
@@ -50,7 +45,7 @@ Proteja o environment `pypi` conforme a política do repositório. O workflow us
 
 ## 4. Publicar a GitHub Release
 
-Crie a tag anotada `v0.3.0` somente no commit com CI validada. Crie a GitHub Release correspondente, use a seção 0.3.0 do `CHANGELOG.md` como base das notas e confira o alvo antes de selecionar **Publish release**.
+Crie a tag anotada `v0.4.0` somente no commit com CI validada. Crie a GitHub Release correspondente, use a seção 0.4.0 do `CHANGELOG.md` como base das notas e confira o alvo antes de selecionar **Publish release**.
 
 A publicação da GitHub Release dispara `.github/workflows/release.yml`. O job de build faz checkout da tag da release, confirma que ela corresponde à versão do `pyproject.toml`, testa, constrói uma única vez e envia uma wheel e um sdist como artifact. Não anexe builds locais à release.
 
@@ -62,21 +57,21 @@ Se build, inspeção ou publicação falhar, não recrie a mesma versão no PyPI
 
 ## 6. Verificar pipx no Linux e no Windows
 
-Após a publicação, o workflow instala `supa.cc==0.3.0` diretamente do PyPI com pipx no Linux e no Windows e executa os dois comandos de versão. Confirme os jobs verdes e faça uma verificação manual independente se a política da release exigir:
+Após a publicação, o workflow instala `supa.cc==0.4.0` diretamente do PyPI com pipx no Linux e no Windows e executa os dois comandos de versão. Confirme os jobs verdes e faça uma verificação manual independente se a política da release exigir:
 
 ```bash
-pipx install supa.cc==0.3.0
+pipx install supa.cc==0.4.0
 supa.cc --version
 supa.cc version
 ```
 
 ## 7. Atualizar a fórmula Homebrew
 
-Somente depois da verificação com pipx no Linux e no Windows e após a tag existir, altere `Formula/supa-cc.rb`. Use o tarball real da tag `v0.3.0`, calcule seu SHA256 real e atualize os recursos Python; nunca antecipe ou invente o checksum.
+Somente depois da verificação com pipx no Linux e no Windows e após a tag existir, altere `Formula/supa-cc.rb`. Use o tarball real da tag `v0.4.0`, calcule seu SHA256 real e atualize os recursos Python; nunca antecipe ou invente o checksum.
 
 ```bash
-archive="${TMPDIR:-.}/supa.cc-v0.3.0.tar.gz"
-curl -L -o "$archive" https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.3.0.tar.gz
+archive="${TMPDIR:-.}/supa.cc-v0.4.0.tar.gz"
+curl -L -o "$archive" https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.0.tar.gz
 sha256sum "$archive"
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
 cd "$(brew --repo dgabreuu/supa-cc)"
@@ -90,6 +85,6 @@ No macOS, use `shasum -a 256` se `sha256sum` não estiver disponível. Mantenha 
 
 ## 8. Atualizar o texto de disponibilidade
 
-Somente depois de PyPI e Homebrew estarem verificados, remova de `README.md` e `docs/installation.md` o texto de disponibilidade que descreve os canais como planejados. Finalize a entrada do changelog trocando “Não lançado (preparado)” pela data real da release e substituindo `HEAD` pela tag `v0.3.0` no link de comparação.
+Somente depois de PyPI e Homebrew estarem verificados, finalize a entrada do changelog trocando `Unreleased` pela data real da release e substituindo `HEAD` pela tag `v0.4.0` no link de comparação. Atualize este checklist para registrar que a release e a fórmula foram publicadas.
 
 Não crie assets Debian, AUR ou RPM neste processo.

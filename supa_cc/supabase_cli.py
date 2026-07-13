@@ -19,6 +19,26 @@ def _requires_path_execution() -> bool:
     return _is_windows() or sys.platform == "darwin"
 
 
+def _has_trusted_path_ancestors(path: str) -> bool:
+    current = os.path.dirname(path)
+    while current:
+        try:
+            metadata = os.lstat(current)
+        except OSError:
+            return False
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid not in {os.getuid(), 0}
+            or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        ):
+            return False
+        parent = os.path.dirname(current)
+        if parent == current:
+            return True
+        current = parent
+    return False
+
+
 BinaryResolver = Callable[[str], Optional[str]]
 AUTH_VALIDATION_TIMEOUT_SECONDS = 30
 MINIMUM_VERSION = (2, 109, 1)
@@ -44,14 +64,14 @@ _PRECEDENCE = (
     AuthFailureCode.API_AUTH_FAILED,
 )
 _MESSAGES = {
-    AuthFailureCode.TOKEN_MISSING: "Token de acesso não foi fornecido à Supabase CLI.",
-    AuthFailureCode.TOKEN_REJECTED: "O token foi rejeitado pela API da Supabase.",
-    AuthFailureCode.ENVIRONMENT_BLOCKED: "O ambiente bloqueou a execução da Supabase CLI.",
-    AuthFailureCode.NETWORK_FAILURE: "Não foi possível conectar à API da Supabase.",
-    AuthFailureCode.CLI_INCOMPATIBLE: "A versão instalada da Supabase CLI não é compatível.",
-    AuthFailureCode.PROFILE_MISMATCH: "O perfil da Supabase CLI não corresponde à conta selecionada.",
-    AuthFailureCode.API_AUTH_FAILED: "A API da Supabase não pôde autenticar a conta.",
-    AuthFailureCode.COMMAND_FAILED: "A Supabase CLI não pôde concluir o comando.",
+    AuthFailureCode.TOKEN_MISSING: "An access token was not provided to the Supabase CLI.",
+    AuthFailureCode.TOKEN_REJECTED: "The token was rejected by the Supabase API.",
+    AuthFailureCode.ENVIRONMENT_BLOCKED: "The environment blocked Supabase CLI execution.",
+    AuthFailureCode.NETWORK_FAILURE: "Unable to connect to the Supabase API.",
+    AuthFailureCode.CLI_INCOMPATIBLE: "The installed Supabase CLI version is incompatible.",
+    AuthFailureCode.PROFILE_MISMATCH: "The Supabase CLI profile does not match the selected account.",
+    AuthFailureCode.API_AUTH_FAILED: "The Supabase API could not authenticate the account.",
+    AuthFailureCode.COMMAND_FAILED: "The Supabase CLI could not complete the command.",
 }
 
 
@@ -61,20 +81,61 @@ class _StreamingPATRedactor:
 
     def feed(self, text, final=False):
         output = []
-        for character in text:
-            if self.inside and is_access_token_body_character(character):
-                continue
-            if self.inside:
-                output.append("[REDACTED]")
-                self.inside = False
-            self.pending += character
-            while self.pending and not ACCESS_TOKEN_PREFIX.startswith(self.pending):
-                output.append(self.pending[0])
-                self.pending = self.pending[1:]
-            if self.pending == ACCESS_TOKEN_PREFIX:
-                self.pending, self.inside = "", True
+        data = self.pending + text if self.pending else text
+        self.pending = ""
+        position = 0
+
+        if self.inside:
+            while position < len(data) and is_access_token_body_character(
+                data[position]
+            ):
+                position += 1
+            if position == len(data):
+                if final:
+                    output.append("[REDACTED]")
+                    self.inside = False
+                return "".join(output)
+            output.append("[REDACTED]")
+            self.inside = False
+
+        while position < len(data):
+            candidate = data.find(ACCESS_TOKEN_PREFIX, position)
+            if candidate < 0:
+                remainder = data[position:]
+                retained = 0
+                if not final:
+                    for size in range(
+                        min(len(remainder), len(ACCESS_TOKEN_PREFIX) - 1),
+                        0,
+                        -1,
+                    ):
+                        if remainder.endswith(ACCESS_TOKEN_PREFIX[:size]):
+                            retained = size
+                            break
+                if retained:
+                    output.append(remainder[:-retained])
+                    self.pending = remainder[-retained:]
+                else:
+                    output.append(remainder)
+                break
+
+            output.append(data[position:candidate])
+            position = candidate + len(ACCESS_TOKEN_PREFIX)
+            while position < len(data) and is_access_token_body_character(
+                data[position]
+            ):
+                position += 1
+            if position == len(data):
+                self.inside = True
+                if final:
+                    output.append("[REDACTED]")
+                    self.inside = False
+                break
+            output.append("[REDACTED]")
+
         if final:
-            output.append("[REDACTED]" if self.inside else self.pending)
+            if self.pending:
+                output.append(self.pending)
             self.pending, self.inside = "", False
         return "".join(output)
 
@@ -142,7 +203,7 @@ class SupabaseCLI:
 
     def _open_binary(self):
         if self.supabase_cli is None:
-            return None, CommandResult.failure(AuthFailureCode.CLI_NOT_FOUND, "Supabase CLI não encontrada.")
+            return None, CommandResult.failure(AuthFailureCode.CLI_NOT_FOUND, "Supabase CLI not found.")
         if _is_windows():
             descriptor = None
             try:
@@ -172,13 +233,17 @@ class SupabaseCLI:
         try:
             descriptor = os.open(self.supabase_cli, flags)
         except FileNotFoundError:
-            return None, CommandResult.failure(AuthFailureCode.CLI_NOT_FOUND, "Supabase CLI não encontrada.")
+            return None, CommandResult.failure(AuthFailureCode.CLI_NOT_FOUND, "Supabase CLI not found.")
         except (PermissionError, OSError):
             return None, CommandResult.failure(AuthFailureCode.ENVIRONMENT_BLOCKED, _MESSAGES[AuthFailureCode.ENVIRONMENT_BLOCKED])
         try:
             opened = os.fstat(descriptor)
             current = os.stat(self.supabase_cli, follow_symlinks=False)
             if not self._is_trusted(opened) or not os.path.samestat(opened, current):
+                raise PermissionError
+            if sys.platform == "darwin" and not _has_trusted_path_ancestors(
+                self.supabase_cli
+            ):
                 raise PermissionError
             descriptor_root = "/proc/self/fd" if os.path.isdir("/proc/self/fd") else "/dev/fd"
             descriptor_path = f"{descriptor_root}/{descriptor}"
@@ -266,26 +331,26 @@ class SupabaseCLI:
     def validate_access_token(self, account: Account) -> AuthResult:
         result = self.execute_authenticated(account, ["projects", "list"], timeout_seconds=self.validation_timeout_seconds)
         if result.ok:
-            return AuthResult.success("Conta autenticada pela API da Supabase.")
+            return AuthResult.success("Account authenticated by the Supabase API.")
         return AuthResult.failure(result.code, result.message, exit_code=result.exit_code)
 
     def login_with_access_token(self, account: Account, supabase_home=None, profile="supabase") -> AuthResult:
         if profile != "supabase":
             return self._native_profile_failure()
         return self._native_auth_result(self._execute_native(account, ["login"], supabase_home, profile),
-                                         AuthFailureCode.NATIVE_LOGIN_FAILED, "Sessão nativa autenticada.")
+                                         AuthFailureCode.NATIVE_LOGIN_FAILED, "Native session authenticated.")
 
     def verify_persisted_session(self, supabase_home=None, profile="supabase") -> AuthResult:
         if profile != "supabase":
             return self._native_profile_failure()
         return self._native_auth_result(self._execute_without_access_token(["projects", "list"], supabase_home, profile),
-                                         AuthFailureCode.NATIVE_VERIFICATION_FAILED, "Sessão nativa verificada.")
+                                         AuthFailureCode.NATIVE_VERIFICATION_FAILED, "Native session verified.")
 
     def logout_session(self, supabase_home=None, profile="supabase") -> AuthResult:
         if profile != "supabase":
             return self._native_profile_failure()
         return self._native_auth_result(self._execute_without_access_token(["logout", "--yes"], supabase_home, profile),
-                                         AuthFailureCode.NATIVE_LOGOUT_FAILED, "Sessão nativa encerrada.")
+                                         AuthFailureCode.NATIVE_LOGOUT_FAILED, "Native session ended.")
 
     @staticmethod
     def _native_auth_result(result, fallback_code, success_message):
@@ -334,13 +399,13 @@ class SupabaseCLI:
     def _prepare_authenticated_invocation(self, account, arguments):
         command_arguments = [str(argument) for argument in arguments]
         if not command_arguments:
-            return None, None, CommandResult.failure(AuthFailureCode.COMMAND_EMPTY, "Informe um comando da Supabase CLI para executar.")
+            return None, None, CommandResult.failure(AuthFailureCode.COMMAND_EMPTY, "Provide a Supabase CLI command to run.")
         if _contains_sensitive_argument(command_arguments):
-            return None, None, CommandResult.failure(AuthFailureCode.UNSAFE_ARGUMENT, "Argumentos que transportam token não são permitidos.")
+            return None, None, CommandResult.failure(AuthFailureCode.UNSAFE_ARGUMENT, "Arguments carrying a token are not allowed.")
         if not account.token:
-            return None, None, CommandResult.failure(AuthFailureCode.TOKEN_MISSING, "Token de acesso não encontrado.")
+            return None, None, CommandResult.failure(AuthFailureCode.TOKEN_MISSING, "Access token not found.")
         if not account.validate_token():
-            return None, None, CommandResult.failure(AuthFailureCode.TOKEN_FORMAT_INVALID, "O token armazenado tem formato inválido.")
+            return None, None, CommandResult.failure(AuthFailureCode.TOKEN_FORMAT_INVALID, "The stored token uses an invalid format.")
         env = os.environ.copy()
         env["SUPABASE_ACCESS_TOKEN"] = account.token
         return command_arguments, env, None
@@ -364,17 +429,11 @@ class SupabaseCLI:
         env.pop("SUPABASE_ACCESS_TOKEN", None)
         return self._run(["--version"], env, timeout_seconds=self.validation_timeout_seconds)
 
-    def detect_version(self):
-        result = self._version_command()
-        if not result.ok:
-            return None
-        return _parse_version(result.stdout, result.stderr)
-
     def preflight(self) -> AuthResult:
         result = self._version_command()
         if not result.ok:
             return AuthResult.failure(result.code, result.message, exit_code=result.exit_code)
         version = _parse_version(result.stdout, result.stderr)
         if version is None or version < MINIMUM_VERSION:
-            return AuthResult.failure(AuthFailureCode.CLI_INCOMPATIBLE, "A versão instalada da Supabase CLI não é compatível.")
-        return AuthResult.success("Supabase CLI compatível.")
+            return AuthResult.failure(AuthFailureCode.CLI_INCOMPATIBLE, "The installed Supabase CLI version is incompatible.")
+        return AuthResult.success("Supabase CLI is compatible.")

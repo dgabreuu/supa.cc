@@ -2,8 +2,8 @@ import os
 from contextlib import contextmanager
 from typing import Callable, Iterator, List, Optional, Sequence
 
-from .account_store import AccountStore
-from .auth import (
+from .store import AccountStore
+from ..auth import (
     ActiveAccountError,
     ActiveAccountStore,
     AccountTransactionError,
@@ -16,20 +16,23 @@ from .auth import (
     classify_local_failure,
     is_valid_account_name,
 )
-from .environment import detect_environment
-from .models import Account, AccountSummary
-from .native_session import NativeSessionSynchronizer, SessionSyncJournal
-from .file_lock import acquire_file_lock, release_file_lock, validate_lock_file
-from .supabase_cli import SupabaseCLI
+from ..environment import detect_environment
+from ..models import Account, AccountSummary
+from ..session import NativeSessionSynchronizer, SessionSyncJournal
+from ..file_lock import (
+    LockCloseError,
+    LockReleaseError,
+    acquire_file_lock,
+    locked_file,
+    release_file_lock,
+    validate_lock_file,
+)
+from ..supabase_cli import SupabaseCLI
 from .transactions import AccountTransactionCoordinator, pending_sync_failure
 
 
-class _SyncUnlockError(OSError):
-    pass
-
-
-class _SyncCloseError(OSError):
-    pass
+_SyncUnlockError = LockReleaseError
+_SyncCloseError = LockCloseError
 
 
 def _is_windows() -> bool:
@@ -82,41 +85,15 @@ class AccountManager:
 
     @contextmanager
     def _sync_lock(self) -> Iterator[None]:
-        self._sync_lock_path.parent.mkdir(parents=True, exist_ok=True)
-        if not _is_windows():
-            self._sync_lock_path.parent.chmod(0o700)
-        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(self._sync_lock_path, flags, 0o600)
-        locked = False
-        body_error = None
-        unlock_failed = False
-        close_failed = False
-        try:
-            validate_lock_file(descriptor, self._sync_lock_path)
-            acquire_file_lock(descriptor)
-            locked = True
-            validate_lock_file(descriptor, self._sync_lock_path)
-            try:
-                yield
-            except BaseException as error:
-                body_error = error
-        finally:
-            try:
-                if locked:
-                    release_file_lock(descriptor)
-            except OSError:
-                unlock_failed = True
-            finally:
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    close_failed = True
-        if body_error is not None:
-            raise body_error
-        if unlock_failed:
-            raise _SyncUnlockError()
-        if close_failed:
-            raise _SyncCloseError()
+        with locked_file(
+            self._sync_lock_path,
+            open_file=os.open,
+            close_file=os.close,
+            acquire=acquire_file_lock,
+            release=release_file_lock,
+            validate=validate_lock_file,
+        ):
+            yield
 
     def _run_with_sync_lock(self, operation: Callable[[], AuthResult]) -> AuthResult:
         result = None
@@ -137,22 +114,22 @@ class AccountManager:
                 return pending_sync_failure()
             return AuthResult.failure(
                 AuthFailureCode.ENVIRONMENT_BLOCKED,
-                "A operação foi concluída, mas o lock de sincronização não pôde ser finalizado.",
+                "The operation completed, but the synchronization lock could not be finalized.",
             )
         except (OSError, ValueError):
             return pending_sync_failure()
 
     def add(self, name: str, token: str) -> Account:
         if not name or len(name) < 1 or len(name) > 50:
-            raise InvalidAccountNameError("Nome da conta deve ter entre 1 e 50 caracteres.")
+            raise InvalidAccountNameError("Account name must contain between 1 and 50 characters.")
         if not is_valid_account_name(name):
             raise InvalidAccountNameError(
-                "Nome da conta contém caracteres inválidos. Use apenas letras, números, hífens e underscores."
+                "Account name contains invalid characters. Use only letters, numbers, hyphens, and underscores."
             )
         account = Account(name=name, token=token)
         if not account.validate_token():
             raise InvalidAccessTokenError(
-                "Token inválido: o valor não atende ao formato PAT Supabase."
+                "Invalid token: the value does not use the Supabase PAT format."
             )
         try:
             with self._sync_lock():
@@ -161,7 +138,7 @@ class AccountManager:
             raise
         except Exception:
             raise AccountTransactionError(
-                "Não foi possível atualizar a conta ativa com segurança."
+                "Unable to update the active account safely."
             ) from None
         return account
 
@@ -173,7 +150,7 @@ class AccountManager:
 
     def remove(self, name: str) -> None:
         if not is_valid_account_name(name):
-            raise InvalidAccountNameError("Nome de conta inválido.")
+            raise InvalidAccountNameError("Invalid account name.")
         try:
             with self._sync_lock():
                 self.transactions.remove(name)
@@ -181,7 +158,7 @@ class AccountManager:
             raise
         except Exception:
             raise AccountTransactionError(
-                "Não foi possível remover a conta ativa com segurança."
+                "Unable to remove the active account safely."
             ) from None
 
     def _load_account_for_auth(self, name: str):
@@ -192,12 +169,12 @@ class AccountManager:
         if not account:
             return None, AuthResult.failure(
                 AuthFailureCode.TOKEN_MISSING,
-                "Token não encontrado para a conta selecionada.",
+                "Token not found for the selected account.",
             )
         if not account.validate_token():
             return None, AuthResult.failure(
                 AuthFailureCode.TOKEN_FORMAT_INVALID,
-                "O token armazenado tem formato inválido.",
+                "The stored token uses an invalid format.",
             )
         return account, None
 
@@ -205,7 +182,7 @@ class AccountManager:
         if not is_valid_account_name(name):
             return AuthResult.failure(
                 AuthFailureCode.ACCOUNT_REQUIRED,
-                "Informe um nome de conta válido.",
+                "Provide a valid account name.",
                 exit_code=2,
             )
         account, failure = self._load_account_for_auth(name)
@@ -217,13 +194,17 @@ class AccountManager:
         if not is_valid_account_name(name):
             return AuthResult.failure(
                 AuthFailureCode.ACCOUNT_REQUIRED,
-                "Informe um nome de conta válido.",
+                "Provide a valid account name.",
                 exit_code=2,
             )
         return self._run_with_sync_lock(lambda: self.transactions.set_active(name))
 
     def recover_pending_sync(self) -> AuthResult:
         return self._run_with_sync_lock(self.transactions.recover_pending_sync)
+
+    def get_active_name(self) -> Optional[str]:
+        """Return the selected account name without reading its credential."""
+        return self.active_store.read()
 
     def run_active(
         self,
@@ -241,7 +222,7 @@ class AccountManager:
         if name is None:
             return CommandResult.failure(
                 AuthFailureCode.ACTIVE_ACCOUNT_MISSING,
-                "Nenhuma conta ativa foi selecionada. Execute 'supa.cc switch <conta>'.",
+                "No active account was selected. Run 'supa.cc switch <name>'.",
             )
         account, failure = self._load_account_for_auth(name)
         if failure is not None:

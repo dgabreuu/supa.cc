@@ -4,7 +4,7 @@ Obrigado por contribuir com o Supa.cc. Use as [GitHub Issues](https://github.com
 
 ## Ambiente de desenvolvimento
 
-O projeto requer Python 3.9 ou mais recente. Faça um fork, clone o repositório e instale o pacote com as dependências de desenvolvimento.
+O projeto requer Python 3.11 ou mais recente. Faça um fork, clone o repositório e instale o pacote com as dependências de desenvolvimento.
 
 ### macOS e Linux (POSIX)
 
@@ -23,6 +23,9 @@ py -m pytest
 Para mudanças de empacotamento, valide também:
 
 ```text
+python3 scripts/security_scan.py --worktree --history
+python3 -m pytest --cache-clear --collect-only -q
+python3 scripts/security_scan.py --path .pytest_cache
 python3 -m build
 python3 scripts/inspect_artifacts.py dist
 # Windows: substitua python3 por py

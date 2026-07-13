@@ -1,57 +1,37 @@
-import subprocess
 import click
 import supa_cc
 from .auth import classify_local_failure, normalize_exit_code
-from .environment import detect_environment
-from .installation import installation_guidance
-from .tui import run as run_tui
-from .strings import CLIStrings as Textos
+from .strings import CLIStrings as Strings
 
 def _exit_with_local_failure(error):
     result = classify_local_failure(error)
-    click.echo(Textos.MSG_ERROR.format(result.message), err=True)
+    click.echo(Strings.MSG_ERROR.format(result.message), err=True)
     raise click.exceptions.Exit(normalize_exit_code(result.exit_code) or 1)
 
 
 def _check_for_updates():
-    """Verifica se há uma versão mais recente disponível."""
-    import os
+    """Return deterministic update guidance without network or Git access."""
+    from .environment import detect_environment
+    from .installation import installation_guidance
 
     update_hint = installation_guidance(detect_environment()).update_hint
-    pkg_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    git_dir = os.path.join(pkg_dir, ".git")
+    return f"Update: {update_hint}"
 
-    if not os.path.isdir(git_dir):
-        return f"Para verificar atualizações, clone o repositório ou execute: {update_hint}"
 
-    try:
-        local = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, check=True, timeout=5, cwd=pkg_dir,
-        )
-        remote = subprocess.run(
-            ["git", "ls-remote", "origin", "HEAD"],
-            capture_output=True, text=True, check=True, timeout=5, cwd=pkg_dir,
-        )
-        local_hash = local.stdout.strip()
-        remote_hash = remote.stdout.split()[0][:7] if remote.stdout else local_hash
-        if remote_hash != local_hash:
-            return f"Nova versão disponível! (local: {local_hash} → remoto: {remote_hash})"
-        return "Você está na versão mais recente."
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return f"Não foi possível verificar atualizações. Verifique sua conexão ou execute: {update_hint}"
-    except FileNotFoundError:
-        return f"Git não encontrado. Para atualizar, execute: {update_hint}"
+def _run_tui():
+    from .tui import run
+
+    return run()
 
 
 @click.group(invoke_without_command=True)
 @click.version_option(version=supa_cc.__version__, prog_name="supa.cc")
 @click.pass_context
 def main(ctx):
-    """Gerenciador de Contas Supabase"""
+    """Supabase account manager."""
     if ctx.invoked_subcommand is None:
         try:
-            exit_code = run_tui()
+            exit_code = _run_tui()
         except Exception as error:
             _exit_with_local_failure(error)
         if exit_code:
@@ -60,7 +40,7 @@ def main(ctx):
 
 @main.command()
 def version():
-    """Mostra a versão e verifica atualizações."""
+    """Show the installed version and official update command."""
     click.echo(f"Supa.cc v{supa_cc.__version__}")
     click.echo(_check_for_updates())
 
@@ -68,25 +48,25 @@ def version():
 @main.command()
 @click.argument("name")
 def add(name):
-    """Adicionar nova conta."""
+    """Add a new account."""
     from .accounts import AccountManager
 
     token = click.prompt(
-        Textos.PROMPT_ACCESS_TOKEN,
+        Strings.PROMPT_ACCESS_TOKEN,
         hide_input=True,
         confirmation_prompt=False,
     )
     try:
         manager = AccountManager()
         manager.add(name, token)
-        click.echo(Textos.MSG_ACCOUNT_ADDED.format(name))
+        click.echo(Strings.MSG_ACCOUNT_ADDED.format(name))
     except Exception as error:
         _exit_with_local_failure(error)
 
 
 @main.command("list")
 def list_accounts_command():
-    """Listar contas cadastradas."""
+    """List registered accounts."""
     from .accounts import AccountManager
     try:
         manager = AccountManager()
@@ -94,7 +74,7 @@ def list_accounts_command():
     except Exception as error:
         _exit_with_local_failure(error)
     if not accounts:
-        click.echo(Textos.MSG_NO_ACCOUNTS)
+        click.echo(Strings.MSG_NO_ACCOUNTS)
         return
 
     for account in accounts:
@@ -104,7 +84,7 @@ def list_accounts_command():
 @main.command()
 @click.argument("name")
 def switch(name):
-    """Alternar conta ativa."""
+    """Switch the active account."""
     from .accounts import AccountManager
     try:
         manager = AccountManager()
@@ -126,7 +106,7 @@ def switch(name):
 )
 @click.argument("arguments", nargs=-1, required=True, type=click.UNPROCESSED)
 def run(arguments):
-    """Executar a Supabase CLI com a conta ativa, usando PAT somente no ambiente."""
+    """Run the Supabase CLI with the active account using the PAT only in the environment."""
     from .accounts import AccountManager
 
     stdout = click.get_text_stream("stdout")
@@ -158,7 +138,7 @@ def run(arguments):
 @click.option("--live", is_flag=True, default=False)
 @click.option("--json", "as_json", is_flag=True, default=False)
 def doctor(account, live, as_json):
-    """Diagnosticar executáveis, índice, ambiente e autenticação opcional."""
+    """Diagnose executables, the index, the environment, and optional authentication."""
     from .diagnostics import DiagnosticService
 
     try:
@@ -172,16 +152,16 @@ def doctor(account, live, as_json):
 
 @main.command()
 @click.argument("name")
-@click.confirmation_option(prompt=Textos.MSG_CONFIRM_REMOVE)
+@click.confirmation_option(prompt=Strings.MSG_CONFIRM_REMOVE)
 def remove(name):
-    """Remover conta cadastrada."""
+    """Remove a registered account."""
     from .accounts import AccountManager
     try:
         manager = AccountManager()
         manager.remove(name)
     except Exception as error:
         _exit_with_local_failure(error)
-    click.echo(Textos.MSG_ACCOUNT_REMOVED.format(name))
+    click.echo(Strings.MSG_ACCOUNT_REMOVED.format(name))
 
 
 if __name__ == "__main__":

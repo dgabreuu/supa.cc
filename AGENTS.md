@@ -16,9 +16,9 @@ Mantenha toda contribuição genérica e segura para este repositório open sour
 
 ## Convenções
 
-- Python 3.9+, build com `hatchling` e console script `supa.cc`.
+- Python 3.11+, build com `hatchling` e console script `supa.cc`.
 - Siga os padrões existentes em `supa_cc/`, mantenha arquivos focados e cubra mudanças de comportamento em `tests/`.
-- Dependências de runtime: `click`, `questionary`, `rich` e `keyring`. Dependências de desenvolvimento são declaradas em `pyproject.toml`.
+- Dependências de runtime: `click`, `questionary` e `keyring`. Dependências de desenvolvimento são declaradas em `pyproject.toml`.
 - Execute `python3 -m pytest`; veja [Como contribuir](CONTRIBUTING.md) para preparação do ambiente, build e smokes nativos.
 - Atualize o documento canônico correspondente: [Instalação](docs/installation.md), [Uso](docs/usage.md), [Segurança](docs/security.md) ou [Solução de problemas](docs/troubleshooting.md).
 

@@ -9,8 +9,8 @@ def test_navigation_state_defaults_to_home():
 
 def test_open_navigates_to_subpage():
     state = NavigationState()
-    state.open(PageId.LIST)
-    assert state.current_page == PageId.LIST
+    state.open(PageId.SWITCH)
+    assert state.current_page == PageId.SWITCH
 
 
 def test_go_home_returns_to_home_page():
