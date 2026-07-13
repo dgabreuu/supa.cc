@@ -358,7 +358,7 @@ def test_release_workflow_builds_once_and_publishes_the_same_artifact():
         "ubuntu-latest",
         "windows-latest",
     ]
-    assert "pipx install supa.cc==0.4.0" in workflow_text
+    assert "pipx install supa.cc==0.4.1" in workflow_text
 
 
 def test_pypi_metadata_has_explicit_markdown_and_public_links():
@@ -416,6 +416,17 @@ def test_changelog_marks_0_4_0_as_released():
         in changelog
     )
     assert "## [0.4.0] - Unreleased" not in changelog
+
+
+def test_changelog_prepares_0_4_1_without_claiming_publication():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.4.1] - Unreleased" in changelog
+    assert "Homebrew" in changelog
+    assert (
+        "[0.4.1]: https://github.com/dgabreuu/supa.cc/compare/v0.4.0...HEAD"
+        in changelog
+    )
 
 
 def test_release_runbook_orders_pypi_verification_before_formula_and_copy_changes():

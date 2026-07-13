@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file.
 The format follows Keep a Changelog in a simplified form.
 
+## [0.4.1] - Unreleased
+
+### Fixed
+
+- Homebrew installation now uses the fully qualified formula name so Homebrew trusts only `dgabreuu/supa-cc/supa-cc`, without requiring trust for the entire tap.
+- Installation, upgrade, diagnostics, troubleshooting, release maintenance, and macOS validation now use the same trust-aware Homebrew flow.
+
+[0.4.1]: https://github.com/dgabreuu/supa.cc/compare/v0.4.0...HEAD
+
 ## [0.4.0] - 2026-07-13
 
 ### Changed
