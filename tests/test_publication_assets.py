@@ -9,6 +9,10 @@ import tomllib
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
 TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.0.tar.gz"
 TARBALL_SHA256 = "6a1614d5489e1c8ce921d034051601265352dc5322c6e476193ad30346802281"
+HOMEBREW_TAP = "dgabreuu/supa-cc"
+HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
+HOMEBREW_TAP_COMMAND = f"brew tap {HOMEBREW_TAP} {REPO_URL}"
+HOMEBREW_INSTALL_COMMAND = f"brew install {HOMEBREW_FORMULA}"
 
 
 def test_readme_uses_public_repository_url():
@@ -46,16 +50,18 @@ def test_publication_docs_keep_stable_installation_separate_from_development():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     release = Path("docs/release.md").read_text(encoding="utf-8")
 
-    assert "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git" in installation
-    assert "brew install supa-cc" in installation
+    assert HOMEBREW_TAP_COMMAND in installation
+    assert HOMEBREW_INSTALL_COMMAND in installation
+    assert "brew install supa-cc" not in installation
     assert "brew install --HEAD supa-cc" not in installation
     assert "brew --repo dgabreuu/supa-cc" in release
+    assert "brew trust --formula dgabreuu/supa-cc/supa-cc" in release
     assert (
         "brew update-python-resources --ignore-main-package-cooldown "
         "Formula/supa-cc.rb"
     ) in release
-    assert "brew audit --strict supa-cc" in release
-    assert "brew test supa-cc" in release
+    assert "brew audit --strict --formula dgabreuu/supa-cc/supa-cc" in release
+    assert "brew test dgabreuu/supa-cc/supa-cc" in release
     assert "git status --short" in release
 
 
@@ -78,7 +84,8 @@ def test_docs_describe_supported_runtime_and_state_without_claiming_name_only_fi
 def test_installation_uses_stable_release_channels():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
 
-    assert "brew install supa-cc" in installation
+    assert HOMEBREW_INSTALL_COMMAND in installation
+    assert "brew install supa-cc" not in installation
     assert "supabase.com/docs/guides/local-development/cli/getting-started" in installation
     for command in ("install", "upgrade", "uninstall"):
         assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
@@ -90,7 +97,28 @@ def test_release_formula_uses_verified_0_4_0_tag():
 
     assert "v0.4.0" in formula
     assert "v0.3.0" not in formula
-    assert "brew test supa-cc" in release
+    assert "brew test dgabreuu/supa-cc/supa-cc" in release
+
+
+def test_public_homebrew_flow_uses_formula_scoped_trust():
+    readme = Path("README.md").read_text(encoding="utf-8")
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+    troubleshooting = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
+
+    for document in (readme, installation):
+        assert HOMEBREW_TAP_COMMAND in document
+        assert HOMEBREW_INSTALL_COMMAND in document
+        assert document.index(HOMEBREW_TAP_COMMAND) < document.index(
+            HOMEBREW_INSTALL_COMMAND
+        )
+        assert "brew install supa-cc" not in document
+        assert "brew trust dgabreuu/supa-cc" not in document
+        assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in document
+
+    assert HOMEBREW_INSTALL_COMMAND in troubleshooting
+    assert "brew trust --formula dgabreuu/supa-cc/supa-cc" in troubleshooting
+    assert "brew trust dgabreuu/supa-cc" not in troubleshooting
+    assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in troubleshooting
 
 
 def test_homebrew_workflow_is_manual_read_only_macos_validation():
@@ -140,27 +168,27 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
         "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git",
         'tap_repo="$(brew --repo dgabreuu/supa-cc)"',
         'test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"',
-        "brew trust --formula dgabreuu/supa-cc/supa-cc",
+        "brew install --yes dgabreuu/supa-cc/supa-cc",
         'formula="$tap_repo/Formula/supa-cc.rb"',
         'brew update-python-resources --ignore-main-package-cooldown "$formula"',
         'git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb',
         "brew audit --strict --formula dgabreuu/supa-cc/supa-cc",
-        "brew install --build-from-source dgabreuu/supa-cc/supa-cc",
         "supa.cc --version",
         "supa.cc version",
         "brew test dgabreuu/supa-cc/supa-cc",
     ):
         assert command in workflow_text
     sha_guard = workflow_text.index('test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"')
-    formula_trust = workflow_text.index("brew trust --formula dgabreuu/supa-cc/supa-cc")
+    install = workflow_text.index("brew install --yes dgabreuu/supa-cc/supa-cc")
     resource_update = workflow_text.index(
         'brew update-python-resources --ignore-main-package-cooldown "$formula"'
     )
-    assert sha_guard < formula_trust < resource_update
-    assert workflow_text.count("brew trust --formula dgabreuu/supa-cc/supa-cc") == 1
+    assert sha_guard < install < resource_update
+    assert "brew trust --formula dgabreuu/supa-cc/supa-cc" not in workflow_text
     assert "brew trust dgabreuu/supa-cc" not in workflow_text
+    assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in workflow_text
     assert 'brew audit --strict --formula "$formula"' not in workflow_text
-    assert 'brew install --build-from-source "$formula"' not in workflow_text
+    assert 'brew install "$formula"' not in workflow_text
     assert "0.4.0" in workflow_text
     for prohibited in (
         "actions/checkout",
@@ -175,7 +203,7 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
 def test_homebrew_workflow_requires_supported_supabase_cli_before_supa_cc_checks():
     workflow_text = Path(".github/workflows/homebrew.yml").read_text(encoding="utf-8")
 
-    install = workflow_text.index("brew install --build-from-source dgabreuu/supa-cc/supa-cc")
+    install = workflow_text.index("brew install --yes dgabreuu/supa-cc/supa-cc")
     supabase_check = workflow_text.index("supabase --version")
     supa_cc_check = workflow_text.index("supa.cc --version")
 
@@ -330,7 +358,7 @@ def test_release_workflow_builds_once_and_publishes_the_same_artifact():
         "ubuntu-latest",
         "windows-latest",
     ]
-    assert "pipx install supa.cc==0.4.0" in workflow_text
+    assert "pipx install supa.cc==0.4.1" in workflow_text
 
 
 def test_pypi_metadata_has_explicit_markdown_and_public_links():
@@ -388,6 +416,17 @@ def test_changelog_marks_0_4_0_as_released():
         in changelog
     )
     assert "## [0.4.0] - Unreleased" not in changelog
+
+
+def test_changelog_prepares_0_4_1_without_claiming_publication():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.4.1] - Unreleased" in changelog
+    assert "Homebrew" in changelog
+    assert (
+        "[0.4.1]: https://github.com/dgabreuu/supa.cc/compare/v0.4.0...HEAD"
+        in changelog
+    )
 
 
 def test_release_runbook_orders_pypi_verification_before_formula_and_copy_changes():

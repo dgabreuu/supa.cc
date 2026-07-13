@@ -16,8 +16,11 @@ Install Homebrew and the official Supabase CLI. The stable channel uses Homebrew
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
-brew install supa-cc
+brew install dgabreuu/supa-cc/supa-cc
 ```
+
+The fully qualified formula name records trust only for Supa.cc while leaving
+the rest of the non-official tap untrusted.
 
 #### Verify
 
@@ -28,7 +31,7 @@ supa.cc --version
 #### Upgrade
 
 ```bash
-brew upgrade supa-cc
+brew upgrade dgabreuu/supa-cc/supa-cc
 ```
 
 #### Uninstall

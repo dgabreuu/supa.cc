@@ -301,26 +301,29 @@ def test_installation_covers_each_platform_lifecycle():
 def test_readme_stable_installation_uses_platform_release_channels():
     readme = _section(Path("README.md").read_text(encoding="utf-8"), "Installation")
 
-    expected = {"macOS": "brew install supa-cc", "Linux": "pipx install supa.cc", "Windows": "pipx install supa.cc"}
+    expected = {
+        "macOS": "brew install dgabreuu/supa-cc/supa-cc",
+        "Linux": "pipx install supa.cc",
+        "Windows": "pipx install supa.cc",
+    }
     for platform, command in expected.items():
         stable = _stable_content(_section(readme, platform))
         assert _has_command(stable, command), f"{platform} README install command must be exactly: {command}"
         assert not _contains_mutable_ref(stable), f"mutable ref in README {platform} stable section"
 
 
-def test_release_docs_mark_0_4_0_as_published_and_verified():
+def test_release_docs_distinguish_published_0_4_0_from_candidate_0_4_1():
     readme = Path("README.md").read_text(encoding="utf-8")
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     release = Path("docs/release.md").read_text(encoding="utf-8")
 
     assert "the channels below are planned for the release" not in readme
     assert "do not mean that version 0.3.0 has already been published" not in installation
-    assert (
-        "Version 0.4.0 was published and verified on GitHub, PyPI, and Homebrew."
-        in release
-    )
-    assert "Version 0.4.0 has not been published yet" not in release
+    assert "Version 0.4.1 has not been published yet" in release
+    assert "the formula must continue to reference version 0.4.0" in release
+    assert "Version 0.4.1 was published and verified" not in release
     assert "v0.4.0" in release
+    assert "v0.4.1" in release
     assert "continua não lançada" not in release
     assert "deve permanecer em `v0.2.0`" not in release
 
@@ -328,7 +331,11 @@ def test_release_docs_mark_0_4_0_as_published_and_verified():
 def test_stable_installation_uses_exact_lifecycle_commands():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     expected = {
-        "macOS": ("brew install supa-cc", "brew upgrade supa-cc", "brew uninstall supa-cc"),
+        "macOS": (
+            "brew install dgabreuu/supa-cc/supa-cc",
+            "brew upgrade dgabreuu/supa-cc/supa-cc",
+            "brew uninstall supa-cc",
+        ),
         "Linux": ("pipx install supa.cc", "pipx upgrade supa.cc", "pipx uninstall supa.cc"),
         "Windows": ("pipx install supa.cc", "pipx upgrade supa.cc", "pipx uninstall supa.cc"),
     }
