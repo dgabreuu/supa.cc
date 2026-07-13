@@ -23,7 +23,7 @@ jobs:
         run: |
           tap_repo="$(brew --repo dgabreuu/supa-cc)"
           formula="$tap_repo/Formula/supa-cc.rb"
-          brew update-python-resources "$formula"
+          brew update-python-resources --ignore-main-package-cooldown "$formula"
           git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb
       - name: Audit formula
         run: brew audit --strict --formula dgabreuu/supa-cc/supa-cc
@@ -43,7 +43,7 @@ jobs:
           ' "$supabase_version_output" "$minimum_version"
       - name: Verify installed version
         run: |
-          test "$(supa.cc --version)" = "supa.cc, version 0.3.0"
-          supa.cc version | grep -Fx "Supa.cc v0.3.0"
+          test "$(supa.cc --version)" = "supa.cc, version 0.4.0"
+          supa.cc version | grep -Fx "Supa.cc v0.4.0"
       - name: Test formula
         run: brew test dgabreuu/supa-cc/supa-cc

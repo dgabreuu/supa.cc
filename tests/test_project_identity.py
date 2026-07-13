@@ -41,7 +41,7 @@ def test_project_metadata_declares_english_as_the_only_natural_language():
     ] == ["Natural Language :: English"]
 
 
-def test_source_version_is_0_4_0_while_formula_remains_on_stable_release():
+def test_source_and_formula_versions_are_0_4_0():
     project = load_project_metadata()
     with open("Formula/supa-cc.rb", "r", encoding="utf-8") as formula_file:
         formula = formula_file.read()
@@ -49,11 +49,11 @@ def test_source_version_is_0_4_0_while_formula_remains_on_stable_release():
     assert project["version"] == "0.4.0"
     assert __version__ == "0.4.0"
     assert (
-        'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.3.0.tar.gz"'
+        'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.0.tar.gz"'
         in formula
     )
     assert (
-        'sha256 "0b54c209831fef223d8bff3518c54310f3c89e7e4bde0e676f84dd5dd8c2acdd"'
+        'sha256 "6a1614d5489e1c8ce921d034051601265352dc5322c6e476193ad30346802281"'
         in formula
     )
 

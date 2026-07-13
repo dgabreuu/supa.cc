@@ -7,8 +7,8 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.3.0.tar.gz"
-TARBALL_SHA256 = "0b54c209831fef223d8bff3518c54310f3c89e7e4bde0e676f84dd5dd8c2acdd"
+TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.0.tar.gz"
+TARBALL_SHA256 = "6a1614d5489e1c8ce921d034051601265352dc5322c6e476193ad30346802281"
 
 
 def test_readme_uses_public_repository_url():
@@ -35,10 +35,10 @@ def test_homebrew_formula_is_present_with_public_metadata():
     assert 'resource "jaraco-classes" do' in formula
     assert 'resource "jaraco-context" do' in formula
     assert 'resource "jaraco-functools" do' in formula
-    assert 'resource "markdown-it-py" do' in formula
     assert 'resource "more-itertools" do' in formula
     assert 'resource "questionary" do' in formula
-    assert 'resource "rich" do' in formula
+    for retired_resource in ("markdown-it-py", "mdurl", "pygments", "rich"):
+        assert f'resource "{retired_resource}" do' not in formula
     assert 'shell_output("#{bin}/supa.cc --version")' in formula
 
 
@@ -81,12 +81,12 @@ def test_installation_uses_stable_release_channels():
         assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
 
 
-def test_release_formula_uses_verified_0_3_0_tag():
+def test_release_formula_uses_verified_0_4_0_tag():
     release = Path("docs/release.md").read_text(encoding="utf-8")
     formula = Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
-    assert "v0.3.0" in formula
-    assert "v0.2.0" not in formula
+    assert "v0.4.0" in formula
+    assert "v0.3.0" not in formula
     assert "brew test supa-cc" in release
 
 
@@ -139,7 +139,7 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
         'test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"',
         "brew trust --formula dgabreuu/supa-cc/supa-cc",
         'formula="$tap_repo/Formula/supa-cc.rb"',
-        'brew update-python-resources "$formula"',
+        'brew update-python-resources --ignore-main-package-cooldown "$formula"',
         'git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb',
         "brew audit --strict --formula dgabreuu/supa-cc/supa-cc",
         "brew install --build-from-source dgabreuu/supa-cc/supa-cc",
@@ -150,13 +150,15 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
         assert command in workflow_text
     sha_guard = workflow_text.index('test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"')
     formula_trust = workflow_text.index("brew trust --formula dgabreuu/supa-cc/supa-cc")
-    resource_update = workflow_text.index('brew update-python-resources "$formula"')
+    resource_update = workflow_text.index(
+        'brew update-python-resources --ignore-main-package-cooldown "$formula"'
+    )
     assert sha_guard < formula_trust < resource_update
     assert workflow_text.count("brew trust --formula dgabreuu/supa-cc/supa-cc") == 1
     assert "brew trust dgabreuu/supa-cc" not in workflow_text
     assert 'brew audit --strict --formula "$formula"' not in workflow_text
     assert 'brew install --build-from-source "$formula"' not in workflow_text
-    assert "0.3.0" in workflow_text
+    assert "0.4.0" in workflow_text
     for prohibited in (
         "actions/checkout",
         "git commit",
@@ -386,7 +388,7 @@ def test_release_runbook_orders_pypi_verification_before_formula_and_copy_change
     )
     positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
     assert positions == sorted(positions)
-    assert "v0.3.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+    assert "v0.4.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
 
 def test_troubleshooting_doctor_language_is_credential_store_neutral():
