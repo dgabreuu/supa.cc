@@ -76,7 +76,8 @@ class TestCLICommands:
         ):
             message = _check_for_updates()
 
-        assert "brew upgrade supa-cc" in message
+        assert "brew upgrade dgabreuu/supa-cc/supa-cc" in message
+        assert "brew upgrade supa-cc" not in message
         assert 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"' in message
         assert "pipx upgrade supa.cc" not in message
 

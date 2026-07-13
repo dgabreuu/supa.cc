@@ -83,13 +83,16 @@ curl -L -o "$archive" https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4
 sha256sum "$archive"
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
 cd "$(brew --repo dgabreuu/supa-cc)"
+brew trust --formula dgabreuu/supa-cc/supa-cc
 brew update-python-resources --ignore-main-package-cooldown Formula/supa-cc.rb
-brew audit --strict supa-cc
-brew install --build-from-source supa-cc
-brew test supa-cc
+brew audit --strict --formula dgabreuu/supa-cc/supa-cc
+brew install --build-from-source dgabreuu/supa-cc/supa-cc
+brew test dgabreuu/supa-cc/supa-cc
 ```
 
 On macOS, use `shasum -a 256` if `sha256sum` is unavailable. Keep `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"`.
+The explicit trust command is limited to the formula and is required here because
+resource generation evaluates the local formula before the installation step.
 
 ## 8. Update availability documentation
 

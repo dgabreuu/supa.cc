@@ -9,7 +9,7 @@ from supa_cc.installation import installation_guidance
 @pytest.mark.parametrize(
     ("system_name", "os_release", "command"),
     [
-        ("Darwin", None, "brew install supa-cc"),
+        ("Darwin", None, "brew install dgabreuu/supa-cc/supa-cc"),
         ("Windows", None, "pipx install"),
         ("Linux", "ID=debian\n", "sudo apt install python3 python3-venv pipx gnome-keyring libsecret-tools"),
         ("Linux", "ID=ubuntu\n", "sudo apt install python3 python3-venv pipx gnome-keyring libsecret-tools"),
@@ -39,6 +39,21 @@ def test_unsupported_linux_guidance_does_not_offer_package_manager_commands():
     assert "apt" not in guidance.install_hint
     assert "pacman" not in guidance.install_hint
     assert "dnf" not in guidance.install_hint
+
+
+def test_macos_guidance_uses_formula_scoped_homebrew_flow():
+    guidance = installation_guidance(detect_environment(system_name="Darwin"))
+
+    assert (
+        "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git"
+        in guidance.install_hint
+    )
+    assert "brew install dgabreuu/supa-cc/supa-cc" in guidance.install_hint
+    assert "brew upgrade dgabreuu/supa-cc/supa-cc" in guidance.update_hint
+    assert "brew install supa-cc" not in guidance.install_hint
+    assert "brew upgrade supa-cc" not in guidance.update_hint
+    assert "brew trust" not in guidance.install_hint
+    assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in guidance.install_hint
 
 
 def test_guidance_is_immutable():

@@ -19,6 +19,32 @@ Keychain authorizes the Python runtime that runs Supa.cc. Recreating a `pipx` en
 
 Do not export the item, grant access to all applications, or weaken ACLs. Use `doctor` to compare the invoked and real paths for the launcher, Python, and Supabase CLI. If Keychain is locked, unlock it in the graphical session and try again.
 
+### Homebrew tap trust
+
+Homebrew 6.0 and later require trust before loading formulae from non-official
+taps. The Supa.cc tap points to the public project repository through a custom
+remote, so registering the tap does not by itself authorize Homebrew to evaluate
+its formula by a short name.
+
+If Homebrew reports that `dgabreuu/supa-cc` is untrusted, repeat the installation
+with the fully qualified formula name:
+
+```bash
+brew install dgabreuu/supa-cc/supa-cc
+```
+
+That command records trust only for the selected formula. A maintainer who must
+evaluate the formula before installing it can grant the same narrow scope
+explicitly:
+
+```bash
+brew trust --formula dgabreuu/supa-cc/supa-cc
+```
+
+Trusting the complete tap is broader because it also authorizes every current
+and future formula, cask, and external command in that repository. Keep the
+Homebrew trust checks enabled and prefer formula-scoped trust.
+
 ## Linux
 
 The accepted backend is only Secret Service on the user-session D-Bus. Confirm that D-Bus exists, that `gnome-keyring` or another compatible provider is running, and that the collection is unlocked. In SSH, containers, or headless environments, forwarding D-Bus variables without a real unlocked service does not help.

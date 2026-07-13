@@ -301,7 +301,11 @@ def test_installation_covers_each_platform_lifecycle():
 def test_readme_stable_installation_uses_platform_release_channels():
     readme = _section(Path("README.md").read_text(encoding="utf-8"), "Installation")
 
-    expected = {"macOS": "brew install supa-cc", "Linux": "pipx install supa.cc", "Windows": "pipx install supa.cc"}
+    expected = {
+        "macOS": "brew install dgabreuu/supa-cc/supa-cc",
+        "Linux": "pipx install supa.cc",
+        "Windows": "pipx install supa.cc",
+    }
     for platform, command in expected.items():
         stable = _stable_content(_section(readme, platform))
         assert _has_command(stable, command), f"{platform} README install command must be exactly: {command}"
@@ -328,7 +332,11 @@ def test_release_docs_mark_0_4_0_as_published_and_verified():
 def test_stable_installation_uses_exact_lifecycle_commands():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     expected = {
-        "macOS": ("brew install supa-cc", "brew upgrade supa-cc", "brew uninstall supa-cc"),
+        "macOS": (
+            "brew install dgabreuu/supa-cc/supa-cc",
+            "brew upgrade dgabreuu/supa-cc/supa-cc",
+            "brew uninstall supa-cc",
+        ),
         "Linux": ("pipx install supa.cc", "pipx upgrade supa.cc", "pipx uninstall supa.cc"),
         "Windows": ("pipx install supa.cc", "pipx upgrade supa.cc", "pipx uninstall supa.cc"),
     }

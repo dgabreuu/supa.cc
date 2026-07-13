@@ -10,6 +10,14 @@ ARCH = "sudo pacman -S python python-pipx gnome-keyring libsecret"
 FEDORA = "sudo dnf install python3 pipx gnome-keyring libsecret"
 VCS_INSTALL = 'pipx install "git+https://github.com/dgabreuu/supa.cc.git"'
 VCS_UPDATE = 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"'
+HOMEBREW_TAP = "dgabreuu/supa-cc"
+HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
+HOMEBREW_TAP_COMMAND = (
+    f"brew tap {HOMEBREW_TAP} https://github.com/dgabreuu/supa.cc.git"
+)
+HOMEBREW_INSTALL = f"brew install {HOMEBREW_FORMULA}"
+HOMEBREW_UPDATE = f"brew upgrade {HOMEBREW_FORMULA}"
+HOMEBREW_HEAD_UPDATE = f"brew upgrade --fetch-HEAD {HOMEBREW_FORMULA}"
 
 
 @dataclass(frozen=True)
@@ -22,9 +30,11 @@ class InstallationGuidance:
 def installation_guidance(environment: Environment) -> InstallationGuidance:
     if environment.operating_system is OperatingSystem.MACOS:
         return InstallationGuidance(
-            install_hint=f"brew install supa-cc; or {VCS_INSTALL}",
+            install_hint=(
+                f"{HOMEBREW_TAP_COMMAND} && {HOMEBREW_INSTALL}; or {VCS_INSTALL}"
+            ),
             update_hint=(
-                "brew upgrade supa-cc or brew upgrade --fetch-HEAD supa-cc; "
+                f"{HOMEBREW_UPDATE} or {HOMEBREW_HEAD_UPDATE}; "
                 f"for pipx: {VCS_UPDATE}"
             ),
             remediation="Check whether the macOS credential store is available.",

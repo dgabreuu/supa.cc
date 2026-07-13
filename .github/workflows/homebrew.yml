@@ -18,7 +18,8 @@ jobs:
           brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
           tap_repo="$(brew --repo dgabreuu/supa-cc)"
           test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"
-          brew trust --formula dgabreuu/supa-cc/supa-cc
+      - name: Install formula through public flow
+        run: brew install --yes dgabreuu/supa-cc/supa-cc
       - name: Verify generated Python resources
         run: |
           tap_repo="$(brew --repo dgabreuu/supa-cc)"
@@ -27,8 +28,6 @@ jobs:
           git -C "$tap_repo" diff --exit-code -- Formula/supa-cc.rb
       - name: Audit formula
         run: brew audit --strict --formula dgabreuu/supa-cc/supa-cc
-      - name: Install formula from source
-        run: brew install --build-from-source dgabreuu/supa-cc/supa-cc
       - name: Verify supported Supabase CLI
         run: |
           minimum_version="2.109.1"
