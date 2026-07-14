@@ -3,14 +3,14 @@
 All notable changes to this project will be documented in this file.
 The format follows Keep a Changelog in a simplified form.
 
-## [0.4.2] - Unreleased
+## [0.4.2] - 2026-07-14
 
 ### Fixed
 
 - Interactive sessions keep the Supa.cc banner and title fixed while replacing only the dynamic content below them.
 - Completed Questionary prompts are erased so returning to the home screen does not append stale interface content to the terminal.
 
-[0.4.2]: https://github.com/dgabreuu/supa.cc/compare/v0.4.1...HEAD
+[0.4.2]: https://github.com/dgabreuu/supa.cc/compare/v0.4.1...v0.4.2
 
 ## [0.4.1] - 2026-07-14
 

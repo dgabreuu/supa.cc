@@ -315,17 +315,18 @@ def test_readme_stable_installation_uses_platform_release_channels():
     assert _has_command(macos, "brew install supabase/tap/supabase")
 
 
-def test_release_docs_prepare_all_publication_channels():
+def test_release_docs_record_all_publication_channels():
     readme = Path("README.md").read_text(encoding="utf-8")
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     release = Path("docs/release.md").read_text(encoding="utf-8")
 
     assert "the channels below are planned for the release" not in readme
     assert "do not mean that version 0.3.0 has already been published" not in installation
-    assert "Version 0.4.2 has not been published yet." in release
-    assert "Homebrew has not been verified yet" in release
+    assert "Version 0.4.2 has not been published yet." not in release
+    assert "Homebrew has not been verified yet" not in release
     assert "v0.4.2" in release
-    assert "https://github.com/dgabreuu/supa.cc/actions/runs/" not in release
+    assert "https://github.com/dgabreuu/supa.cc/actions/runs/29337523022" in release
+    assert "https://github.com/dgabreuu/supa.cc/actions/runs/29338145621" in release
     assert "continua não lançada" not in release
     assert "deve permanecer em `v0.2.0`" not in release
 

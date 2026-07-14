@@ -1,6 +1,18 @@
-# Release checklist
+# Release record and checklist
 
-This checklist documents the publication of version 0.4.2. Version 0.4.2 has not been published yet.
+This document records the publication of version 0.4.2 on 2026-07-14.
+
+## Publication record
+
+- GitHub Release: https://github.com/dgabreuu/supa.cc/releases/tag/v0.4.2
+- Release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29337523022
+- PyPI package: https://pypi.org/project/supa.cc/0.4.2/
+- Homebrew formula: https://github.com/dgabreuu/supa.cc/blob/main/Formula/supa-cc.rb
+- Homebrew validation workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29338145621
+- The annotated tag `v0.4.2` points to commit `8a83e931c85a6db61539e371ee1b1c3d09f79604`.
+- The Homebrew formula was promoted in commit `019a5d6a017139a303baccd403036646e689236a`.
+- The release workflow produced and published one wheel and one sdist through Trusted Publishing; its build, publish, Linux pipx, and Windows pipx jobs passed.
+- The Homebrew workflow passed its exact-tap, resource, audit, installation, version, and test gates.
 
 ## 1. Validate the candidate commit
 
@@ -44,19 +56,19 @@ Protect the `pypi` environment according to repository policy. The workflow uses
 
 ## 4. Publish the GitHub Release
 
-Confirm that the annotated tag and GitHub Release `v0.4.2` do not already exist. Create the annotated tag only on the CI-validated candidate commit, then create a stable, non-draft, non-prerelease GitHub Release using the `0.4.2` section of `CHANGELOG.md` as the release notes.
+The annotated tag and GitHub Release `v0.4.2` were created only after the candidate checks passed. The release is stable, non-draft, and non-prerelease, and uses the `0.4.2` section of `CHANGELOG.md` as its notes.
 
-Publishing the GitHub Release triggers `.github/workflows/release.yml`. The build job checks out the release tag, confirms that it matches the version in `pyproject.toml`, tests, builds once, and uploads one wheel and one sdist as an artifact. Do not attach local builds to the release.
+Publishing the GitHub Release triggered `.github/workflows/release.yml`. The workflow checked out the release tag, confirmed that it matched `pyproject.toml`, tested, built once, and uploaded one wheel and one sdist as an artifact. No local builds were attached to the release.
 
 ## 5. Publish to PyPI with Trusted Publishing
 
-The `build` job has only `contents: read`. The `publish` job downloads exactly the artifact produced by the build and sends it to PyPI through Trusted Publishing using only `id-token: write`. The verification job receives no `GITHUB_TOKEN` permissions.
+The `build` job had only `contents: read`. The `publish` job downloaded exactly the artifact produced by the build and sent it to PyPI through Trusted Publishing using only `id-token: write`. The verification jobs received no `GITHUB_TOKEN` permissions.
 
-Confirm that `supa.cc==0.4.2` is available on PyPI and that the release workflow's Linux and Windows pipx checks pass. If the build, inspection, or publication fails, do not recreate the same version on PyPI and do not proceed to the formula. Correct the cause and prepare a new version according to the immutability of published artifacts.
+`supa.cc==0.4.2` is available on PyPI with both a wheel and sdist. The release workflow's Linux and Windows pipx checks passed after the Linux index-propagation retry. The published version was not recreated.
 
 ## 6. Verify pipx on Linux and Windows
 
-The release workflow installs `supa.cc==0.4.2` directly from PyPI with pipx on Linux and Windows and runs both version commands. Confirm that these jobs pass and perform an independent manual verification if release policy requires it:
+The release workflow installed `supa.cc==0.4.2` directly from PyPI with pipx on Linux and Windows and ran both version commands. Both jobs passed:
 
 ```bash
 pipx install supa.cc==0.4.2
@@ -66,9 +78,9 @@ supa.cc version
 
 ## 7. Update the Homebrew formula
 
-Homebrew has not been verified yet for version 0.4.2.
+The Homebrew formula now points to tag `v0.4.2` and uses the verified SHA256 `917a22b0bbf29b3f76dec009994d597adad7d03307d9a7fb57b177c61c2380d5`.
 
-Only after PyPI and pipx verification and after the tag exists, update `Formula/supa-cc.rb`. Download the real tarball for tag `v0.4.2`, calculate its real SHA256, and update the Python resources only through Homebrew tooling; never anticipate or invent the checksum.
+The formula was updated only after PyPI and pipx verification and after the tag existed. The real tarball for tag `v0.4.2` was downloaded and its SHA256 was calculated; Python resources were checked with Homebrew tooling and required no changes.
 
 ```bash
 archive="${TMPDIR:-.}/supa.cc-v0.4.2.tar.gz"
@@ -86,10 +98,10 @@ brew test dgabreuu/supa-cc/supa-cc
 
 Keep `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"`. The explicit trust command is limited to the formula and is required because resource generation evaluates the local formula before installation.
 
-Commit and publish the verified formula through a separate PR. Run `.github/workflows/homebrew.yml` manually against the exact formula commit and confirm its audit, resource, installation, version, and test gates pass on macOS.
+The verified formula was published through separate PR #9: https://github.com/dgabreuu/supa.cc/pull/9. `.github/workflows/homebrew.yml` ran manually against the exact formula commit and its audit, resource, installation, version, and test gates passed on macOS.
 
 ## 8. Update availability documentation
 
-Only after GitHub, PyPI, pipx, and Homebrew have been verified, finalize the `0.4.2` changelog entry with the actual release date and replace the comparison target `HEAD` with `v0.4.2`. Update this checklist with the verified public release, package, workflow, and formula links.
+After GitHub, PyPI, pipx, and Homebrew were verified, the `0.4.2` changelog entry was finalized with the publication date and its comparison target was changed from `HEAD` to `v0.4.2`. This checklist records the verified public release, package, workflow, and formula links above.
 
 Do not create Debian, AUR, or RPM assets in this process.
