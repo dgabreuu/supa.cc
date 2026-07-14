@@ -434,13 +434,13 @@ def test_changelog_marks_0_4_0_as_released():
     assert "## [0.4.0] - Unreleased" not in changelog
 
 
-def test_changelog_prepares_0_4_2_for_publication():
+def test_changelog_records_0_4_2_publication():
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert "## [0.4.2] - Unreleased" in changelog
+    assert "## [0.4.2] - 2026-07-14" in changelog
     assert "Interactive sessions keep" in changelog
     assert (
-        "[0.4.2]: https://github.com/dgabreuu/supa.cc/compare/v0.4.1...HEAD"
+        "[0.4.2]: https://github.com/dgabreuu/supa.cc/compare/v0.4.1...v0.4.2"
         in changelog
     )
 
