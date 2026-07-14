@@ -41,7 +41,7 @@ def test_project_metadata_declares_english_as_the_only_natural_language():
     ] == ["Natural Language :: English"]
 
 
-def test_source_version_advances_before_homebrew_formula_promotion():
+def test_source_version_and_homebrew_formula_match_published_release():
     project = load_project_metadata()
     with open("Formula/supa-cc.rb", "r", encoding="utf-8") as formula_file:
         formula = formula_file.read()
@@ -49,11 +49,11 @@ def test_source_version_advances_before_homebrew_formula_promotion():
     assert project["version"] == "0.4.2"
     assert __version__ == "0.4.2"
     assert (
-        'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.1.tar.gz"'
+        'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.2.tar.gz"'
         in formula
     )
     assert (
-        'sha256 "c80154f72b3d78fe1d8839e5ca13ad8bf06f6bc68929a9aaa0b9054ce7b3b0ab"'
+        'sha256 "917a22b0bbf29b3f76dec009994d597adad7d03307d9a7fb57b177c61c2380d5"'
         in formula
     )
 
