@@ -16,11 +16,14 @@ Install Homebrew and the official Supabase CLI. The stable channel uses Homebrew
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
+brew install supabase/tap/supabase
 brew install dgabreuu/supa-cc/supa-cc
 ```
 
-The fully qualified formula name records trust only for Supa.cc while leaving
-the rest of the non-official tap untrusted.
+The fully qualified formula names record trust only for the Supabase CLI and
+Supa.cc while leaving both non-official taps untrusted. Run the Supabase CLI
+command even when it is already installed so Homebrew records its formula-scoped
+trust before evaluating Supa.cc's dependency.
 
 #### Verify
 

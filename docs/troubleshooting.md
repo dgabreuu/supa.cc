@@ -30,10 +30,13 @@ If Homebrew reports that `dgabreuu/supa-cc` is untrusted, repeat the installatio
 with the fully qualified formula name:
 
 ```bash
+brew install supabase/tap/supabase
 brew install dgabreuu/supa-cc/supa-cc
 ```
 
-That command records trust only for the selected formula. A maintainer who must
+These commands record trust only for the selected formulae. The Supabase CLI is
+a dependency from another non-official tap and must also be installed by its
+fully qualified name, even when it is already present. A maintainer who must
 evaluate the formula before installing it can grant the same narrow scope
 explicitly:
 

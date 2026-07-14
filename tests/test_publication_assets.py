@@ -7,11 +7,12 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.0.tar.gz"
-TARBALL_SHA256 = "6a1614d5489e1c8ce921d034051601265352dc5322c6e476193ad30346802281"
+TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.1.tar.gz"
+TARBALL_SHA256 = "c80154f72b3d78fe1d8839e5ca13ad8bf06f6bc68929a9aaa0b9054ce7b3b0ab"
 HOMEBREW_TAP = "dgabreuu/supa-cc"
 HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
 HOMEBREW_TAP_COMMAND = f"brew tap {HOMEBREW_TAP} {REPO_URL}"
+HOMEBREW_SUPABASE_INSTALL_COMMAND = "brew install supabase/tap/supabase"
 HOMEBREW_INSTALL_COMMAND = f"brew install {HOMEBREW_FORMULA}"
 
 
@@ -55,7 +56,9 @@ def test_publication_docs_keep_stable_installation_separate_from_development():
     assert "brew install supa-cc" not in installation
     assert "brew install --HEAD supa-cc" not in installation
     assert "brew --repo dgabreuu/supa-cc" in release
+    assert "brew install supabase/tap/supabase" in release
     assert "brew trust --formula dgabreuu/supa-cc/supa-cc" in release
+    assert "brew trust supabase/tap" not in release
     assert (
         "brew update-python-resources --ignore-main-package-cooldown "
         "Formula/supa-cc.rb"
@@ -91,11 +94,11 @@ def test_installation_uses_stable_release_channels():
         assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
 
 
-def test_release_formula_uses_verified_0_4_0_tag():
+def test_release_formula_uses_verified_0_4_1_tag():
     release = Path("docs/release.md").read_text(encoding="utf-8")
     formula = Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
-    assert "v0.4.0" in formula
+    assert "v0.4.1" in formula
     assert "v0.3.0" not in formula
     assert "brew test dgabreuu/supa-cc/supa-cc" in release
 
@@ -107,17 +110,22 @@ def test_public_homebrew_flow_uses_formula_scoped_trust():
 
     for document in (readme, installation):
         assert HOMEBREW_TAP_COMMAND in document
+        assert HOMEBREW_SUPABASE_INSTALL_COMMAND in document
         assert HOMEBREW_INSTALL_COMMAND in document
-        assert document.index(HOMEBREW_TAP_COMMAND) < document.index(
-            HOMEBREW_INSTALL_COMMAND
+        assert (
+            document.index(HOMEBREW_TAP_COMMAND)
+            < document.index(HOMEBREW_SUPABASE_INSTALL_COMMAND)
+            < document.index(HOMEBREW_INSTALL_COMMAND)
         )
         assert "brew install supa-cc" not in document
         assert "brew trust dgabreuu/supa-cc" not in document
         assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in document
 
+    assert HOMEBREW_SUPABASE_INSTALL_COMMAND in troubleshooting
     assert HOMEBREW_INSTALL_COMMAND in troubleshooting
     assert "brew trust --formula dgabreuu/supa-cc/supa-cc" in troubleshooting
     assert "brew trust dgabreuu/supa-cc" not in troubleshooting
+    assert "brew trust supabase/tap" not in troubleshooting
     assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in troubleshooting
 
 
@@ -168,6 +176,7 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
         "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git",
         'tap_repo="$(brew --repo dgabreuu/supa-cc)"',
         'test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"',
+        "brew install --yes supabase/tap/supabase",
         "brew install --yes dgabreuu/supa-cc/supa-cc",
         'formula="$tap_repo/Formula/supa-cc.rb"',
         'brew update-python-resources --ignore-main-package-cooldown "$formula"',
@@ -179,17 +188,19 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
     ):
         assert command in workflow_text
     sha_guard = workflow_text.index('test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"')
+    supabase_install = workflow_text.index("brew install --yes supabase/tap/supabase")
     install = workflow_text.index("brew install --yes dgabreuu/supa-cc/supa-cc")
     resource_update = workflow_text.index(
         'brew update-python-resources --ignore-main-package-cooldown "$formula"'
     )
-    assert sha_guard < install < resource_update
+    assert sha_guard < supabase_install < install < resource_update
     assert "brew trust --formula dgabreuu/supa-cc/supa-cc" not in workflow_text
     assert "brew trust dgabreuu/supa-cc" not in workflow_text
+    assert "brew trust supabase/tap" not in workflow_text
     assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in workflow_text
     assert 'brew audit --strict --formula "$formula"' not in workflow_text
     assert 'brew install "$formula"' not in workflow_text
-    assert "0.4.0" in workflow_text
+    assert "0.4.1" in workflow_text
     for prohibited in (
         "actions/checkout",
         "git commit",
@@ -443,7 +454,7 @@ def test_release_runbook_orders_pypi_verification_before_formula_and_copy_change
     )
     positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
     assert positions == sorted(positions)
-    assert "v0.4.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+    assert "v0.4.1" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
 
 def test_troubleshooting_doctor_language_is_credential_store_neutral():

@@ -29,6 +29,7 @@ Prerequisites, upgrades, and uninstallation are covered in the [installation gui
 
 ```bash
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
+brew install supabase/tap/supabase
 brew install dgabreuu/supa-cc/supa-cc
 ```
 
