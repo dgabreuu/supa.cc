@@ -41,13 +41,13 @@ def test_project_metadata_declares_english_as_the_only_natural_language():
     ] == ["Natural Language :: English"]
 
 
-def test_source_version_and_homebrew_formula_match_published_release():
+def test_source_uses_distinct_development_version_without_changing_stable_formula():
     project = load_project_metadata()
     with open("Formula/supa-cc.rb", "r", encoding="utf-8") as formula_file:
         formula = formula_file.read()
 
-    assert project["version"] == "0.4.2"
-    assert __version__ == "0.4.2"
+    assert project["version"] == "0.5.0.dev1"
+    assert __version__ == "0.5.0.dev1"
     assert (
         'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.2.tar.gz"'
         in formula

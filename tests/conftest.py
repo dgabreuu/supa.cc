@@ -17,13 +17,22 @@ def pytest_make_parametrize_id(config, val, argname):
 
 
 @pytest.fixture(autouse=True)
-def isolate_user_state(tmp_path, monkeypatch):
+def isolate_user_state(tmp_path, monkeypatch, request):
     """Route every unit-test state path to a disposable per-test home."""
+    native_markers = (
+        "real_keychain",
+        "real_secret_service",
+        "real_windows_credential_manager",
+    )
+    if any(request.node.get_closest_marker(marker) for marker in native_markers):
+        yield
+        return
     home = tmp_path / "home"
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
     monkeypatch.setenv("APPDATA", str(home / "AppData" / "Roaming"))
+    yield
 
 
 @pytest.fixture(autouse=True)

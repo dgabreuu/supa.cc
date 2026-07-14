@@ -11,15 +11,28 @@ It does not open a PAT or test credential-store availability; it shows only the 
 
 ## Safe reinstallation
 
-Before reinstalling, record the installation method, provenance, and version shown by the diagnostic. Do not keep Homebrew, `pipx`, and editable installations active simultaneously on `PATH`. Preserve invalid state for diagnostics and do not delete native credentials; reinstalling the package does not require removing platform-stored PATs.
+Before reinstalling, record the installation channel, provenance, and version shown by the diagnostic. Do not keep Homebrew, `pipx`, and editable installations active simultaneously on `PATH`. Preserve invalid state for diagnostics and remember that reinstalling does not remove native credentials. If a completely clean Supa.cc state is intentional, run `supa.cc reset --all` before uninstalling; it is safer than guessing native credential identifiers.
 
 ## macOS
 
 Keychain authorizes the Python runtime that runs Supa.cc. Recreating a `pipx` environment or changing that runtime's path or signature may trigger one new authorization. Repeated prompts with the same runtime indicate inconsistent permissions or access control.
 
+Before opening any credential, Supa.cc checks only the user Keychain routing with these read-only system queries:
+
+```bash
+security default-keychain -d user
+security list-keychains -d user
+```
+
+Do not paste their output into a public report because it can contain a local user path. `keychain_configuration_invalid` means the configured default is missing, is not a regular user-owned Keychain, or is absent from the user search list. Open Keychain Access and use **Reset to Defaults** only after reviewing the macOS prompt and any unrelated Keychain recovery needs. Supa.cc does not change the default Keychain, edit its search list, or modify ACLs automatically.
+
+`keychain_access_cancelled` records a cancelled authorization prompt; `keychain_permission_denied` records a denial; `keychain_locked` requires unlocking the Keychain; and `keychain_unavailable` indicates that the native store is unavailable or read-only. `environment_blocked` can also mean the current IDE or sandbox cannot present Keychain interaction.
+
 Do not export the item, grant access to all applications, or weaken ACLs. Use `doctor` to compare the invoked and real paths for the launcher, Python, and Supabase CLI. If Keychain is locked, unlock it in the graphical session and try again.
 
 The Python runtime reads the selected Supa.cc account PAT, while the Supabase CLI reads its own persisted session. A prompt naming Python therefore belongs to account storage; a prompt naming `supabase` belongs to the CLI session. Supa.cc does not inspect or repair the CLI's internal Keychain entries. Do not delete entries by guessed service or account names.
+
+The canonical Homebrew `Cellar` directory may be user-owned and group-writable (`0775`). Supa.cc accepts only that narrow exception under `/opt/homebrew` or `/usr/local`, while still requiring the Supabase executable itself and every other ancestor to pass the ownership and write checks. A custom group-writable prefix is rejected as `environment_blocked`.
 
 ### Homebrew tap trust
 
@@ -70,7 +83,7 @@ Close and reopen PowerShell. `%APPDATA%` must be defined as an absolute path; se
 
 ## Inherited variables
 
-An already-defined `SUPABASE_ACCESS_TOKEN` overrides the persisted session and blocks `switch`. Remove it from the current shell and from the configuration that injects it without printing its value. Check only whether the variable is present using tools appropriate for your shell.
+An already-defined `SUPABASE_ACCESS_TOKEN` overrides the persisted session for direct Supabase CLI commands. Supa.cc removes it, along with `SUPABASE_PROFILE`, from its controlled child processes and uses the selected account explicitly. Remove an inherited value from the shell if direct CLI commands still select a different account; check only whether it is present and never print it.
 
 Supa.cc blocks the Supabase CLI plaintext `access-token` fallback without reading its contents. Do not paste that file into reports and do not attempt to migrate it to Supa.cc.
 
@@ -78,7 +91,7 @@ Supa.cc blocks the Supabase CLI plaintext `access-token` fallback without readin
 
 Some IDEs and sandboxes allow the Supabase command itself but deny writes to its telemetry directory. An error mentioning `EPERM`, `operation not permitted`, or `telemetry.json` is an environment failure, not evidence of an invalid PAT.
 
-Where organizational policy permits it, disable telemetry explicitly for that IDE task or process by setting either `SUPABASE_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1`. Supa.cc does not set these variables, change telemetry consent, edit shell startup files, or alter the global environment automatically. Prefer a narrow IDE run configuration over a system-wide export.
+Supa.cc sets `SUPABASE_TELEMETRY_DISABLED=1` and `DO_NOT_TRACK=1` only for its own Supabase CLI subprocesses. It does not change telemetry consent, edit shell startup files, or alter the global environment. For direct CLI commands in a restricted IDE, use the same variables in that IDE's narrow run configuration when organizational policy permits it.
 
 ## Live diagnostics and common errors
 
@@ -86,7 +99,8 @@ Use `supa.cc doctor --account <name> --live` only when you want to authorize rea
 
 Failure categories identify the phase that needs remediation:
 
-- `token_missing` means the selected indexed account has no readable PAT in Supa.cc storage.
+- `credential_missing` means the listed alias remains in local state but its PAT was removed from native storage. Run `switch` and provide a replacement PAT in the hidden prompt.
+- `keychain_configuration_invalid` means the default macOS Keychain routing must be restored in Keychain Access before credential operations can begin.
 - `keychain_permission_denied` means the native credential store denied one of the participating executable identities.
 - `token_rejected` means the Supabase API rejected the selected PAT during validation.
 - `native_login_failed` means the CLI did not complete session persistence after validation.
@@ -95,6 +109,4 @@ Failure categories identify the phase that needs remediation:
 - `environment_blocked` covers sandbox, filesystem, execution, or telemetry restrictions; it is not an authentication result.
 - `network_failure` and `cli_incompatible` remain independent of local credential storage.
 
-If `active-account` names an account absent from `accounts.json`, Supa.cc reports an inconsistent selection and does not open a PAT or mutate the CLI session. It also refuses Add, Switch, and Remove so that rollback cannot depend on an unindexed credential. First preserve the metadata files for diagnosis and confirm with `doctor` that no synchronization journal is pending. Then end the current CLI session explicitly with `supabase logout`, rename the token-free `active-account` file, and run `supa.cc switch <name>` for an indexed account. The file is `~/.config/supa.cc/active-account` on macOS and Linux, or `%APPDATA%\supa.cc\active-account` on Windows. Renaming rather than deleting preserves evidence and makes this repair explicit. Never edit `accounts.json`, a journal, a lock, or native credentials for this repair.
-
-Interrupted operations may leave a token-free recovery journal. Run a mutating Supa.cc command again; do not manually delete the journal, locks, index, or credentials. The lock does not coordinate external `supabase` commands, so avoid running them at the same time as an activation.
+Corrupt or conflicting local state is reported as `state_invalid`; it is never silently repaired. Preserve the files for diagnosis. Interrupted operations leave a token-free pending transition in `state.json`; run a mutating Supa.cc command again to trigger idempotent recovery. Do not manually edit the state document or native credentials. The lock does not coordinate external `supabase` commands, so avoid running them at the same time as an activation.

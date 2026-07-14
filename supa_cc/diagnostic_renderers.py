@@ -71,6 +71,7 @@ def render_human(report) -> str:
     lines = [
         "Supa.cc doctor",
         f"Supa.cc version: {report.runtime.get('supa_cc_version') or 'unknown'}",
+        f"Installation channel: {report.runtime.get('installation_channel') or 'unknown'}",
         f"Operating system: {report.runtime.get('operating_system') or 'unknown'}",
         identity_line("Supa.cc launcher", launcher.get("invoked"), launcher.get("realpath"), launcher.get("signature")),
         identity_line("Python", python.get("invoked"), python.get("realpath"), python.get("signature")),

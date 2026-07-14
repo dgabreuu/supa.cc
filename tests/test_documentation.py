@@ -434,6 +434,28 @@ def test_installation_links_directly_to_safe_reinstallation():
     assert "(troubleshooting.md#safe-reinstallation)" in installation
 
 
+def test_macos_keychain_configuration_remediation_is_explicit_and_safe():
+    troubleshooting = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
+    security = Path("docs/security.md").read_text(encoding="utf-8")
+
+    assert "keychain_configuration_invalid" in troubleshooting
+    assert "Reset to Defaults" in troubleshooting
+    assert "does not change the default Keychain" in troubleshooting
+    assert "default-keychain -d user" in troubleshooting
+    assert "list-keychains -d user" in troubleshooting
+    assert "does not enumerate Keychain items" in security
+
+
+def test_version_and_development_wheel_are_verifiable_without_local_paths():
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+    usage = Path("docs/usage.md").read_text(encoding="utf-8")
+
+    assert "0.5.0.dev1" in installation
+    assert "pipx install --force" in installation
+    assert "Installation channel: wheel" in installation
+    assert "installation channel" in usage.lower()
+
+
 def test_skill_names_every_supported_native_credential_backend():
     skill = Path("SKILL.md").read_text(encoding="utf-8")
     mappings = {

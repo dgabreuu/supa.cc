@@ -7,7 +7,8 @@ from unittest.mock import Mock
 import pytest
 import supa_cc
 
-from supa_cc.accounts import AccountManager
+from supa_cc.accounts import AccountService
+from supa_cc.accounts.state import AccountState, StateRepository
 from supa_cc.auth import (
     ActiveAccountInvalidError,
     AuthFailureCode,
@@ -26,6 +27,7 @@ from supa_cc.account_store import KEYCHAIN_SERVICE
 from supa_cc.native_session import NativeSessionSynchronizer, SessionSyncJournal
 
 from helpers import fake_pat
+from helpers import FakeCredentialStore
 
 
 def _service(
@@ -39,7 +41,7 @@ def _service(
     credential_store=None,
 ):
     if manager is None:
-        manager = Mock(spec=AccountManager)
+        manager = Mock()
         manager.keychain = Mock()
         manager.active_store = Mock()
         manager.keychain.index_path = tmp_path / "accounts.json"
@@ -75,7 +77,7 @@ def _service(
 
 
 def test_default_doctor_is_read_only_and_never_reads_token_or_authenticates(tmp_path):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -102,8 +104,54 @@ def test_default_doctor_is_read_only_and_never_reads_token_or_authenticates(tmp_
     assert report_with_account_but_not_live.live_result is None
 
 
+def test_versioned_doctor_reads_state_without_opening_native_credentials(tmp_path):
+    repository = StateRepository(tmp_path / "state.json")
+    repository.save(AccountState(aliases=("work",), confirmed_active="work"))
+    credentials = FakeCredentialStore()
+    credentials.get_error = AssertionError("must not open credential")
+    cli = SupabaseConfig(binary_resolver=lambda _: None, base_environment={})
+    manager = AccountService(
+        state_repository=repository,
+        credential_store=credentials,
+        cli=cli,
+        native_session=Mock(),
+    )
+
+    report = _service(tmp_path, manager=manager).run()
+
+    assert credentials.operations == []
+    assert report.index["state"] == "valid"
+    assert report.index["account_count"] == 1
+    assert report.active_account == {"selected": True, "indexed": True}
+
+
+def test_versioned_doctor_detects_plaintext_fallback_without_reading_it(tmp_path):
+    repository = StateRepository(tmp_path / "state.json")
+    repository.save(AccountState(aliases=("work",)))
+    credentials = FakeCredentialStore()
+    credentials.get_error = AssertionError("must not open credential")
+    cli = SupabaseConfig(binary_resolver=lambda _: None, base_environment={})
+    native_session = Mock()
+    native_session.fallback_path = tmp_path / ".supabase" / "access-token"
+    native_session.fallback_path.parent.mkdir()
+    native_session.fallback_path.write_text("opaque", encoding="utf-8")
+    manager = AccountService(
+        state_repository=repository,
+        credential_store=credentials,
+        cli=cli,
+        native_session=native_session,
+    )
+
+    report = _service(tmp_path, manager=manager).run()
+
+    assert credentials.operations == []
+    assert report.activation["plaintext_fallback_present"] is True
+    assert report.activation["plaintext_fallback_state"] == "present"
+    assert AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED.value in report.diagnostic_codes
+
+
 def test_doctor_output_is_shareable_without_account_name_or_private_paths(tmp_path):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "private-user" / "accounts.json"
@@ -129,7 +177,7 @@ def test_doctor_output_is_shareable_without_account_name_or_private_paths(tmp_pa
 
 
 def test_doctor_reports_effective_custom_keychain_service(tmp_path):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -144,7 +192,7 @@ def test_doctor_reports_effective_custom_keychain_service(tmp_path):
 
 
 def test_doctor_reports_the_effective_credential_store_namespace(tmp_path):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -244,7 +292,7 @@ def test_doctor_reports_verified_runtime_identity_and_homebrew_receipt(tmp_path)
 
 
 def test_doctor_reports_sync_metadata_by_presence_without_reading_contents(tmp_path):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -357,7 +405,7 @@ def test_diagnostics_facade_reexports_collector_service_directly():
 
 
 def test_doctor_reports_active_account_absent_from_valid_index(tmp_path):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -387,7 +435,7 @@ def test_doctor_uses_supabase_home_for_native_session_diagnostics(tmp_path):
         python_executable=tmp_path / "python",
         environment=detect_environment(system_name="Darwin"),
     )
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
     manager.keychain.service = KEYCHAIN_SERVICE
@@ -416,7 +464,7 @@ def test_doctor_uses_supabase_home_for_native_session_diagnostics(tmp_path):
 def test_doctor_reports_inaccessible_sync_metadata_without_reading_secrets(
     tmp_path, monkeypatch, metadata, error
 ):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -520,7 +568,7 @@ def test_live_doctor_requires_explicit_account(tmp_path):
 
 
 def test_doctor_maps_invalid_active_store_without_calling_it_missing(tmp_path):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -536,7 +584,7 @@ def test_doctor_maps_invalid_active_store_without_calling_it_missing(tmp_path):
 
 
 def test_live_doctor_reads_and_validates_selected_account_once(tmp_path):
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -564,7 +612,7 @@ def test_live_doctor_reads_and_validates_selected_account_once(tmp_path):
 
 def test_doctor_json_contains_no_environment_or_validation_secret(tmp_path):
     token = fake_pat("doctor_json_secret")
-    manager = Mock(spec=AccountManager)
+    manager = Mock()
     manager.keychain = Mock()
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
@@ -705,7 +753,7 @@ def test_doctor_blocks_unknown_linux_without_constructing_account_manager(
     environment = detect_environment(system_name="Linux", os_release="ID=custom\n")
     token = fake_pat("blocked_doctor")
     monkeypatch.setattr(
-        "supa_cc.diagnostic_collectors.AccountManager",
+        "supa_cc.diagnostic_collectors.AccountService",
         Mock(side_effect=AssertionError("must not construct manager")),
     )
 
@@ -732,7 +780,7 @@ def test_doctor_blocks_unsupported_os_without_constructing_account_manager(
 ):
     environment = detect_environment(system_name="FreeBSD")
     monkeypatch.setattr(
-        "supa_cc.diagnostic_collectors.AccountManager",
+        "supa_cc.diagnostic_collectors.AccountService",
         Mock(side_effect=AssertionError("must not construct manager")),
     )
 

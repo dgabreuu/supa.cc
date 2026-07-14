@@ -1,7 +1,14 @@
 import inspect
+import os
+from subprocess import CompletedProcess
 
 import pytest
-from keyring.errors import KeyringError, KeyringLocked, PasswordDeleteError
+from keyring.errors import (
+    KeyringError,
+    KeyringLocked,
+    PasswordDeleteError,
+    PasswordSetError,
+)
 
 import supa_cc.credentials as credentials
 from supa_cc.account_store import AccountStore
@@ -9,6 +16,7 @@ from supa_cc.auth import (
     AuthFailureCode,
     CredentialPermissionDeniedError,
     CredentialReadError,
+    KeychainConfigurationError,
     SecretServiceUnavailableError,
     classify_local_failure,
 )
@@ -22,6 +30,16 @@ from supa_cc.environment import detect_environment
 from supa_cc.models import Account
 
 from helpers import fake_pat
+
+
+@pytest.fixture(autouse=True)
+def valid_macos_keychain_configuration(monkeypatch):
+    monkeypatch.setattr(
+        credentials,
+        "_default_macos_keychain_preflight",
+        lambda: None,
+        raising=False,
+    )
 
 
 class FakeKeyring:
@@ -150,6 +168,19 @@ def test_linux_selects_only_secret_service_backend(fake_secret_service):
     assert fake.calls == []
 
 
+def test_unknown_linux_distribution_can_use_secret_service_when_available(
+    fake_secret_service,
+):
+    environment = detect_environment(
+        system_name="Linux", os_release="ID=custom\n"
+    )
+
+    store = create_credential_store(environment)
+
+    assert environment.is_supported is False
+    assert store.backend_name == "keyring.backends.SecretService.Keyring"
+
+
 def test_live_probe_is_opt_in_and_uses_an_isolated_namespace(fake_secret_service):
     store = create_credential_store(linux_environment())
     fake = fake_secret_service.instances[0]
@@ -189,6 +220,154 @@ def test_darwin_selects_only_macos_backend(monkeypatch):
         ("get", "supa.cc.supabase.accounts.v2", account.name),
         ("delete", "supa.cc.supabase.accounts.v2", account.name),
     ]
+
+
+@pytest.mark.parametrize("operation", ["probe", "get", "set", "delete"])
+def test_macos_invalid_keychain_configuration_precedes_backend_operation(
+    monkeypatch, operation
+):
+    FakeMacOSKeyring.instances.clear()
+    monkeypatch.setattr(credentials.macOS, "Keyring", FakeMacOSKeyring)
+
+    def reject_configuration():
+        raise KeychainConfigurationError()
+
+    monkeypatch.setattr(
+        credentials,
+        "_default_macos_keychain_preflight",
+        reject_configuration,
+    )
+    store = create_credential_store(detect_environment(system_name="Darwin"))
+    fake = FakeMacOSKeyring.instances[0]
+    fake.set_error = PasswordSetError(
+        "Can't store password on keychain: (-60006, 'Unknown Error')"
+    )
+    actions = {
+        "probe": store.probe,
+        "get": lambda: store.get("work"),
+        "set": lambda: store.set(
+            Account(name="work", token=fake_pat("preflight-write"))
+        ),
+        "delete": lambda: store.delete("work"),
+    }
+
+    with pytest.raises(KeychainConfigurationError):
+        actions[operation]()
+
+    assert fake.calls == []
+
+
+def test_invalid_keychain_configuration_has_specific_sanitized_result():
+    result = classify_local_failure(KeychainConfigurationError())
+
+    assert result.code is AuthFailureCode.KEYCHAIN_CONFIGURATION_INVALID
+    assert result.message == (
+        "The default macOS Keychain configuration is invalid. "
+        "Restore the default Keychain in Keychain Access and retry."
+    )
+    assert result.phase == "credential_configuration"
+    assert result.recoverability == "user_action"
+
+
+def test_macos_keychain_inspector_accepts_owned_default_in_search_list(tmp_path):
+    keychain = tmp_path / "login.keychain-db"
+    keychain.touch(mode=0o600)
+    commands = []
+
+    def run(arguments, **kwargs):
+        commands.append((arguments, kwargs))
+        output = f'    "{keychain}"\n'
+        return CompletedProcess(arguments, 0, stdout=output, stderr="")
+
+    credentials.inspect_macos_keychain_configuration(
+        run=run,
+        uid=os.getuid(),
+    )
+
+    assert [call[0] for call in commands] == [
+        ["/usr/bin/security", "default-keychain", "-d", "user"],
+        ["/usr/bin/security", "list-keychains", "-d", "user"],
+    ]
+
+
+@pytest.mark.parametrize(
+    "default_output,create_default,listed",
+    [
+        ('"relative.keychain-db"\n', False, True),
+        ('"{path}"\n', False, True),
+        ('"{path}"\n', True, False),
+    ],
+)
+def test_macos_keychain_inspector_rejects_unusable_default(
+    tmp_path, default_output, create_default, listed
+):
+    keychain = tmp_path / "login.keychain-db"
+    if create_default:
+        keychain.touch(mode=0o600)
+    rendered = default_output.format(path=keychain)
+
+    def run(arguments, **_kwargs):
+        output = rendered if "default-keychain" in arguments else (
+            f'"{keychain}"\n' if listed else ""
+        )
+        return CompletedProcess(arguments, 0, stdout=output, stderr="")
+
+    with pytest.raises(KeychainConfigurationError):
+        credentials.inspect_macos_keychain_configuration(
+            run=run,
+            uid=os.getuid(),
+        )
+
+
+@pytest.mark.parametrize("target_kind", ["directory", "wrong_owner"])
+def test_macos_keychain_inspector_rejects_wrong_type_or_owner(
+    tmp_path, target_kind
+):
+    keychain = tmp_path / "login.keychain-db"
+    if target_kind == "directory":
+        keychain.mkdir()
+        expected_uid = os.getuid()
+    else:
+        keychain.touch(mode=0o600)
+        expected_uid = os.getuid() + 1
+
+    def run(arguments, **_kwargs):
+        return CompletedProcess(
+            arguments, 0, stdout=f'"{keychain}"\n', stderr=""
+        )
+
+    with pytest.raises(KeychainConfigurationError):
+        credentials.inspect_macos_keychain_configuration(
+            run=run,
+            uid=expected_uid,
+        )
+
+
+@pytest.mark.parametrize("failure", ["nonzero", "timeout", "multiple"])
+def test_macos_keychain_inspector_normalizes_command_failures(tmp_path, failure):
+    keychain = tmp_path / "login.keychain-db"
+    keychain.touch(mode=0o600)
+
+    def run(arguments, **_kwargs):
+        if failure == "timeout":
+            raise TimeoutError()
+        if failure == "multiple" and "default-keychain" in arguments:
+            output = f'"{keychain}"\n"{tmp_path / "other.keychain-db"}"\n'
+            return CompletedProcess(arguments, 0, stdout=output, stderr="")
+        return CompletedProcess(
+            arguments,
+            1 if failure == "nonzero" else 0,
+            stdout=f'"{keychain}"\n',
+            stderr="native detail",
+        )
+
+    with pytest.raises(KeychainConfigurationError) as raised:
+        credentials.inspect_macos_keychain_configuration(
+            run=run,
+            uid=os.getuid(),
+        )
+
+    assert "native detail" not in str(raised.value)
 
 
 def test_macos_probe_reads_only_an_isolated_nonexistent_identity(monkeypatch):
@@ -542,15 +721,116 @@ def test_macos_operation_failures_keep_neutral_credential_message(monkeypatch):
     fake = FakeMacOSKeyring.instances[0]
     fake.get_error = KeyringLocked("locked backend detail")
 
-    with pytest.raises(StorePermissionDeniedError) as raised:
+    with pytest.raises(CredentialAccessError) as raised:
         store.get("work")
 
     result = classify_local_failure(raised.value)
 
-    assert result.code is AuthFailureCode.KEYCHAIN_PERMISSION_DENIED
-    assert result.message == "Credential-store access was not authorized."
+    assert result.code is AuthFailureCode.KEYCHAIN_LOCKED
+    assert result.message == "The macOS Keychain is locked."
     assert "D-Bus" not in result.message
     assert "backend detail" not in result.message
+
+
+@pytest.mark.parametrize(
+    "native_status,expected_code,expected_message",
+    [
+        (
+            "-60005",
+            AuthFailureCode.KEYCHAIN_PERMISSION_DENIED,
+            "Credential-store access was not authorized.",
+        ),
+        (
+            "-60006",
+            AuthFailureCode.KEYCHAIN_ACCESS_CANCELLED,
+            "Keychain access was cancelled.",
+        ),
+        (
+            "-128",
+            AuthFailureCode.KEYCHAIN_ACCESS_CANCELLED,
+            "Keychain access was cancelled.",
+        ),
+        (
+            "-25291",
+            AuthFailureCode.KEYCHAIN_UNAVAILABLE,
+            "The macOS Keychain is unavailable.",
+        ),
+        (
+            "-25292",
+            AuthFailureCode.KEYCHAIN_UNAVAILABLE,
+            "The macOS Keychain is unavailable.",
+        ),
+        (
+            "-25293",
+            AuthFailureCode.KEYCHAIN_LOCKED,
+            "The macOS Keychain is locked.",
+        ),
+        (
+            "-25307",
+            AuthFailureCode.KEYCHAIN_CONFIGURATION_INVALID,
+            "The default macOS Keychain configuration is invalid. "
+            "Restore the default Keychain in Keychain Access and retry.",
+        ),
+        (
+            "-25308",
+            AuthFailureCode.ENVIRONMENT_BLOCKED,
+            "The current macOS environment does not allow Keychain interaction.",
+        ),
+        (
+            "user interaction is not allowed",
+            AuthFailureCode.ENVIRONMENT_BLOCKED,
+            "The current macOS environment does not allow Keychain interaction.",
+        ),
+    ],
+)
+def test_macos_native_statuses_have_distinct_public_classification(
+    monkeypatch, native_status, expected_code, expected_message
+):
+    FakeMacOSKeyring.instances.clear()
+    monkeypatch.setattr(credentials.macOS, "Keyring", FakeMacOSKeyring)
+    store = create_credential_store(detect_environment(system_name="Darwin"))
+    fake = FakeMacOSKeyring.instances[0]
+    fake.get_error = KeyringError(f"native status ({native_status})")
+
+    with pytest.raises(CredentialAccessError) as raised:
+        store.get("work")
+
+    result = classify_local_failure(raised.value)
+    assert result.code is expected_code
+    assert result.message == expected_message
+    assert native_status not in result.message
+
+
+def test_macos_native_status_matching_uses_numeric_boundaries(monkeypatch):
+    FakeMacOSKeyring.instances.clear()
+    monkeypatch.setattr(credentials.macOS, "Keyring", FakeMacOSKeyring)
+    store = create_credential_store(detect_environment(system_name="Darwin"))
+    fake = FakeMacOSKeyring.instances[0]
+    fake.get_error = KeyringError("unrelated native status (-253080)")
+
+    with pytest.raises(CredentialAccessError) as raised:
+        store.get("work")
+
+    assert (
+        classify_local_failure(raised.value).code
+        is AuthFailureCode.KEYCHAIN_READ_FAILED
+    )
+
+
+def test_macos_keyring_locked_wrapper_preserves_native_cancel_status(monkeypatch):
+    FakeMacOSKeyring.instances.clear()
+    monkeypatch.setattr(credentials.macOS, "Keyring", FakeMacOSKeyring)
+    store = create_credential_store(detect_environment(system_name="Darwin"))
+    fake = FakeMacOSKeyring.instances[0]
+    fake.get_error = KeyringLocked("native status (-128, access denied)")
+
+    with pytest.raises(CredentialAccessError) as raised:
+        store.get("work")
+
+    assert (
+        classify_local_failure(raised.value).code
+        is AuthFailureCode.KEYCHAIN_ACCESS_CANCELLED
+    )
 
 
 def test_store_tolerates_only_a_recognized_missing_delete(fake_secret_service):
@@ -579,6 +859,26 @@ def test_secret_service_no_such_password_does_not_hide_other_delete_failures(
 
     with pytest.raises(SecretServiceUnavailableError):
         store.delete("missing")
+
+
+def test_macos_keychain_cancel_status_is_classified_separately(
+    monkeypatch,
+):
+    FakeMacOSKeyring.instances.clear()
+    monkeypatch.setattr(credentials.macOS, "Keyring", FakeMacOSKeyring)
+    store = create_credential_store(detect_environment(system_name="Darwin"))
+    fake = FakeMacOSKeyring.instances[0]
+    fake.set_error = PasswordSetError(
+        "Can't store password on keychain: (-60006, 'Unknown Error')"
+    )
+
+    with pytest.raises(CredentialAccessError) as raised:
+        store.set(Account(name="work", token=fake_pat("keychain-cancelled")))
+
+    assert (
+        classify_local_failure(raised.value).code
+        is AuthFailureCode.KEYCHAIN_ACCESS_CANCELLED
+    )
 
 
 def test_secret_service_no_such_password_allows_backup_cleanup(

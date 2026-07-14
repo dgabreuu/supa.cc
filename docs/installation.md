@@ -39,6 +39,8 @@ brew upgrade dgabreuu/supa-cc/supa-cc
 
 #### Uninstall
 
+To remove Supa.cc accounts and PATs intentionally before uninstalling, run `supa.cc reset --all`. Package removal alone preserves credentials.
+
 ```bash
 brew uninstall supa-cc
 ```
@@ -86,6 +88,8 @@ pipx upgrade supa.cc
 
 #### Uninstall
 
+Optionally run `supa.cc reset --all` first when the intent is to remove all Supa.cc credentials and state. `pipx uninstall` alone preserves them.
+
 ```bash
 pipx uninstall supa.cc
 ```
@@ -94,7 +98,7 @@ After installation, run `supa.cc doctor`. Secret-free state is stored in `$XDG_C
 
 ### Windows (pipx only)
 
-The stable installation is available only through `pipx`. PATs and secure backups are stored in Windows Credential Manager exclusively through the `WinVaultKeyring` backend; secret-free metadata is stored in `%APPDATA%\supa.cc`.
+The stable installation is available only through `pipx`. PATs are stored in Windows Credential Manager exclusively through the `WinVaultKeyring` backend; secret-free metadata is stored in `%APPDATA%\supa.cc`.
 
 #### Prerequisites in PowerShell
 
@@ -127,11 +131,25 @@ pipx upgrade supa.cc
 
 #### Uninstall
 
+Optionally run `supa.cc reset --all` first when the intent is to remove all Supa.cc credentials and state. `pipx uninstall` alone preserves them.
+
 ```powershell
 pipx uninstall supa.cc
 ```
 
 If `supa.cc` is not found after reopening the shell, run `py -m pipx ensurepath` again and see [Troubleshooting](troubleshooting.md#windows).
+
+## Development wheel
+
+Version `0.5.0.dev1` identifies the current development package and remains separate from the stable Homebrew formula. From a reviewed source checkout with the development dependencies installed, build and install the wheel rather than leaving an editable checkout on `PATH`:
+
+```bash
+python3 -m build
+pipx install --force dist/supa_cc-0.5.0.dev1-py3-none-any.whl
+supa.cc --version
+```
+
+The verification output must include `Installation channel: wheel`. If it reports `editable`, the command is still bound to a source checkout; if it reports another version, locate the executable selected by `PATH` before testing credentials. Do not keep stable, editable, and development-wheel commands active simultaneously.
 
 ## After installation
 

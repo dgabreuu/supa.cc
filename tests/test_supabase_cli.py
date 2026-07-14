@@ -113,6 +113,51 @@ def test_macos_rejects_binary_below_group_or_world_writable_ancestor(
     run.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/opt/homebrew/Cellar/supabase/2.109.1/bin/supabase",
+        "/usr/local/Cellar/supabase/2.109.1/bin/supabase",
+    ],
+)
+def test_macos_accepts_only_canonical_group_writable_homebrew_cellar(
+    monkeypatch, path
+):
+    def metadata(candidate):
+        mode = 0o40775 if candidate in {
+            "/opt/homebrew/Cellar",
+            "/usr/local/Cellar",
+        } else 0o40755
+        return type(
+            "Metadata",
+            (),
+            {"st_mode": mode, "st_uid": os.getuid()},
+        )()
+
+    monkeypatch.setattr(supabase_cli.os, "lstat", metadata)
+
+    assert supabase_cli._has_trusted_path_ancestors(path) is True
+
+
+def test_macos_rejects_group_writable_noncanonical_cellar(monkeypatch):
+    def metadata(candidate):
+        mode = 0o40775 if candidate == "/custom/Cellar" else 0o40755
+        return type(
+            "Metadata",
+            (),
+            {"st_mode": mode, "st_uid": os.getuid()},
+        )()
+
+    monkeypatch.setattr(supabase_cli.os, "lstat", metadata)
+
+    assert (
+        supabase_cli._has_trusted_path_ancestors(
+            "/custom/Cellar/supabase/2.109.1/bin/supabase"
+        )
+        is False
+    )
+
+
 def test_windows_revalidates_binary_at_process_spawn_boundary(tmp_path, monkeypatch):
     binary = _executable(tmp_path)
     replacement = tmp_path / "replacement"
@@ -301,6 +346,105 @@ def test_preflight_accepts_minimum_version(tmp_path):
         result = cli.preflight()
 
     assert result.ok is True
+
+
+def test_native_login_uses_captured_sanitized_environment_and_explicit_profile(
+    tmp_path,
+):
+    token = fake_pat("captured-environment")
+    base_environment = {
+        "KEEP": "value",
+        "SUPABASE_ACCESS_TOKEN": fake_pat("inherited"),
+        "SUPABASE_PROFILE": "other",
+        "SUPABASE_TELEMETRY_DISABLED": "0",
+    }
+    cli = SupabaseCLI(
+        binary_resolver=lambda _: str(_executable(tmp_path)),
+        base_environment=base_environment,
+    )
+    base_environment["KEEP"] = "changed-after-construction"
+
+    with patch.object(
+        cli, "_run", return_value=CommandResult.success()
+    ) as run:
+        result = cli.login_with_access_token(
+            Account("work", token), supabase_home=tmp_path / "home"
+        )
+
+    assert result.ok
+    argv, environment = run.call_args.args[:2]
+    assert argv == ["login", "--profile", "supabase"]
+    assert environment["SUPABASE_ACCESS_TOKEN"] == token
+    assert "SUPABASE_PROFILE" not in environment
+    assert environment["SUPABASE_HOME"] == str(tmp_path / "home")
+    assert environment["SUPABASE_TELEMETRY_DISABLED"] == "1"
+    assert environment["DO_NOT_TRACK"] == "1"
+    assert environment["KEEP"] == "value"
+    assert token not in argv
+
+
+def test_native_verify_and_logout_never_receive_access_token(tmp_path):
+    cli = SupabaseCLI(
+        binary_resolver=lambda _: str(_executable(tmp_path)),
+        base_environment={
+            "SUPABASE_ACCESS_TOKEN": fake_pat("parent"),
+            "SUPABASE_PROFILE": "other",
+        },
+    )
+
+    with patch.object(
+        cli, "_run", return_value=CommandResult.success()
+    ) as run:
+        assert cli.verify_persisted_session(supabase_home=tmp_path / "home").ok
+        assert cli.logout_session(supabase_home=tmp_path / "home").ok
+
+    verify_call, logout_call = run.call_args_list
+    assert verify_call.args[0] == ["projects", "list", "--profile", "supabase"]
+    assert logout_call.args[0] == ["logout", "--yes", "--profile", "supabase"]
+    for call in (verify_call, logout_call):
+        assert "SUPABASE_ACCESS_TOKEN" not in call.args[1]
+        assert "SUPABASE_PROFILE" not in call.args[1]
+
+
+def test_token_validation_uses_official_profile_and_child_only_telemetry(tmp_path):
+    cli = SupabaseCLI(
+        binary_resolver=lambda _: str(_executable(tmp_path)),
+        base_environment={"SUPABASE_PROFILE": "other"},
+    )
+
+    with patch.object(
+        cli, "_run", return_value=CommandResult.success()
+    ) as run:
+        result = cli.validate_access_token(Account("work", fake_pat("validate")))
+
+    assert result.ok
+    argv, environment = run.call_args.args[:2]
+    assert argv == ["projects", "list", "--profile", "supabase"]
+    assert "SUPABASE_PROFILE" not in environment
+    assert environment["SUPABASE_TELEMETRY_DISABLED"] == "1"
+    assert environment["DO_NOT_TRACK"] == "1"
+
+
+def test_version_check_uses_sanitized_captured_environment(tmp_path):
+    cli = SupabaseCLI(
+        binary_resolver=lambda _: str(_executable(tmp_path)),
+        base_environment={
+            "SUPABASE_ACCESS_TOKEN": fake_pat("version-parent"),
+            "SUPABASE_PROFILE": "other",
+            "KEEP": "value",
+        },
+    )
+
+    with patch.object(
+        cli, "_run", return_value=CommandResult.success(stdout="2.109.1")
+    ) as run:
+        result = cli.preflight()
+
+    assert result.ok
+    environment = run.call_args.args[1]
+    assert "SUPABASE_ACCESS_TOKEN" not in environment
+    assert "SUPABASE_PROFILE" not in environment
+    assert environment["KEEP"] == "value"
 
 
 @pytest.mark.parametrize(

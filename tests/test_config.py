@@ -59,7 +59,10 @@ def test_macos_popen_assertion_does_not_expect_consumed_pre_spawn_callback(
 
 def test_macos_run_process_executes_pre_spawn_revalidation(tmp_path, monkeypatch):
     binary = _binary(tmp_path)
-    config = SupabaseConfig(binary_resolver=lambda _: binary)
+    config = SupabaseConfig(
+        binary_resolver=lambda _: binary,
+        base_environment={"PARENT_VALUE": "present"},
+    )
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(
         "supa_cc.supabase_cli._has_trusted_path_ancestors", lambda _: True
@@ -106,7 +109,10 @@ def test_is_installed_is_false_when_binary_cannot_be_resolved():
 def test_validate_access_token_uses_projects_list_and_copied_environment(tmp_path):
     token = fake_pat("env-only")
     binary = _binary(tmp_path, "real-supabase")
-    config = SupabaseConfig(binary_resolver=lambda _: binary)
+    config = SupabaseConfig(
+        binary_resolver=lambda _: binary,
+        base_environment={"PARENT_VALUE": "present"},
+    )
     account = Account(name="work", token=token)
 
     with patch.dict(
@@ -126,8 +132,13 @@ def test_validate_access_token_uses_projects_list_and_copied_environment(tmp_pat
     assert "SUPABASE_ACCESS_TOKEN" not in os.environ
     invocation = popen.call_args
     _assert_verified_invocation(invocation, binary)
-    assert invocation.args[0][1:] == ["projects", "list"]
-    assert invocation.kwargs["env"] == {"PARENT_VALUE": "present", "SUPABASE_ACCESS_TOKEN": token}
+    assert invocation.args[0][1:] == ["projects", "list", "--profile", "supabase"]
+    assert invocation.kwargs["env"] == {
+        "PARENT_VALUE": "present",
+        "SUPABASE_ACCESS_TOKEN": token,
+        "SUPABASE_TELEMETRY_DISABLED": "1",
+        "DO_NOT_TRACK": "1",
+    }
     assert "login" not in popen.call_args.args[0]
     assert token not in popen.call_args.args[0]
 
@@ -135,7 +146,10 @@ def test_validate_access_token_uses_projects_list_and_copied_environment(tmp_pat
 def test_login_passes_token_only_in_child_environment(tmp_path):
     token = fake_pat("native-login")
     binary = _binary(tmp_path)
-    config = SupabaseConfig(binary_resolver=lambda _: binary)
+    config = SupabaseConfig(
+        binary_resolver=lambda _: binary,
+        base_environment={"PARENT": "yes"},
+    )
     account = Account(name="work", token=token)
 
     with patch.dict(
@@ -146,11 +160,13 @@ def test_login_passes_token_only_in_child_environment(tmp_path):
         result = config.login_with_access_token(account)
 
     _assert_verified_invocation(popen.call_args, binary)
-    assert popen.call_args.args[0][1:] == ["login"]
+    assert popen.call_args.args[0][1:] == ["login", "--profile", "supabase"]
     assert token not in popen.call_args.args[0]
     assert popen.call_args.kwargs["env"] == {
         "PARENT": "yes",
         "SUPABASE_ACCESS_TOKEN": token,
+        "SUPABASE_TELEMETRY_DISABLED": "1",
+        "DO_NOT_TRACK": "1",
     }
     assert result.ok is True
 
@@ -217,7 +233,13 @@ def test_native_commands_remove_inherited_environment_override(
     tmp_path, method, arguments
 ):
     binary = _binary(tmp_path)
-    config = SupabaseConfig(binary_resolver=lambda _: binary)
+    config = SupabaseConfig(
+        binary_resolver=lambda _: binary,
+        base_environment={
+            "PARENT": "yes",
+            "SUPABASE_ACCESS_TOKEN": fake_pat("inherited"),
+        },
+    )
 
     with patch.dict(
         "supa_cc.supabase_cli.os.environ",
@@ -229,8 +251,12 @@ def test_native_commands_remove_inherited_environment_override(
         result = getattr(config, method)()
 
     _assert_verified_invocation(popen.call_args, binary)
-    assert popen.call_args.args[0][1:] == arguments
-    assert popen.call_args.kwargs["env"] == {"PARENT": "yes"}
+    assert popen.call_args.args[0][1:] == [*arguments, "--profile", "supabase"]
+    assert popen.call_args.kwargs["env"] == {
+        "PARENT": "yes",
+        "SUPABASE_TELEMETRY_DISABLED": "1",
+        "DO_NOT_TRACK": "1",
+    }
     assert result.ok is True
 
 
@@ -266,10 +292,27 @@ def test_validate_access_token_does_not_run_when_cli_is_missing():
             "permission denied while decoding response; HTTP status 401 Unauthorized",
             AuthFailureCode.TOKEN_REJECTED,
         ),
-        ("permission denied for internal code 4010", AuthFailureCode.ENVIRONMENT_BLOCKED),
+        ("permission denied for internal code 4010", AuthFailureCode.API_AUTH_FAILED),
+        (
+            "permission denied while opening telemetry.json",
+            AuthFailureCode.ENVIRONMENT_BLOCKED,
+        ),
         ("Access token not provided", AuthFailureCode.TOKEN_MISSING),
         ("lookup api.supabase.com: no such host", AuthFailureCode.NETWORK_FAILURE),
-        ("operation not permitted", AuthFailureCode.ENVIRONMENT_BLOCKED),
+        ("operation not permitted", AuthFailureCode.API_AUTH_FAILED),
+        (
+            "EPERM: operation not permitted, open config.json",
+            AuthFailureCode.ENVIRONMENT_BLOCKED,
+        ),
+        ("EPERM: remote permission denied", AuthFailureCode.API_AUTH_FAILED),
+        (
+            "EPERM: remote permission denied\nOpen the dashboard to continue",
+            AuthFailureCode.API_AUTH_FAILED,
+        ),
+        (
+            "EPERM: remote permission denied\ntelemetry.json is disabled",
+            AuthFailureCode.API_AUTH_FAILED,
+        ),
         ('unknown command "projects"', AuthFailureCode.CLI_INCOMPATIBLE),
         ("API authentication failed", AuthFailureCode.API_AUTH_FAILED),
         ("profile mismatch", AuthFailureCode.PROFILE_MISMATCH),
@@ -339,7 +382,10 @@ def test_validate_access_token_never_calls_native_keychain_repair(tmp_path):
 def test_execute_authenticated_passes_pat_only_in_copied_environment(tmp_path):
     token = fake_pat("command_env_only")
     binary = _binary(tmp_path)
-    config = SupabaseConfig(binary_resolver=lambda _: binary)
+    config = SupabaseConfig(
+        binary_resolver=lambda _: binary,
+        base_environment={"PARENT": "yes"},
+    )
 
     with patch.dict(
         "supa_cc.supabase_cli.os.environ", {"PARENT": "yes"}, clear=True
@@ -362,6 +408,8 @@ def test_execute_authenticated_passes_pat_only_in_copied_environment(tmp_path):
     assert popen.call_args.kwargs["env"] == {
         "PARENT": "yes",
         "SUPABASE_ACCESS_TOKEN": token,
+        "SUPABASE_TELEMETRY_DISABLED": "1",
+        "DO_NOT_TRACK": "1",
     }
     assert "SUPABASE_ACCESS_TOKEN" not in os.environ
 
@@ -474,7 +522,7 @@ def test_validate_access_token_reuses_authenticated_executor(tmp_path):
 
     execute.assert_called_once_with(
         account,
-        ["projects", "list"],
+        ["projects", "list", "--profile", "supabase"],
         timeout_seconds=30,
     )
     assert result.ok is True

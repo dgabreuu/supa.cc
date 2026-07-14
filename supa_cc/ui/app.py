@@ -1,6 +1,6 @@
 from typing import Callable, Dict, Optional
 
-from ..accounts import AccountManager
+from ..accounts import AccountService
 from .render import UIRenderer
 from .screens import TUIScreens
 from .state import NavigationState, PageId
@@ -9,14 +9,14 @@ from .state import NavigationState, PageId
 class TUIApp:
     def __init__(
         self,
-        manager: Optional[AccountManager] = None,
+        manager: Optional[AccountService] = None,
         renderer: Optional[UIRenderer] = None,
         screens: Optional[TUIScreens] = None,
         state: Optional[NavigationState] = None,
     ):
         self.state = state or NavigationState()
         self.renderer = renderer or UIRenderer()
-        self.manager = manager or AccountManager()
+        self.manager = manager or AccountService()
         self.screens = screens or TUIScreens(self.manager, self.renderer)
         self.routes: Dict[PageId, Callable[[NavigationState], None]] = {
             PageId.HOME: self.screens.home,

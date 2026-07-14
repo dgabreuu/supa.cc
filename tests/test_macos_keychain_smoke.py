@@ -8,7 +8,8 @@ from unittest.mock import Mock
 import keyring
 import pytest
 
-from supa_cc.account_store import KEYCHAIN_SERVICE, AccountStore as KeychainManager
+from supa_cc.credentials import create_credential_store
+from supa_cc.environment import detect_environment
 from supa_cc.models import Account
 
 
@@ -22,7 +23,7 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.mark.real_keychain
-def test_disposable_macos_keychain_round_trip(tmp_path):
+def test_disposable_macos_keychain_round_trip():
     unique = uuid.uuid4().hex
     service = f"supa.cc.tests.{unique}"
     account_name = f"smoke-{unique}"
@@ -32,47 +33,52 @@ def test_disposable_macos_keychain_round_trip(tmp_path):
     updated_token = "sbp_" + hashlib.sha256(
         f"updated:{unique}".encode("utf-8")
     ).hexdigest()[:40]
-    manager = KeychainManager(
-        index_path=tmp_path / "accounts.json",
+    store = create_credential_store(
+        detect_environment(system_name="Darwin"),
         service=service,
-        cache_ttl_seconds=0,
     )
 
     assert not isinstance(keyring.set_password, Mock)
     assert not isinstance(keyring.get_password, Mock)
     assert not isinstance(keyring.delete_password, Mock)
-    assert service != KEYCHAIN_SERVICE
-    assert manager.credential_store.service == service
+    assert service != "supa.cc.supabase.accounts.v2"
+    assert store.service == service
     assert Account(name=account_name, token=original_token).validate_token()
     assert Account(name=account_name, token=updated_token).validate_token()
+    primary_error = None
     try:
-        manager.add_account(
-            Account(name=account_name, token=original_token)
-        )
-        loaded = manager.get_account(account_name)
+        store.set(Account(name=account_name, token=original_token))
+        loaded = store.get(account_name)
         assert loaded is not None
-        assert hmac.compare_digest(loaded.token, original_token)
+        assert hmac.compare_digest(loaded, original_token)
         assert hmac.compare_digest(
             keyring.get_password(service, account_name), original_token
         )
 
-        manager.add_account(
-            Account(name=account_name, token=updated_token)
-        )
-        updated = manager.get_account(account_name)
+        store.set(Account(name=account_name, token=updated_token))
+        updated = store.get(account_name)
         assert updated is not None
-        assert hmac.compare_digest(updated.token, updated_token)
+        assert hmac.compare_digest(updated, updated_token)
 
-        manager.remove_account(account_name)
-        assert manager.get_account(account_name) is None
+        store.delete(account_name)
+        assert store.get(account_name) is None
         assert keyring.get_password(service, account_name) is None
+    except BaseException as error:
+        primary_error = error
+        raise
     finally:
         try:
-            manager.delete_account(account_name)
+            store.delete(account_name)
         except Exception as error:  # pragma: no cover - real backend only
-            pytest.fail(
-                "Failed to clean up the isolated temporary Keychain smoke item: "
-                f"service={service}, account={account_name}, "
-                f"error={type(error).__name__}",
-                pytrace=False,
-            )
+            if primary_error is not None:
+                primary_error.add_note(
+                    "The isolated Keychain smoke cleanup also failed with "
+                    f"{type(error).__name__}."
+                )
+            else:
+                pytest.fail(
+                    "Failed to clean up the isolated temporary Keychain smoke item: "
+                    f"service={service}, account={account_name}, "
+                    f"error={type(error).__name__}",
+                    pytrace=False,
+                )

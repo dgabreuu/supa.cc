@@ -1,4 +1,8 @@
+import json
+import sys
 from dataclasses import dataclass
+from enum import Enum
+from importlib import metadata
 
 from .environment import Environment, LinuxDistribution, OperatingSystem
 
@@ -27,16 +31,80 @@ class InstallationGuidance:
     remediation: str
 
 
-def installation_guidance(environment: Environment) -> InstallationGuidance:
+class InstallationChannel(str, Enum):
+    HOMEBREW = "homebrew"
+    PIPX = "pipx"
+    EDITABLE = "editable"
+    VCS = "vcs"
+    WHEEL = "wheel"
+    PACKAGE = "package"
+    UNKNOWN = "unknown"
+
+
+def detect_installation_channel(
+    *, distribution=None, executable=None
+) -> InstallationChannel:
+    """Infer the local install channel from package metadata without subprocesses."""
+    runtime = str(sys.executable if executable is None else executable).lower()
+    if distribution is None:
+        try:
+            distribution = metadata.distribution("supa.cc")
+        except metadata.PackageNotFoundError:
+            return InstallationChannel.UNKNOWN
+    try:
+        direct_url_text = distribution.read_text("direct_url.json")
+        direct_url = json.loads(direct_url_text) if direct_url_text else {}
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        direct_url = {}
+    if isinstance(direct_url.get("dir_info"), dict) and direct_url[
+        "dir_info"
+    ].get("editable") is True:
+        return InstallationChannel.EDITABLE
+    if isinstance(direct_url.get("vcs_info"), dict):
+        return InstallationChannel.VCS
+    direct_url_value = direct_url.get("url")
+    if (
+        isinstance(direct_url_value, str)
+        and direct_url_value.lower().split("?", 1)[0].endswith(".whl")
+        and isinstance(direct_url.get("archive_info"), dict)
+    ):
+        return InstallationChannel.WHEEL
+    if "/cellar/" in runtime.replace("\\", "/"):
+        return InstallationChannel.HOMEBREW
+    if "pipx" in runtime and "venv" in runtime:
+        return InstallationChannel.PIPX
+    try:
+        installer = (distribution.read_text("INSTALLER") or "").strip().lower()
+    except AttributeError:
+        installer = ""
+    return InstallationChannel.PACKAGE if installer else InstallationChannel.UNKNOWN
+
+
+def installation_guidance(
+    environment: Environment,
+    channel: InstallationChannel | None = None,
+) -> InstallationGuidance:
     if environment.operating_system is OperatingSystem.MACOS:
+        if channel in {
+            InstallationChannel.PIPX,
+            InstallationChannel.EDITABLE,
+            InstallationChannel.VCS,
+            InstallationChannel.WHEEL,
+            InstallationChannel.PACKAGE,
+        }:
+            update_hint = VCS_UPDATE
+        elif channel is InstallationChannel.HOMEBREW:
+            update_hint = f"{HOMEBREW_UPDATE} or {HOMEBREW_HEAD_UPDATE}"
+        else:
+            update_hint = (
+                f"{HOMEBREW_UPDATE} or {HOMEBREW_HEAD_UPDATE}; "
+                f"for pipx: {VCS_UPDATE}"
+            )
         return InstallationGuidance(
             install_hint=(
                 f"{HOMEBREW_TAP_COMMAND} && {HOMEBREW_INSTALL}; or {VCS_INSTALL}"
             ),
-            update_hint=(
-                f"{HOMEBREW_UPDATE} or {HOMEBREW_HEAD_UPDATE}; "
-                f"for pipx: {VCS_UPDATE}"
-            ),
+            update_hint=update_hint,
             remediation="Check whether the macOS credential store is available.",
         )
 

@@ -1,6 +1,8 @@
 import os
 import sys
+from unittest.mock import Mock
 
+import supa_cc.process as process_module
 from supa_cc.process import ProcessState, run_process
 
 
@@ -30,3 +32,30 @@ def test_process_runner_reports_launch_failure_neutrally():
 
     assert result.state is ProcessState.NOT_FOUND
     assert result.exit_code == 1
+
+
+def test_windows_spawn_assigns_job_before_resuming_suspended_process(monkeypatch):
+    events = []
+    process = Mock()
+    popen = Mock(return_value=process)
+
+    def assign(candidate):
+        assert candidate is process
+        events.append("assigned")
+        return Mock()
+
+    def resume(candidate):
+        assert candidate is process
+        events.append("resumed")
+
+    monkeypatch.setattr(process_module.os, "name", "nt")
+    monkeypatch.setattr(process_module.subprocess, "Popen", popen)
+    monkeypatch.setattr(process_module, "create_kill_on_close_job", assign)
+    monkeypatch.setattr(process_module, "resume_suspended_process", resume)
+
+    spawned, close_job = process_module._spawn_process(["safe"], {})
+
+    assert spawned is process
+    assert close_job is not None
+    assert events == ["assigned", "resumed"]
+    assert popen.call_args.kwargs["creationflags"] & 0x00000004

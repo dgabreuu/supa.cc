@@ -405,7 +405,7 @@ def test_active_account_store_rejects_invalid_contents_with_domain_error(tmp_pat
             ActiveAccountInvalidError("secret"),
             AuthFailureCode.ACTIVE_ACCOUNT_INVALID,
         ),
-        (RuntimeError("secret"), AuthFailureCode.COMMAND_FAILED),
+        (RuntimeError("secret"), AuthFailureCode.UNEXPECTED_LOCAL_FAILURE),
     ],
 )
 def test_local_failure_classifier_never_exposes_exception_details(failure, expected):

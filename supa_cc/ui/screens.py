@@ -4,7 +4,7 @@ import questionary
 from prompt_toolkit.styles import Style as PTKStyle
 from questionary import Choice
 
-from ..accounts import AccountManager
+from ..accounts import AccountService
 from ..auth import classify_local_failure
 from .animations import loading
 from .navigation import DEFAULT_POINTER, choices_with_back
@@ -31,7 +31,7 @@ ACTION_TO_PAGE = {
 class TUIScreens:
     def __init__(
         self,
-        manager: AccountManager,
+        manager: AccountService,
         renderer: UIRenderer,
         prompts: Any = questionary,
         style: PTKStyle = QUESTIONARY_STYLE,
@@ -151,8 +151,12 @@ class TUIScreens:
 
         name = name.strip()
         try:
-            self.manager.add(name, token)
-            state.set_message(Strings.MSG_ACCOUNT_ADDED.format(name), "success")
+            result = self.manager.add(name, token)
+            if result.ok:
+                state.set_message(Strings.MSG_ACCOUNT_ADDED.format(name), "success")
+            else:
+                state.set_message(result.message, "error")
+                state.record_failure(result.exit_code)
         except Exception as error:
             result = classify_local_failure(error)
             state.set_message(result.message, "error")
@@ -182,7 +186,12 @@ class TUIScreens:
 
         try:
             with loading(Strings.LOADING_SWITCH_ACCOUNT, console=self.renderer.console):
-                result = self.manager.set_active(name)
+                result = self.manager.set_active(
+                    name,
+                    token_provider=lambda _name: self._password(
+                        Strings.PROMPT_RESTORE_ACCESS_TOKEN.format(name)
+                    ),
+                )
         except Exception as error:
             result = classify_local_failure(error)
 
@@ -220,11 +229,16 @@ class TUIScreens:
             return
 
         try:
-            self.manager.remove(name)
+            result = self.manager.remove(name)
         except Exception as error:
             result = classify_local_failure(error)
             state.set_message(result.message, "error")
             state.record_failure(result.exit_code)
         else:
+            if not result.ok:
+                state.set_message(result.message, "error")
+                state.record_failure(result.exit_code)
+                state.go_home()
+                return
             state.set_message(Strings.MSG_ACCOUNT_REMOVED.format(name), "success")
         state.go_home()

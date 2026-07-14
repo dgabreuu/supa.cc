@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Optional, Sequence, Tuple
 
+from .windows_job import create_kill_on_close_job, resume_suspended_process
+
 OutputSink = Callable[[str], None]
 STREAM_SAMPLE_LIMIT = 8192
 STREAM_SAMPLE_SEPARATOR = "\n...[truncated]...\n"
@@ -83,6 +85,35 @@ def _terminate_process_group(process):
             pass
 
 
+def _spawn_process(argv: Sequence[str], env: dict, pass_fds: Tuple[int, ...] = ()):
+    options = {"pass_fds": pass_fds} if os.name == "posix" else {}
+    if os.name == "nt":
+        options["creationflags"] = 0x00000004  # CREATE_SUSPENDED
+    process = subprocess.Popen(
+        argv,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        bufsize=0,
+        start_new_session=(os.name == "posix"),
+        **options,
+    )
+    close_windows_job = None
+    if os.name == "nt":
+        try:
+            close_windows_job = create_kill_on_close_job(process)
+            resume_suspended_process(process)
+        except Exception:
+            if close_windows_job is not None:
+                try:
+                    close_windows_job()
+                except OSError:
+                    pass
+            _terminate_process_group(process)
+            raise OSError("Unable to start a contained Windows process.") from None
+    return process, close_windows_job
+
+
 def run_process(argv: Sequence[str], env: dict, stdout_sink: OutputSink = lambda _chunk: None,
                  stderr_sink: OutputSink = lambda _chunk: None, sample_limit: int = STREAM_SAMPLE_LIMIT,
                  timeout_seconds: Optional[float] = None, pass_fds: Tuple[int, ...] = (),
@@ -90,9 +121,7 @@ def run_process(argv: Sequence[str], env: dict, stdout_sink: OutputSink = lambda
     try:
         if pre_spawn_check is not None:
             pre_spawn_check()
-        options = {"pass_fds": pass_fds} if os.name == "posix" else {}
-        process = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
-                                   bufsize=0, start_new_session=(os.name == "posix"), **options)
+        process, close_windows_job = _spawn_process(argv, env, pass_fds)
     except FileNotFoundError:
         return ProcessResult(ProcessState.NOT_FOUND)
     except PermissionError:
@@ -101,6 +130,18 @@ def run_process(argv: Sequence[str], env: dict, stdout_sink: OutputSink = lambda
         return ProcessResult(ProcessState.INVALID_ARGUMENT, exit_code=2)
     except OSError:
         return ProcessResult(ProcessState.LAUNCH_FAILED)
+
+    def finalize(result):
+        if close_windows_job is not None:
+            try:
+                close_windows_job()
+            except OSError:
+                return ProcessResult(
+                    ProcessState.LAUNCH_FAILED,
+                    stdout=result.stdout,
+                    stderr=result.stderr,
+                )
+        return result
 
     samples = {"stdout": _BoundedSample(sample_limit), "stderr": _BoundedSample(sample_limit)}
     errors, failed = [], threading.Event()
@@ -158,6 +199,11 @@ def run_process(argv: Sequence[str], env: dict, stdout_sink: OutputSink = lambda
         _terminate_process_group(process)
         for thread in threads:
             thread.join()
+        if close_windows_job is not None:
+            try:
+                close_windows_job()
+            except OSError:
+                pass
         raise
     while any(thread.is_alive() for thread in threads):
         if failed.is_set() and reason is None:
@@ -170,7 +216,7 @@ def run_process(argv: Sequence[str], env: dict, stdout_sink: OutputSink = lambda
             thread.join(0.02)
     stdout, stderr = samples["stdout"].value, samples["stderr"].value
     if reason == "timeout":
-        return ProcessResult(ProcessState.TIMED_OUT, stdout=stdout, stderr=stderr)
+        return finalize(ProcessResult(ProcessState.TIMED_OUT, stdout=stdout, stderr=stderr))
     if errors:
-        return ProcessResult(ProcessState.OUTPUT_FAILED, stdout=stdout, stderr=stderr)
-    return ProcessResult(ProcessState.EXITED, exit_code=return_code, stdout=stdout, stderr=stderr)
+        return finalize(ProcessResult(ProcessState.OUTPUT_FAILED, stdout=stdout, stderr=stderr))
+    return finalize(ProcessResult(ProcessState.EXITED, exit_code=return_code, stdout=stdout, stderr=stderr))

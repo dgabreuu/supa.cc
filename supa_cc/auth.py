@@ -1,6 +1,6 @@
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -33,8 +33,13 @@ def is_valid_account_name(name: object) -> bool:
 class AuthFailureCode(str, Enum):
     NONE = "none"
     TOKEN_MISSING = "token_missing"
+    CREDENTIAL_MISSING = "credential_missing"
     TOKEN_FORMAT_INVALID = "token_format_invalid"
     TOKEN_REJECTED = "token_rejected"
+    KEYCHAIN_CONFIGURATION_INVALID = "keychain_configuration_invalid"
+    KEYCHAIN_ACCESS_CANCELLED = "keychain_access_cancelled"
+    KEYCHAIN_LOCKED = "keychain_locked"
+    KEYCHAIN_UNAVAILABLE = "keychain_unavailable"
     KEYCHAIN_PERMISSION_DENIED = "keychain_permission_denied"
     KEYCHAIN_READ_FAILED = "keychain_read_failed"
     CLI_NOT_FOUND = "cli_not_found"
@@ -62,6 +67,12 @@ class AuthFailureCode(str, Enum):
     NATIVE_VERIFICATION_FAILED = "native_verification_failed"
     SYNC_PENDING = "sync_pending"
     SYNC_ROLLBACK_FAILED = "sync_rollback_failed"
+    STATE_INVALID = "state_invalid"
+    STATE_READ_FAILED = "state_read_failed"
+    STATE_WRITE_FAILED = "state_write_failed"
+    OPERATION_CONCURRENT = "operation_concurrent"
+    RESET_PARTIAL = "reset_partial"
+    UNEXPECTED_LOCAL_FAILURE = "unexpected_local_failure"
 
 
 class CredentialAccessError(RuntimeError):
@@ -72,8 +83,28 @@ class CredentialPermissionDeniedError(CredentialAccessError):
     """The system credential store denied access."""
 
 
+class CredentialAccessCancelledError(CredentialAccessError):
+    """The user cancelled native credential-store access."""
+
+
+class CredentialStoreLockedError(CredentialAccessError):
+    """The native credential store is locked."""
+
+
+class CredentialStoreUnavailableError(CredentialAccessError):
+    """The native credential store is unavailable or read-only."""
+
+
+class CredentialInteractionUnavailableError(CredentialAccessError):
+    """The runtime cannot present required native credential interaction."""
+
+
 class CredentialReadError(CredentialAccessError):
     """The credential could not be read or verified."""
+
+
+class KeychainConfigurationError(CredentialAccessError):
+    """The macOS default Keychain configuration is unusable."""
 
 
 class SecretServiceUnavailableError(CredentialAccessError):
@@ -150,6 +181,9 @@ class AuthResult:
     code: AuthFailureCode
     message: str = field(repr=False)
     exit_code: int = 0
+    operation: str = "authentication"
+    phase: str = "complete"
+    recoverability: str = "none"
 
     def __bool__(self) -> bool:
         raise TypeError("AuthResult is not boolean; use .ok explicitly.")
@@ -169,16 +203,23 @@ class AuthResult:
         code: AuthFailureCode,
         message: str,
         exit_code: int = 1,
+        *,
+        operation: str = "authentication",
+        phase: str = "complete",
+        recoverability: str = "retryable",
     ) -> "AuthResult":
         return cls(
             ok=False,
             code=code,
             message=message,
             exit_code=exit_code,
+            operation=operation,
+            phase=phase,
+            recoverability=recoverability,
         )
 
 
-def classify_local_failure(error: BaseException) -> AuthResult:
+def _classify_known_local_failure(error: BaseException) -> AuthResult:
     """Convert local failures to public codes and sanitized messages."""
     if isinstance(error, InvalidAccessTokenError):
         return AuthResult.failure(
@@ -192,6 +233,37 @@ def classify_local_failure(error: BaseException) -> AuthResult:
             "Invalid account name: use 1 to 50 characters containing only "
             "letters, numbers, hyphens, and underscores.",
             exit_code=2,
+        )
+    if isinstance(error, KeychainConfigurationError):
+        return AuthResult.failure(
+            AuthFailureCode.KEYCHAIN_CONFIGURATION_INVALID,
+            "The default macOS Keychain configuration is invalid. "
+            "Restore the default Keychain in Keychain Access and retry.",
+            recoverability="user_action",
+        )
+    if isinstance(error, CredentialAccessCancelledError):
+        return AuthResult.failure(
+            AuthFailureCode.KEYCHAIN_ACCESS_CANCELLED,
+            "Keychain access was cancelled.",
+            recoverability="user_action",
+        )
+    if isinstance(error, CredentialStoreLockedError):
+        return AuthResult.failure(
+            AuthFailureCode.KEYCHAIN_LOCKED,
+            "The macOS Keychain is locked.",
+            recoverability="user_action",
+        )
+    if isinstance(error, CredentialStoreUnavailableError):
+        return AuthResult.failure(
+            AuthFailureCode.KEYCHAIN_UNAVAILABLE,
+            "The macOS Keychain is unavailable.",
+            recoverability="user_action",
+        )
+    if isinstance(error, CredentialInteractionUnavailableError):
+        return AuthResult.failure(
+            AuthFailureCode.ENVIRONMENT_BLOCKED,
+            "The current macOS environment does not allow Keychain interaction.",
+            recoverability="user_action",
         )
     if isinstance(error, KeychainPermissionDeniedError):
         return AuthResult.failure(
@@ -265,7 +337,88 @@ def classify_local_failure(error: BaseException) -> AuthResult:
         )
     return AuthResult.failure(
         AuthFailureCode.COMMAND_FAILED,
-        "The local operation could not be completed.",
+        "Unexpected local failure.",
+    )
+
+
+def classify_local_failure(
+    error: BaseException,
+    *,
+    operation: str = "local",
+) -> AuthResult:
+    """Normalize an infrastructure exception without exposing its message."""
+    # Imported lazily because the state model validates names through this module.
+    from .accounts.state import (
+        StateConflictError,
+        StateInvalidError,
+        StateReadError,
+        StateWriteError,
+    )
+
+    if isinstance(error, StateConflictError):
+        return AuthResult.failure(
+            AuthFailureCode.STATE_INVALID,
+            "Legacy and current account state require safe reconciliation.",
+            operation=operation,
+            phase="migrate_state",
+        )
+    if isinstance(error, StateInvalidError):
+        return AuthResult.failure(
+            AuthFailureCode.STATE_INVALID,
+            "The local account state is invalid.",
+            operation=operation,
+            phase="read_state",
+            recoverability="user_action",
+        )
+    if isinstance(error, StateReadError):
+        return AuthResult.failure(
+            AuthFailureCode.STATE_READ_FAILED,
+            "The local account state could not be read safely.",
+            operation=operation,
+            phase="read_state",
+        )
+    if isinstance(error, StateWriteError):
+        return AuthResult.failure(
+            AuthFailureCode.STATE_WRITE_FAILED,
+            "The local account state could not be written safely.",
+            operation=operation,
+            phase="write_state",
+        )
+
+    known = _classify_known_local_failure(error)
+    if known.code is not AuthFailureCode.COMMAND_FAILED:
+        phase_by_code = {
+            AuthFailureCode.KEYCHAIN_CONFIGURATION_INVALID: "credential_configuration",
+            AuthFailureCode.KEYCHAIN_ACCESS_CANCELLED: "credential_access",
+            AuthFailureCode.KEYCHAIN_LOCKED: "credential_access",
+            AuthFailureCode.KEYCHAIN_UNAVAILABLE: "credential_access",
+            AuthFailureCode.KEYCHAIN_PERMISSION_DENIED: "credential_access",
+            AuthFailureCode.KEYCHAIN_READ_FAILED: "credential_access",
+            AuthFailureCode.INDEX_INVALID: "read_state",
+            AuthFailureCode.INDEX_READ_FAILED: "read_state",
+            AuthFailureCode.ACTIVE_ACCOUNT_PERMISSION_DENIED: "read_state",
+            AuthFailureCode.ACTIVE_ACCOUNT_READ_FAILED: "read_state",
+            AuthFailureCode.ACTIVE_ACCOUNT_WRITE_FAILED: "write_state",
+            AuthFailureCode.ACTIVE_ACCOUNT_INVALID: "read_state",
+            AuthFailureCode.ENVIRONMENT_BLOCKED: "local_io",
+        }
+        return replace(
+            known,
+            operation=operation,
+            phase=phase_by_code.get(known.code, "validation"),
+        )
+    if isinstance(error, OSError):
+        return AuthResult.failure(
+            AuthFailureCode.ENVIRONMENT_BLOCKED,
+            "The runtime environment blocked a local I/O operation.",
+            operation=operation,
+            phase="local_io",
+        )
+    return AuthResult.failure(
+        AuthFailureCode.UNEXPECTED_LOCAL_FAILURE,
+        f"Unexpected local failure ({type(error).__name__}).",
+        operation=operation,
+        phase="unexpected",
     )
 
 
@@ -292,6 +445,9 @@ class CommandResult:
     exit_code: int = 0
     stdout: str = field(default="", repr=False)
     stderr: str = field(default="", repr=False)
+    operation: str = "command"
+    phase: str = "complete"
+    recoverability: str = "none"
 
     def __bool__(self) -> bool:
         raise TypeError("CommandResult is not boolean; use .ok explicitly.")
@@ -320,6 +476,10 @@ class CommandResult:
         exit_code: int = 1,
         stdout: str = "",
         stderr: str = "",
+        *,
+        operation: str = "command",
+        phase: str = "complete",
+        recoverability: str = "retryable",
     ) -> "CommandResult":
         normalized_exit_code = normalize_exit_code(exit_code)
         return cls(
@@ -329,6 +489,9 @@ class CommandResult:
             exit_code=normalized_exit_code or 1,
             stdout=stdout,
             stderr=stderr,
+            operation=operation,
+            phase=phase,
+            recoverability=recoverability,
         )
 
 

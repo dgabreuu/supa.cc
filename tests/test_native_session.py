@@ -17,7 +17,7 @@ from supa_cc.native_session import (
 )
 
 
-def test_preflight_rejects_custom_profile_without_cli_calls(tmp_path):
+def test_preflight_ignores_custom_profile_file_because_cli_profile_is_explicit(tmp_path):
     home = tmp_path / "supabase"
     home.mkdir()
     (home / "profile").write_text("personal\n", encoding="utf-8")
@@ -25,13 +25,14 @@ def test_preflight_rejects_custom_profile_without_cli_calls(tmp_path):
     config = Mock()
     synchronizer = NativeSessionSynchronizer(config, env={}, supabase_home=home)
 
+    config.preflight.return_value = AuthResult.success()
     result = synchronizer.preflight()
 
-    assert result.code is AuthFailureCode.PROFILE_MISMATCH
-    assert config.method_calls == []
+    assert result.ok
+    config.preflight.assert_called_once_with()
 
 
-def test_preflight_rejects_symlinked_profile_without_cli_calls(tmp_path):
+def test_preflight_does_not_read_symlinked_profile_when_cli_profile_is_explicit(tmp_path):
     home = tmp_path / "supabase"
     home.mkdir()
     target = tmp_path / "profile-target"
@@ -40,12 +41,13 @@ def test_preflight_rejects_symlinked_profile_without_cli_calls(tmp_path):
     (home / "profile").symlink_to(target)
     config = Mock()
 
+    config.preflight.return_value = AuthResult.success()
     result = NativeSessionSynchronizer(
         config, env={}, supabase_home=home
     ).preflight()
 
-    assert result.code is AuthFailureCode.PROFILE_MISMATCH
-    assert config.method_calls == []
+    assert result.ok
+    config.preflight.assert_called_once_with()
 
 
 def test_preflight_checks_cli_only_after_local_state_is_safe(tmp_path):
@@ -82,7 +84,10 @@ def test_preflighted_activation_does_not_repeat_cli_preflight(tmp_path):
 def test_activate_uses_controlled_home_and_verifies_with_supabase_cli(tmp_path):
     config = Mock()
     config.login_with_access_token.return_value = AuthResult.success()
-    config.verify_persisted_session.return_value = AuthResult.success()
+    config.verify_persisted_session.side_effect = [
+        AuthResult.failure(AuthFailureCode.TOKEN_MISSING, "safe"),
+        AuthResult.success(),
+    ]
     account = Account("work", fake_pat("controlled"))
     synchronizer = NativeSessionSynchronizer(
         config, env={}, supabase_home=tmp_path / "real"
@@ -95,7 +100,8 @@ def test_activate_uses_controlled_home_and_verifies_with_supabase_cli(tmp_path):
     controlled_home = config.login_with_access_token.call_args.kwargs["supabase_home"]
     assert controlled_home != tmp_path / "real"
     assert not controlled_home.exists()
-    config.verify_persisted_session.assert_called_once_with(
+    assert config.verify_persisted_session.call_count == 2
+    config.verify_persisted_session.assert_called_with(
         supabase_home=controlled_home,
         profile="supabase",
     )
@@ -119,8 +125,12 @@ def test_access_token_fallback_path_uses_default_home(tmp_path, monkeypatch):
     assert access_token_fallback_path({}) == tmp_path / ".supabase" / "access-token"
 
 
-def test_activate_rejects_inherited_access_token_without_login(tmp_path):
+def test_activate_ignores_inherited_access_token_and_uses_explicit_account(tmp_path):
     config = Mock()
+    config.preflight.return_value = AuthResult.success()
+    config.logout_session.return_value = AuthResult.success()
+    config.login_with_access_token.return_value = AuthResult.success()
+    config.verify_persisted_session.return_value = AuthResult.success()
     synchronizer = NativeSessionSynchronizer(
         config=config,
         env={"SUPABASE_ACCESS_TOKEN": fake_pat("parent")},
@@ -130,10 +140,8 @@ def test_activate_rejects_inherited_access_token_without_login(tmp_path):
 
     result = synchronizer.activate(account)
 
-    assert result.ok is False
-    assert result.code is AuthFailureCode.ENVIRONMENT_BLOCKED
-    assert "SUPABASE_ACCESS_TOKEN" in result.message
-    config.login_with_access_token.assert_not_called()
+    assert result.ok
+    config.login_with_access_token.assert_called_once()
 
 
 def test_activate_rejects_preexisting_plaintext_fallback(tmp_path):
@@ -196,6 +204,9 @@ def test_activate_controlled_home_prevents_plaintext_fallback_write(tmp_path):
     supabase_home = tmp_path / "supabase"
     supabase_home.mkdir()
     config = Mock()
+    config.verify_persisted_session.return_value = AuthResult.failure(
+        AuthFailureCode.TOKEN_MISSING, "safe"
+    )
     account = Account(name="work", token=fake_pat("work"))
 
     def login(_account, *, supabase_home, profile):
@@ -216,7 +227,7 @@ def test_activate_controlled_home_prevents_plaintext_fallback_write(tmp_path):
     assert result.ok is False
     assert result.code is AuthFailureCode.NATIVE_LOGIN_FAILED
     assert not (supabase_home / "access-token").exists()
-    config.verify_persisted_session.assert_not_called()
+    assert config.verify_persisted_session.call_count == 1
     assert account.token not in result.message
 
 
@@ -224,7 +235,10 @@ def test_activate_succeeds_after_login_and_persisted_verification(tmp_path):
     config = Mock()
     account = Account(name="work", token=fake_pat("work"))
     config.login_with_access_token.return_value = AuthResult.success("login ok")
-    config.verify_persisted_session.return_value = AuthResult.success("verified")
+    config.verify_persisted_session.side_effect = [
+        AuthResult.failure(AuthFailureCode.TOKEN_MISSING, "safe"),
+        AuthResult.success("verified"),
+    ]
     synchronizer = NativeSessionSynchronizer(
         config=config,
         env={},
@@ -235,13 +249,127 @@ def test_activate_succeeds_after_login_and_persisted_verification(tmp_path):
 
     assert result.ok is True
     assert config.login_with_access_token.call_args.args == (account,)
-    assert config.verify_persisted_session.call_count == 1
+    assert config.verify_persisted_session.call_count == 2
     assert "synchronized" in result.message.lower() or "activated" in result.message.lower()
     assert account.token not in result.message
 
 
+def test_activate_clears_global_session_before_login_and_verification(tmp_path):
+    config = Mock()
+    config.logout_session.return_value = AuthResult.success("cleared")
+    config.login_with_access_token.return_value = AuthResult.success("login ok")
+    config.verify_persisted_session.return_value = AuthResult.success("verified")
+    synchronizer = NativeSessionSynchronizer(
+        config=config,
+        env={},
+        supabase_home=tmp_path / "supabase",
+    )
+
+    result = synchronizer.activate(Account("work", fake_pat("replace-global")))
+
+    assert result.ok
+    assert [call[0] for call in config.method_calls] == [
+        "preflight",
+        "verify_persisted_session",
+        "logout_session",
+        "login_with_access_token",
+        "verify_persisted_session",
+    ]
+
+
+def test_activate_skips_logout_when_cli_confirms_session_is_missing(tmp_path):
+    config = Mock()
+    config.preflight.return_value = AuthResult.success()
+    config.verify_persisted_session.side_effect = [
+        AuthResult.failure(AuthFailureCode.TOKEN_MISSING, "safe"),
+        AuthResult.success("persisted"),
+    ]
+    config.login_with_access_token.return_value = AuthResult.success("login ok")
+    phases = []
+    synchronizer = NativeSessionSynchronizer(
+        config=config,
+        env={},
+        supabase_home=tmp_path / "supabase",
+    )
+
+    result = synchronizer.activate(
+        Account("work", fake_pat("missing-native-session")),
+        phase_callback=phases.append,
+    )
+
+    assert result.ok
+    config.logout_session.assert_not_called()
+    assert config.verify_persisted_session.call_count == 2
+    assert phases == ["logged_out", "logged_in", "verified"]
+    assert synchronizer.mutation_state is MutationState.VERIFIED
+
+
+def test_activate_installs_plaintext_blocker_only_after_logout(tmp_path):
+    config = Mock()
+    config.preflight.return_value = AuthResult.success()
+    observations = []
+
+    def verify(*, supabase_home, profile):
+        observations.append(("verify", (supabase_home / "access-token").exists()))
+        if len(observations) == 1:
+            return AuthResult.success("active")
+        return AuthResult.success("persisted")
+
+    def logout(*, supabase_home, profile):
+        observations.append(("logout", (supabase_home / "access-token").exists()))
+        return AuthResult.success("cleared")
+
+    def login(_account, *, supabase_home, profile):
+        fallback = supabase_home / "access-token"
+        observations.append(("login", fallback.is_dir()))
+        return AuthResult.success("login ok")
+
+    config.verify_persisted_session.side_effect = verify
+    config.logout_session.side_effect = logout
+    config.login_with_access_token.side_effect = login
+    synchronizer = NativeSessionSynchronizer(
+        config=config,
+        env={},
+        supabase_home=tmp_path / "supabase",
+    )
+
+    result = synchronizer.activate(
+        Account("work", fake_pat("phase-scoped-blocker"))
+    )
+
+    assert result.ok
+    assert observations == [
+        ("verify", False),
+        ("logout", False),
+        ("login", True),
+        ("verify", True),
+    ]
+
+
+def test_activate_does_not_login_when_global_session_cannot_be_cleared(tmp_path):
+    config = Mock()
+    config.verify_persisted_session.return_value = AuthResult.success("active")
+    failure = AuthResult.failure(AuthFailureCode.NATIVE_LOGOUT_FAILED, "safe")
+    config.logout_session.return_value = failure
+    synchronizer = NativeSessionSynchronizer(
+        config=config,
+        env={},
+        supabase_home=tmp_path / "supabase",
+    )
+
+    result = synchronizer.activate(Account("work", fake_pat("clear-failed")))
+
+    assert result is failure
+    config.login_with_access_token.assert_not_called()
+    assert config.verify_persisted_session.call_count == 1
+    assert synchronizer.mutation_state is MutationState.UNCERTAIN
+
+
 def test_activate_propagates_login_failure_without_verification(tmp_path):
     config = Mock()
+    config.verify_persisted_session.return_value = AuthResult.failure(
+        AuthFailureCode.TOKEN_MISSING, "safe"
+    )
     config.login_with_access_token.return_value = AuthResult.failure(
         AuthFailureCode.TOKEN_REJECTED,
         "O token foi rejeitado pela API da Supabase.",
@@ -256,7 +384,7 @@ def test_activate_propagates_login_failure_without_verification(tmp_path):
 
     assert result.ok is False
     assert result.code is AuthFailureCode.TOKEN_REJECTED
-    config.verify_persisted_session.assert_not_called()
+    assert config.verify_persisted_session.call_count == 1
 
 
 @pytest.mark.parametrize(
@@ -268,10 +396,13 @@ def test_activate_classifies_unusable_persisted_session_by_phase(
 ):
     config = Mock()
     config.login_with_access_token.return_value = AuthResult.success("login ok")
-    config.verify_persisted_session.return_value = AuthResult.failure(
-        verification_code,
-        "unsafe implementation detail",
-    )
+    config.verify_persisted_session.side_effect = [
+        AuthResult.failure(AuthFailureCode.TOKEN_MISSING, "safe"),
+        AuthResult.failure(
+            verification_code,
+            "unsafe implementation detail",
+        ),
+    ]
     synchronizer = NativeSessionSynchronizer(
         config=config,
         env={},

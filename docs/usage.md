@@ -36,7 +36,16 @@ supa.cc remove <name>
 supa.cc remove <name> --yes
 ```
 
-`add` requests the PAT in a hidden prompt. `list` shows names only, even when a credential later proves unavailable. `switch` checks index consistency, retrieves the selected PAT from native storage, validates it, and activates the account. `remove` asks for confirmation except with `--yes`; removing the active account also ends its associated official session.
+`add` requests the PAT in a hidden prompt and validates it before storing it. `list` shows names only and never opens the credential store. If a listed alias has lost its PAT, `switch` explains that the credential was removed, requests a replacement in a hidden prompt, validates it, and continues without requiring the alias to be recreated. `remove` asks for confirmation except with `--yes`; removing the active account also ends its associated official session.
+
+To intentionally remove every known Supa.cc PAT and all Supa.cc local state:
+
+```bash
+supa.cc reset --all
+supa.cc reset --all --yes
+```
+
+The first form confirms interactively. The command does not change projects, databases, project configuration, or remote resources. Uninstalling the package does not remove credentials automatically.
 
 ### Use the active account
 
@@ -65,10 +74,11 @@ The first two commands are non-live and do not open a token. Their standard huma
 | `supa.cc list` | List registered names |
 | `supa.cc switch <name>` | Validate and activate an account |
 | `supa.cc remove <name> [--yes]` | Remove an account |
+| `supa.cc reset --all [--yes]` | Intentionally clear all Supa.cc accounts, PATs, and local state |
 | `supa.cc run -- <arguments>` | Run the Supabase CLI with the active account |
 | `supa.cc doctor [--json]` | Generate a local non-live diagnostic |
 | `supa.cc doctor --account <name> --live` | Authorize an authenticated diagnostic |
-| `supa.cc --version` | Show the version |
-| `supa.cc version` | Show the installed version and deterministic official update guidance, without network access |
+| `supa.cc --version` | Show the version and sanitized installation channel |
+| `supa.cc version` | Show the installed version, installation channel, and deterministic official update guidance, without network access |
 
 Installation, upgrades, and uninstallation are covered in the [installation guide](installation.md).

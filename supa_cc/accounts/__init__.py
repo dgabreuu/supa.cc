@@ -1,13 +1,8 @@
-"""Account-management feature facade."""
+"""Public account-management feature."""
 
-from .store import AccountStore
-from .manager import AccountManager
-from .mutations import AccountMutationService
-from .transactions import AccountTransactionCoordinator
+from .service import AccountService
 
-__all__ = [
-    "AccountManager",
-    "AccountMutationService",
-    "AccountStore",
-    "AccountTransactionCoordinator",
-]
+# The historical public name now resolves to the single runtime service.
+AccountManager = AccountService
+
+__all__ = ["AccountManager", "AccountService"]

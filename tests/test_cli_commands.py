@@ -20,6 +20,7 @@ from supa_cc.auth import (
 )
 from supa_cc.diagnostics import DoctorReport
 from supa_cc.models import Account
+from supa_cc.installation import InstallationChannel
 
 from helpers import click_runner, fake_pat
 
@@ -54,11 +55,30 @@ class TestCLICommands:
 
     def test_version_shows_version_and_deterministic_update_guidance(self):
         runner = CliRunner()
-        with patch("subprocess.run", side_effect=AssertionError("no subprocess")):
+        with patch("subprocess.run", side_effect=AssertionError("no subprocess")), patch(
+            "supa_cc.installation.detect_installation_channel",
+            return_value=InstallationChannel.EDITABLE,
+        ):
             result = runner.invoke(main, ["version"])
         assert result.exit_code == 0
         assert f"Supa.cc v{supa_cc.__version__}" in result.output
+        assert "Installation channel: editable" in result.output
         assert "Update:" in result.output
+
+    def test_eager_version_flag_includes_sanitized_installation_channel(self):
+        runner = CliRunner()
+        with patch(
+            "supa_cc.installation.detect_installation_channel",
+            return_value=InstallationChannel.WHEEL,
+        ):
+            result = runner.invoke(main, ["--version"])
+
+        assert result.exit_code == 0
+        assert result.output.splitlines() == [
+            f"supa.cc, version {supa_cc.__version__}",
+            "Installation channel: wheel",
+        ]
+        assert "/" not in result.output
 
     def test_version_command_reads_package_version(self, monkeypatch):
         runner = CliRunner()
@@ -73,13 +93,15 @@ class TestCLICommands:
         with patch(
             "supa_cc.environment.detect_environment",
             return_value=detect_environment(system_name="Darwin"),
+        ), patch(
+            "supa_cc.installation.detect_installation_channel",
+            return_value=InstallationChannel.HOMEBREW,
         ):
             message = _check_for_updates()
 
         assert "brew upgrade dgabreuu/supa-cc/supa-cc" in message
         assert "brew upgrade supa-cc" not in message
-        assert 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"' in message
-        assert "pipx upgrade supa.cc" not in message
+        assert "pipx" not in message
 
     def test_update_check_uses_linux_guidance(self, monkeypatch):
         from supa_cc.environment import detect_environment
@@ -102,7 +124,7 @@ class TestCLICommands:
 
     def test_list_empty_accounts(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.list.return_value = []
             mock_manager_class.return_value = mock_manager
@@ -112,7 +134,7 @@ class TestCLICommands:
 
     def test_list_shows_account_names(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.list.return_value = [
                 Account(name="personal", token=""),
@@ -127,7 +149,7 @@ class TestCLICommands:
     def test_add_valid_account(self):
         token = fake_pat("prompt_only")
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["add", "work"], input=f"{token}\n")
@@ -149,7 +171,7 @@ class TestCLICommands:
 
     def test_add_invalid_token_shows_sanitized_error(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.add.side_effect = InvalidAccessTokenError("private")
             mock_manager_class.return_value = mock_manager
@@ -159,7 +181,7 @@ class TestCLICommands:
 
     def test_add_invalid_name_shows_error(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.add.side_effect = InvalidAccountNameError(
                 "Account name must contain between 1 and 50 characters."
@@ -172,7 +194,7 @@ class TestCLICommands:
     def test_add_keychain_failure_is_nonzero_and_sanitized(self):
         token = fake_pat("keychain_failure")
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.add.side_effect = KeychainPermissionDeniedError(
                 f"storage failed {token}"
@@ -186,7 +208,7 @@ class TestCLICommands:
 
     def test_list_maps_index_failure_without_traceback(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as manager_class:
+        with patch("supa_cc.accounts.AccountService") as manager_class:
             manager_class.return_value.list.side_effect = AccountIndexInvalidError(
                 "private index detail"
             )
@@ -198,7 +220,7 @@ class TestCLICommands:
 
     def test_remove_maps_transaction_failure_without_traceback(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as manager_class:
+        with patch("supa_cc.accounts.AccountService") as manager_class:
             manager_class.return_value.remove.side_effect = AccountTransactionError(
                 "private transaction detail"
             )
@@ -222,7 +244,7 @@ class TestCLICommands:
         self, command, input_text
     ):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as manager_class:
+        with patch("supa_cc.accounts.AccountService") as manager_class:
             manager_class.side_effect = CredentialAccessError("private backend detail")
             result = runner.invoke(main, command, input=input_text)
 
@@ -232,7 +254,7 @@ class TestCLICommands:
 
     def test_add_sanitizes_typed_credential_store_failure(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as manager_class:
+        with patch("supa_cc.accounts.AccountService") as manager_class:
             manager_class.return_value.add.side_effect = CredentialAccessError(
                 "private backend detail"
             )
@@ -264,7 +286,7 @@ class TestCLICommands:
 
     def test_switch_nonexistent_account_shows_failure(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.set_active.return_value = AuthResult.failure(
                 AuthFailureCode.TOKEN_MISSING,
@@ -278,7 +300,7 @@ class TestCLICommands:
 
     def test_switch_valid_account(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager.set_active.return_value = AuthResult.success(
                 "Account 'work' activated and native session synchronized."
@@ -288,7 +310,27 @@ class TestCLICommands:
         assert result.exit_code == 0
         assert "Account 'work' activated and native session synchronized." in result.output
         assert "supa.cc run" not in result.output
-        mock_manager.set_active.assert_called_once_with("work")
+        mock_manager.set_active.assert_called_once()
+        assert mock_manager.set_active.call_args.args == ("work",)
+        assert callable(mock_manager.set_active.call_args.kwargs["token_provider"])
+
+    def test_switch_can_reauthorize_an_orphaned_alias_without_token_in_argv(self):
+        token = fake_pat("orphaned-alias")
+        runner = CliRunner()
+        with patch("supa_cc.accounts.AccountService") as manager_class:
+            manager = manager_class.return_value
+
+            def activate(name, token_provider):
+                assert name == "work"
+                assert token_provider(name) == token
+                return AuthResult.success("Account activated.")
+
+            manager.set_active.side_effect = activate
+            result = runner.invoke(main, ["switch", "work"], input=f"{token}\n")
+
+        assert result.exit_code == 0
+        assert token not in result.output
+        assert "Account activated." in result.output
 
     @pytest.mark.parametrize(
         "code,message",
@@ -301,7 +343,7 @@ class TestCLICommands:
     )
     def test_switch_preserves_native_sync_failure_category(self, code, message):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as manager_class:
+        with patch("supa_cc.accounts.AccountService") as manager_class:
             manager_class.return_value.set_active.return_value = AuthResult.failure(
                 code, message, exit_code=9
             )
@@ -309,7 +351,8 @@ class TestCLICommands:
 
         assert result.exit_code == 9
         assert message in result.output
-        manager_class.return_value.set_active.assert_called_once_with("work")
+        manager_class.return_value.set_active.assert_called_once()
+        assert manager_class.return_value.set_active.call_args.args == ("work",)
 
     def test_run_requires_command(self):
         runner = CliRunner()
@@ -319,12 +362,29 @@ class TestCLICommands:
         assert result.exit_code != 0
         assert "Missing argument" in result.output
 
+    def test_reset_all_yes_clears_without_interactive_confirmation(self):
+        runner = CliRunner()
+        with patch("supa_cc.accounts.AccountService") as manager_class:
+            manager_class.return_value.reset_all.return_value = AuthResult.success(
+                "All Supa.cc accounts and local state were removed."
+            )
+            result = runner.invoke(main, ["reset", "--all", "--yes"])
+
+        assert result.exit_code == 0
+        manager_class.return_value.reset_all.assert_called_once_with()
+
+    def test_reset_requires_explicit_all_scope(self):
+        result = CliRunner().invoke(main, ["reset", "--yes"])
+
+        assert result.exit_code == 2
+        assert "--all" in result.output
+
     def test_run_accepts_unknown_supabase_options_and_emits_sanitized_streams(self):
         runner = click_runner()
         command_result = CommandResult.success(
             stdout="safe stdout\n", stderr="safe stderr\n"
         )
-        with patch("supa_cc.accounts.AccountManager") as manager_class:
+        with patch("supa_cc.accounts.AccountService") as manager_class:
             manager = MagicMock()
             def stream(_arguments, stdout_sink, stderr_sink):
                 stdout_sink("safe stdout\n")
@@ -358,7 +418,7 @@ class TestCLICommands:
             stdout="partial\n",
             stderr="401 Unauthorized [REDACTED]\n",
         )
-        with patch("supa_cc.accounts.AccountManager") as manager_class:
+        with patch("supa_cc.accounts.AccountService") as manager_class:
             manager = MagicMock()
             manager.run_active.return_value = command_result
             manager_class.return_value = manager
@@ -371,7 +431,7 @@ class TestCLICommands:
 
     def test_remove_prompts_for_confirmation(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["remove", "work"], input="y\n")
@@ -381,7 +441,7 @@ class TestCLICommands:
 
     def test_remove_with_yes_flag_skips_confirmation(self):
         runner = CliRunner()
-        with patch("supa_cc.accounts.AccountManager") as mock_manager_class:
+        with patch("supa_cc.accounts.AccountService") as mock_manager_class:
             mock_manager = MagicMock()
             mock_manager_class.return_value = mock_manager
             result = runner.invoke(main, ["remove", "work", "--yes"])

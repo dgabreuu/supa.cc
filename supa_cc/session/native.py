@@ -2,7 +2,7 @@ import os
 import tempfile
 from enum import Enum
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Callable, Mapping, Optional
 
 from ..auth import AuthFailureCode, AuthResult, is_valid_account_name
 from ..supabase_cli import SupabaseCLI
@@ -123,45 +123,85 @@ class NativeSessionSynchronizer:
 
     def preflight(self) -> AuthResult:
         self.mutation_state = MutationState.NONE
-        if "SUPABASE_ACCESS_TOKEN" in self.env:
-            return AuthResult.failure(
-                AuthFailureCode.ENVIRONMENT_BLOCKED,
-                "Remove SUPABASE_ACCESS_TOKEN from the environment before synchronizing.",
-            )
         try:
             if self._fallback_metadata() is not None:
                 return self._fallback_failure()
         except OSError:
             return self._fallback_failure()
-        try:
-            profile_path = self.fallback_path.parent / "profile"
-            profile = read_text(profile_path, 64)
-            if profile is None:
-                profile = "supabase"
-            if profile.strip() != "supabase":
-                return self._profile_failure()
-        except (OSError, UnicodeError, ValueError):
-            return self._profile_failure()
         cli = self.config.preflight()
         return cli
 
-    def activate(self, account: Account) -> AuthResult:
+    def activate(
+        self,
+        account: Account,
+        phase_callback: Optional[Callable[[str], None]] = None,
+    ) -> AuthResult:
         preflight = self.preflight()
         if preflight.ok is False:
             return preflight
-        return self._activate_preflighted(account)
+        return self._activate_preflighted(account, phase_callback=phase_callback)
 
-    def _activate_preflighted(self, account: Account) -> AuthResult:
+    def _activate_preflighted(
+        self,
+        account: Account,
+        phase_callback: Optional[Callable[[str], None]] = None,
+    ) -> AuthResult:
         with tempfile.TemporaryDirectory(prefix="supa-cc-native-") as directory:
             controlled_home = Path(directory)
             controlled_home.chmod(0o700)
-            (controlled_home / "access-token").mkdir(mode=0o700)
+            try:
+                existing_session = self.config.verify_persisted_session(
+                    supabase_home=controlled_home, profile="supabase"
+                )
+            except (OSError, ValueError):
+                return AuthResult.failure(
+                    AuthFailureCode.NATIVE_VERIFICATION_FAILED,
+                    "The Supabase CLI could not inspect the previous native session.",
+                )
+            replaceable_session = existing_session.ok or existing_session.code in {
+                AuthFailureCode.TOKEN_REJECTED,
+                AuthFailureCode.API_AUTH_FAILED,
+                AuthFailureCode.NATIVE_VERIFICATION_FAILED,
+            }
+            if replaceable_session:
+                self.mutation_state = MutationState.ATTEMPTED
+                try:
+                    logout = self.config.logout_session(
+                        supabase_home=controlled_home,
+                        profile="supabase",
+                    )
+                except (OSError, ValueError):
+                    self.mutation_state = MutationState.UNCERTAIN
+                    return AuthResult.failure(
+                        AuthFailureCode.NATIVE_LOGOUT_FAILED,
+                        "The Supabase CLI could not replace the previous native session.",
+                    )
+                if not logout.ok:
+                    self.mutation_state = MutationState.UNCERTAIN
+                    return logout
+            elif existing_session.code is not AuthFailureCode.TOKEN_MISSING:
+                return existing_session
+            if phase_callback is not None:
+                phase_callback("logged_out")
+            fallback = controlled_home / "access-token"
+            try:
+                if fallback.exists():
+                    if not fallback.is_dir():
+                        raise OSError
+                else:
+                    fallback.mkdir(mode=0o700)
+            except OSError:
+                self.mutation_state = MutationState.UNCERTAIN
+                return self._fallback_failure()
             self.mutation_state = MutationState.ATTEMPTED
             login = self.config.login_with_access_token(
                 account, supabase_home=controlled_home, profile="supabase"
             )
             if not login.ok:
+                self.mutation_state = MutationState.UNCERTAIN
                 return login
+            if phase_callback is not None:
+                phase_callback("logged_in")
             verification = self.config.verify_persisted_session(
                 supabase_home=controlled_home, profile="supabase"
             )
@@ -178,6 +218,8 @@ class NativeSessionSynchronizer:
                         exit_code=verification.exit_code,
                     )
                 return verification
+            if phase_callback is not None:
+                phase_callback("verified")
             self.mutation_state = MutationState.VERIFIED
             return AuthResult.success("Account activated and native session synchronized.")
 
@@ -191,7 +233,6 @@ class NativeSessionSynchronizer:
         with tempfile.TemporaryDirectory(prefix="supa-cc-native-") as directory:
             controlled_home = Path(directory)
             controlled_home.chmod(0o700)
-            (controlled_home / "access-token").mkdir(mode=0o700)
             return self._logout_controlled(controlled_home)
 
     def _logout_controlled(self, controlled_home: Path) -> AuthResult:

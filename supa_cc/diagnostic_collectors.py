@@ -11,7 +11,8 @@ from typing import Callable, Dict, List, Mapping, Optional
 import keyring
 import supa_cc
 
-from .accounts import AccountManager
+from .accounts import AccountService
+from .accounts.state import StateInvalidError, StateReadError
 from .auth import (
     ActiveAccountError,
     AccountIndexInvalidError,
@@ -23,7 +24,7 @@ from .auth import (
 from .account_store import KEYCHAIN_SERVICE, safe_load_json_index
 from .credentials import CredentialStoreStatus
 from .environment import Environment, OperatingSystem, detect_environment
-from .installation import installation_guidance
+from .installation import detect_installation_channel, installation_guidance
 from .native_session import access_token_fallback_path
 from .state import read_text
 from .diagnostic_renderers import render_human, render_json, report_to_dict
@@ -324,7 +325,7 @@ class DoctorReport(_DoctorReportFields):
 class DiagnosticService:
     def __init__(
         self,
-        manager: Optional[AccountManager] = None,
+        manager: Optional[object] = None,
         env: Optional[Mapping[str, str]] = None,
         launcher_path: Optional[Path] = None,
         python_executable: Optional[Path] = None,
@@ -354,9 +355,9 @@ class DiagnosticService:
         )
         self.credential_store = credential_store
 
-    def _get_manager(self) -> AccountManager:
+    def _get_manager(self):
         if self._manager is None:
-            self._manager = AccountManager()
+            self._manager = AccountService()
         return self._manager
 
     def _environment_blocked_report(self) -> DoctorReport:
@@ -367,6 +368,7 @@ class DiagnosticService:
         python_realpath = _safe_realpath(self.python_executable)
         runtime = {
             "supa_cc_version": supa_cc.__version__,
+            "installation_channel": detect_installation_channel().value,
             "operating_system": self.environment.operating_system.value,
             "linux_distribution": (
                 self.environment.distribution.value
@@ -411,7 +413,7 @@ class DiagnosticService:
             },
             index={
                 "path": _public_path(
-                    self.environment.config_directory() / "accounts.json"
+                    self.environment.config_directory() / "state.json"
                 ),
                 "state": "not_checked",
                 "account_count": 0,
@@ -444,31 +446,58 @@ class DiagnosticService:
             return self._environment_blocked_report()
 
         manager = self._get_manager()
+        uses_versioned_state = isinstance(manager, AccountService)
         codes: List[str] = []
         ok = True
         exit_code = 0
         names = None
+        account_state = None
 
         try:
-            names = safe_load_json_index(manager.keychain.index_path)
-            index_state = "missing" if names is None else "valid"
-            account_count = 0 if names is None else len(names)
-        except AccountIndexInvalidError:
+            if uses_versioned_state:
+                account_state = manager.state_repository.load()
+                names = list(account_state.aliases)
+                index_state = "valid"
+                account_count = len(names)
+                index_path = manager.state_repository.path
+            else:
+                names = safe_load_json_index(manager.keychain.index_path)
+                index_state = "missing" if names is None else "valid"
+                account_count = 0 if names is None else len(names)
+                index_path = manager.keychain.index_path
+        except (AccountIndexInvalidError, StateInvalidError) as error:
+            failure = classify_local_failure(error, operation="doctor")
             index_state = "invalid"
             account_count = 0
-            codes.append(AuthFailureCode.INDEX_INVALID.value)
+            index_path = (
+                manager.state_repository.path
+                if uses_versioned_state
+                else manager.keychain.index_path
+            )
+            codes.append(failure.code.value)
             ok = False
             exit_code = 1
-        except AccountIndexReadError:
+        except (AccountIndexReadError, StateReadError) as error:
             index_state = "unreadable"
             account_count = 0
-            codes.append(AuthFailureCode.INDEX_READ_FAILED.value)
+            index_path = (
+                manager.state_repository.path
+                if uses_versioned_state
+                else manager.keychain.index_path
+            )
+            codes.append(
+                classify_local_failure(error, operation="doctor").code.value
+            )
             ok = False
             exit_code = 1
 
         credential_store = self.credential_store
         if credential_store is None:
-            credential_store = getattr(manager.keychain, "credential_store", None)
+            credential_store = (
+                getattr(manager, "credential_store", None)
+                if uses_versioned_state
+                else getattr(manager.keychain, "credential_store", None)
+            )
         credential_status = None
         if credential_store is not None:
             try:
@@ -489,9 +518,10 @@ class DiagnosticService:
                 ok = False
                 exit_code = 1
 
+        cli = manager.cli if uses_versioned_state else manager.config
         cli_identity = _supabase_identity(
-            manager.config.supabase_cli_invoked,
-            manager.config.supabase_cli,
+            cli.supabase_cli_invoked,
+            cli.supabase_cli,
             self.signature_resolver,
             self.environment,
         )
@@ -534,6 +564,7 @@ class DiagnosticService:
         )
         runtime = {
             "supa_cc_version": supa_cc.__version__,
+            "installation_channel": detect_installation_channel().value,
             "operating_system": self.environment.operating_system.value,
             "linux_distribution": (
                 self.environment.distribution.value
@@ -556,7 +587,7 @@ class DiagnosticService:
             },
         }
         index = {
-            "path": _public_path(manager.keychain.index_path),
+            "path": _public_path(index_path),
             "state": index_state,
             "account_count": account_count,
         }
@@ -565,11 +596,41 @@ class DiagnosticService:
             "telemetry_directory_exists": telemetry_exists,
             "telemetry_directory_writable": telemetry_writable,
         }
-        activation, consistency_codes = collect_activation_consistency(
-            getattr(manager, "sync_journal", None),
-            getattr(manager, "native_session", None),
-            self.env,
-        )
+        if uses_versioned_state:
+            pending = (
+                account_state.pending_transition
+                if account_state is not None
+                else None
+            )
+            fallback_state = _metadata_path_state(
+                manager.native_session, "fallback_path"
+            )
+            fallback_present = fallback_state == "present"
+            activation = {
+                "mode": "native_session",
+                "native_session": "managed",
+                "profile": "supabase",
+                "journal_present": pending is not None,
+                "journal_state": "pending" if pending is not None else "absent",
+                "plaintext_fallback_present": fallback_present,
+                "plaintext_fallback_state": fallback_state,
+                "parent_override_present": "SUPABASE_ACCESS_TOKEN" in self.env,
+            }
+            consistency_codes = (
+                [AuthFailureCode.SYNC_PENDING.value] if pending is not None else []
+            )
+            if fallback_present:
+                consistency_codes.append(
+                    AuthFailureCode.PLAINTEXT_FALLBACK_BLOCKED.value
+                )
+            elif fallback_state == "inaccessible":
+                consistency_codes.append(AuthFailureCode.ENVIRONMENT_BLOCKED.value)
+        else:
+            activation, consistency_codes = collect_activation_consistency(
+                getattr(manager, "sync_journal", None),
+                getattr(manager, "native_session", None),
+                self.env,
+            )
         for code in consistency_codes:
             if code not in codes:
                 codes.append(code)
@@ -578,7 +639,9 @@ class DiagnosticService:
             exit_code = exit_code or 1
         active_account = None
         try:
-            active_account = manager.active_store.read()
+            active_account = (
+                None if account_state is None else account_state.confirmed_active
+            ) if uses_versioned_state else manager.active_store.read()
         except ActiveAccountError as error:
             active_failure = classify_local_failure(error)
             codes.append(active_failure.code.value)
@@ -594,13 +657,9 @@ class DiagnosticService:
             ok = False
             exit_code = exit_code or 1
 
-        credential_service = getattr(
-            getattr(manager.keychain, "credential_store", None),
-            "service",
-            None,
-        )
+        credential_service = getattr(credential_store, "service", None)
         keychain_service = credential_service
-        if not isinstance(keychain_service, str):
+        if not isinstance(keychain_service, str) and not uses_versioned_state:
             keychain_service = getattr(manager.keychain, "service", None)
         if not isinstance(keychain_service, str):
             keychain_service = KEYCHAIN_SERVICE

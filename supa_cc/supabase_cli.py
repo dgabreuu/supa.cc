@@ -3,7 +3,7 @@ import re
 import shutil
 import stat
 import sys
-from typing import Callable, Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence
 
 from .auth import (ACCESS_TOKEN_PREFIX, AuthFailureCode, AuthResult, CommandResult,
                    contains_pat, is_access_token_body_character, normalize_exit_code)
@@ -19,6 +19,21 @@ def _requires_path_execution() -> bool:
     return _is_windows() or sys.platform == "darwin"
 
 
+_CANONICAL_HOMEBREW_CELLARS = {
+    "/opt/homebrew/Cellar",
+    "/usr/local/Cellar",
+}
+
+
+def _allowed_homebrew_cellar_ancestor(path: str, ancestor: str, metadata) -> bool:
+    if ancestor not in _CANONICAL_HOMEBREW_CELLARS:
+        return False
+    if metadata.st_uid != os.getuid() or metadata.st_mode & stat.S_IWOTH:
+        return False
+    relative = os.path.relpath(path, ancestor)
+    return not relative.startswith("..") and len(relative.split(os.sep)) >= 3
+
+
 def _has_trusted_path_ancestors(path: str) -> bool:
     current = os.path.dirname(path)
     while current:
@@ -26,10 +41,15 @@ def _has_trusted_path_ancestors(path: str) -> bool:
             metadata = os.lstat(current)
         except OSError:
             return False
-        if (
-            not stat.S_ISDIR(metadata.st_mode)
-            or metadata.st_uid not in {os.getuid(), 0}
-            or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid not in {
+            os.getuid(),
+            0,
+        }:
+            return False
+        if metadata.st_mode & stat.S_IWOTH:
+            return False
+        if metadata.st_mode & stat.S_IWGRP and not _allowed_homebrew_cellar_ancestor(
+            path, current, metadata
         ):
             return False
         parent = os.path.dirname(current)
@@ -63,11 +83,19 @@ _KEYCHAIN_DENIAL_MARKERS = (
 _MARKERS = {
     AuthFailureCode.TOKEN_MISSING: ("access token not provided", "access token is not provided", "missing access token", "supabase_access_token is not set"),
     AuthFailureCode.TOKEN_REJECTED: ("invalid access token",),
-    AuthFailureCode.ENVIRONMENT_BLOCKED: ("eperm", "operation not permitted", "permission denied"),
+    AuthFailureCode.ENVIRONMENT_BLOCKED: (
+        "read-only file system",
+    ),
     AuthFailureCode.NETWORK_FAILURE: ("connection refused", "connection reset", "could not resolve", "network is unreachable", "no such host", "temporary failure", "timed out", "timeout", "tls handshake"),
     AuthFailureCode.CLI_INCOMPATIBLE: ("unknown command", "unknown flag", "unrecognized command"),
     AuthFailureCode.PROFILE_MISMATCH: ("profile mismatch",),
-    AuthFailureCode.API_AUTH_FAILED: ("authentication failed", "authentication error"),
+    AuthFailureCode.API_AUTH_FAILED: (
+        "authentication failed",
+        "authentication error",
+        "permission denied",
+        "eperm",
+        "operation not permitted",
+    ),
 }
 _PRECEDENCE = (
     AuthFailureCode.TOKEN_REJECTED,
@@ -99,6 +127,20 @@ def _contains_keychain_denial(normalized: str) -> bool:
     return any(marker in normalized for marker in _KEYCHAIN_CONTEXT_MARKERS) and any(
         marker in normalized for marker in _KEYCHAIN_DENIAL_MARKERS
     )
+
+
+def _contains_local_io_denial(normalized: str) -> bool:
+    native = re.search(
+        r"(?:eperm|eacces|operation not permitted|permission denied)"
+        r"[^\r\n]{0,120},\s*(?:open|mkdir|unlink|rename|stat)\b",
+        normalized,
+    )
+    prose = re.search(
+        r"(?:operation not permitted|permission denied)[^\r\n]{0,80}"
+        r"\bwhile\s+(?:opening|writing|reading|creating)\b",
+        normalized,
+    )
+    return native is not None or prose is not None
 
 
 class _StreamingPATRedactor:
@@ -189,6 +231,8 @@ class _FailureObserver:
             self.codes.add(AuthFailureCode.TOKEN_REJECTED)
         if _contains_keychain_denial(normalized):
             self.codes.add(AuthFailureCode.KEYCHAIN_PERMISSION_DENIED)
+        if _contains_local_io_denial(normalized):
+            self.codes.add(AuthFailureCode.ENVIRONMENT_BLOCKED)
         for code, markers in _MARKERS.items():
             if any(marker in normalized for marker in markers):
                 self.codes.add(code)
@@ -210,7 +254,8 @@ def _contains_sensitive_argument(arguments: Sequence[str]) -> bool:
 
 class SupabaseCLI:
     def __init__(self, binary_resolver: Optional[BinaryResolver] = None,
-                 validation_timeout_seconds: float = AUTH_VALIDATION_TIMEOUT_SECONDS):
+                 validation_timeout_seconds: float = AUTH_VALIDATION_TIMEOUT_SECONDS,
+                 base_environment: Optional[Mapping[str, str]] = None):
         resolver = binary_resolver or shutil.which
         try:
             resolved = resolver("supabase")
@@ -219,6 +264,9 @@ class SupabaseCLI:
         self.supabase_cli_invoked = os.path.abspath(resolved) if resolved else None
         self.supabase_cli = os.path.realpath(self.supabase_cli_invoked) if self.supabase_cli_invoked else None
         self.validation_timeout_seconds = validation_timeout_seconds
+        self._base_environment = dict(
+            os.environ if base_environment is None else base_environment
+        )
 
     def is_installed(self) -> bool:
         return self.supabase_cli is not None
@@ -352,6 +400,8 @@ class SupabaseCLI:
                 found.add(AuthFailureCode.TOKEN_REJECTED)
             if _contains_keychain_denial(normalized):
                 found.add(AuthFailureCode.KEYCHAIN_PERMISSION_DENIED)
+            if _contains_local_io_denial(normalized):
+                found.add(AuthFailureCode.ENVIRONMENT_BLOCKED)
             code = observed_code or next((candidate for candidate in _PRECEDENCE if candidate in found), AuthFailureCode.COMMAND_FAILED)
         code = code or AuthFailureCode.COMMAND_FAILED
         message = (_MESSAGES[AuthFailureCode.NETWORK_FAILURE] if result.state is ProcessState.TIMED_OUT
@@ -359,7 +409,11 @@ class SupabaseCLI:
         return CommandResult.failure(code, message, exit_code=normalize_exit_code(result.exit_code), stdout=stdout, stderr=stderr)
 
     def validate_access_token(self, account: Account) -> AuthResult:
-        result = self.execute_authenticated(account, ["projects", "list"], timeout_seconds=self.validation_timeout_seconds)
+        result = self.execute_authenticated(
+            account,
+            self._profile_arguments(["projects", "list"], "supabase"),
+            timeout_seconds=self.validation_timeout_seconds,
+        )
         if result.ok:
             return AuthResult.success("Account authenticated by the Supabase API.")
         return AuthResult.failure(result.code, result.message, exit_code=result.exit_code)
@@ -398,16 +452,17 @@ class SupabaseCLI:
         )
 
     def _native_environment(self, supabase_home):
-        env = os.environ.copy()
+        env = self._base_environment.copy()
         env.pop("SUPABASE_ACCESS_TOKEN", None)
+        env.pop("SUPABASE_PROFILE", None)
+        env["SUPABASE_TELEMETRY_DISABLED"] = "1"
+        env["DO_NOT_TRACK"] = "1"
         if supabase_home is not None:
             env["SUPABASE_HOME"] = str(supabase_home)
         return env
 
     def _profile_arguments(self, arguments, profile):
-        # A controlled empty home selects the official default on CLI builds
-        # that do not expose an explicit profile flag.
-        return list(arguments)
+        return [*arguments, "--profile", profile]
 
     def _execute_native(self, account, arguments, supabase_home, profile):
         if profile != "supabase":
@@ -437,7 +492,7 @@ class SupabaseCLI:
             return None, None, CommandResult.failure(AuthFailureCode.TOKEN_MISSING, "Access token not found.")
         if not account.validate_token():
             return None, None, CommandResult.failure(AuthFailureCode.TOKEN_FORMAT_INVALID, "The stored token uses an invalid format.")
-        env = os.environ.copy()
+        env = self._native_environment(None)
         env["SUPABASE_ACCESS_TOKEN"] = account.token
         return command_arguments, env, None
 
@@ -456,8 +511,7 @@ class SupabaseCLI:
         return self._run(argv, env, stdout_sink, stderr_sink, sample_limit, timeout_seconds)
 
     def _version_command(self) -> CommandResult:
-        env = os.environ.copy()
-        env.pop("SUPABASE_ACCESS_TOKEN", None)
+        env = self._native_environment(None)
         return self._run(["--version"], env, timeout_seconds=self.validation_timeout_seconds)
 
     def preflight(self) -> AuthResult:

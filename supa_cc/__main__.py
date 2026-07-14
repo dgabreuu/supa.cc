@@ -9,13 +9,34 @@ def _exit_with_local_failure(error):
     raise click.exceptions.Exit(normalize_exit_code(result.exit_code) or 1)
 
 
+def _exit_with_result(result):
+    click.echo(result.message, err=True)
+    raise click.exceptions.Exit(normalize_exit_code(result.exit_code) or 1)
+
+
 def _check_for_updates():
     """Return deterministic update guidance without network or Git access."""
     from .environment import detect_environment
-    from .installation import installation_guidance
+    from .installation import detect_installation_channel, installation_guidance
 
-    update_hint = installation_guidance(detect_environment()).update_hint
+    update_hint = installation_guidance(
+        detect_environment(), channel=detect_installation_channel()
+    ).update_hint
     return f"Update: {update_hint}"
+
+
+def _installation_channel():
+    from .installation import detect_installation_channel
+
+    return detect_installation_channel().value
+
+
+def _show_version(ctx, _param, value):
+    if not value or ctx.resilient_parsing:
+        return
+    click.echo(f"supa.cc, version {supa_cc.__version__}")
+    click.echo(f"Installation channel: {_installation_channel()}")
+    ctx.exit()
 
 
 def _run_tui():
@@ -25,7 +46,14 @@ def _run_tui():
 
 
 @click.group(invoke_without_command=True)
-@click.version_option(version=supa_cc.__version__, prog_name="supa.cc")
+@click.option(
+    "--version",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_show_version,
+    help="Show the installed version and installation channel.",
+)
 @click.pass_context
 def main(ctx):
     """Supabase account manager."""
@@ -42,6 +70,7 @@ def main(ctx):
 def version():
     """Show the installed version and official update command."""
     click.echo(f"Supa.cc v{supa_cc.__version__}")
+    click.echo(f"Installation channel: {_installation_channel()}")
     click.echo(_check_for_updates())
 
 
@@ -49,7 +78,7 @@ def version():
 @click.argument("name")
 def add(name):
     """Add a new account."""
-    from .accounts import AccountManager
+    from .accounts import AccountService
 
     token = click.prompt(
         Strings.PROMPT_ACCESS_TOKEN,
@@ -57,8 +86,10 @@ def add(name):
         confirmation_prompt=False,
     )
     try:
-        manager = AccountManager()
-        manager.add(name, token)
+        manager = AccountService()
+        result = manager.add(name, token)
+        if not result.ok:
+            _exit_with_result(result)
         click.echo(Strings.MSG_ACCOUNT_ADDED.format(name))
     except Exception as error:
         _exit_with_local_failure(error)
@@ -67,9 +98,9 @@ def add(name):
 @main.command("list")
 def list_accounts_command():
     """List registered accounts."""
-    from .accounts import AccountManager
+    from .accounts import AccountService
     try:
-        manager = AccountManager()
+        manager = AccountService()
         accounts = manager.list()
     except Exception as error:
         _exit_with_local_failure(error)
@@ -85,10 +116,17 @@ def list_accounts_command():
 @click.argument("name")
 def switch(name):
     """Switch the active account."""
-    from .accounts import AccountManager
+    from .accounts import AccountService
     try:
-        manager = AccountManager()
-        result = manager.set_active(name)
+        manager = AccountService()
+        result = manager.set_active(
+            name,
+            token_provider=lambda _name: click.prompt(
+                Strings.PROMPT_ACCESS_TOKEN,
+                hide_input=True,
+                confirmation_prompt=False,
+            ),
+        )
     except Exception as error:
         _exit_with_local_failure(error)
     if result.ok:
@@ -107,7 +145,7 @@ def switch(name):
 @click.argument("arguments", nargs=-1, required=True, type=click.UNPROCESSED)
 def run(arguments):
     """Run the Supabase CLI with the active account using the PAT only in the environment."""
-    from .accounts import AccountManager
+    from .accounts import AccountService
 
     stdout = click.get_text_stream("stdout")
     stderr = click.get_text_stream("stderr")
@@ -121,7 +159,7 @@ def run(arguments):
         stderr.flush()
 
     try:
-        result = AccountManager().run_active(
+        result = AccountService().run_active(
             [argument for argument in arguments],
             stdout_sink=stdout_sink,
             stderr_sink=stderr_sink,
@@ -155,13 +193,36 @@ def doctor(account, live, as_json):
 @click.confirmation_option(prompt=Strings.MSG_CONFIRM_REMOVE)
 def remove(name):
     """Remove a registered account."""
-    from .accounts import AccountManager
+    from .accounts import AccountService
     try:
-        manager = AccountManager()
-        manager.remove(name)
+        manager = AccountService()
+        result = manager.remove(name)
+        if not result.ok:
+            _exit_with_result(result)
     except Exception as error:
         _exit_with_local_failure(error)
     click.echo(Strings.MSG_ACCOUNT_REMOVED.format(name))
+
+
+@main.command()
+@click.option("--all", "reset_all", is_flag=True, required=True)
+@click.option("--yes", is_flag=True, help="Skip the interactive confirmation.")
+def reset(reset_all, yes):
+    """Remove all Supa.cc accounts, credentials, and local session intent."""
+    from .accounts import AccountService
+
+    if not reset_all:
+        raise click.UsageError("Use --all to confirm the reset scope.")
+    if not yes and not click.confirm(Strings.MSG_CONFIRM_RESET, default=False):
+        click.echo("Reset cancelled.")
+        return
+    try:
+        result = AccountService().reset_all()
+    except Exception as error:
+        _exit_with_local_failure(error)
+    if not result.ok:
+        _exit_with_result(result)
+    click.echo(result.message)
 
 
 if __name__ == "__main__":

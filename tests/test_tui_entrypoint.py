@@ -42,6 +42,6 @@ def test_bare_startup_sanitizes_tui_runtime_failure(monkeypatch):
     result = click_runner().invoke(main, [])
 
     assert result.exit_code != 0
-    assert "The local operation could not be completed." in result.stderr
+    assert "Unexpected local failure (RuntimeError)." in result.stderr
     assert "/private/runtime" not in result.output
     assert "Traceback" not in result.output

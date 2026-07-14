@@ -6,30 +6,32 @@ This is the canonical document for Supa.cc security guarantees and limits.
 
 - The canonical service is `supa.cc.supabase.accounts.v2`.
 - PATs are stored in macOS Keychain, Linux Secret Service, or Windows Credential Manager through `WinVaultKeyring`.
-- No local file contains a PAT. `accounts.json` and `active-account` store names; `session-sync.json`, `.session-sync.lock`, and `.accounts.json.lock` store recovery and coordination metadata.
-- Rollback backups remain in native storage under a reserved identity, never in the index or journal.
-- Credential reads do not use a cache: every read queries `CredentialStore.get()` and the native backend directly. Invalid or unreadable indexes are preserved for diagnostics.
+- No local file contains a PAT. One atomic, versioned `state.json` document stores aliases, the confirmed active alias, and an optional token-free transition with its phase.
+- Credential reads do not use a cache: every requested read queries the native backend directly. Listing accounts and starting the TUI read only `state.json`, so they do not prompt for credential access.
+- Existing `accounts.json`, `active-account`, the legacy journal `session-sync.json`, and `.lock` coordination metadata are migrated atomically. The old data files are removed only after the new document is written, synchronized, and re-read successfully; private lock files may remain as coordination primitives and contain no account data.
 - There is no plaintext fallback, `keyrings.alt`, or alternative backend. Previous namespaces are not migrated implicitly.
 
 ## Activation and native session
 
-`switch` validates the PAT, uses only the official `supabase` profile and the public `login`, `logout --yes`, and `projects list` commands from Supabase CLI >= 2.109.1. The PAT is passed through `SUPABASE_ACCESS_TOKEN` in the child process environment and never in `argv`.
+`switch` validates the PAT, uses only the official `supabase` profile and the public `login`, `logout --yes`, and `projects list` commands from Supabase CLI >= 2.109.1. Every internal command receives `--profile supabase`. The PAT is passed through `SUPABASE_ACCESS_TOKEN` only for validation and login and never in `argv`, stdin output, logs, or exceptions.
 
 Executable binding is explicit per platform:
 
 - Linux accepts only a regular executable owned by the user or root and not writable by group or others, then executes the open descriptor.
-- macOS applies the same file checks, keeps the file open, rejects group- or world-writable ancestors, revalidates identity immediately before spawning, and executes the validated path. `/dev/fd` is not assumed to be executable on macOS.
+- macOS applies the same file checks, keeps the file open, and rejects world-writable ancestors. Group-writable ancestors are rejected except for the user-owned `Cellar` directory under the canonical `/opt/homebrew` and `/usr/local` Homebrew prefixes; the executable itself must remain non-writable by group or others. Supa.cc revalidates binary identity immediately before spawning and executes the validated path. `/dev/fd` is not assumed to be executable on macOS.
 - Windows opens a regular file and compares path identity with the descriptor after opening and again immediately before process creation. The API executes the validated path; Supa.cc does not claim descriptor-bound execution, owner validation, ACL validation, or POSIX-mode validation.
 
 After login, Supa.cc removes `SUPABASE_ACCESS_TOKEN` from the child environment and runs `projects list`. Success confirms that the Supabase CLI persisted and recovered a usable native session through its own credential layer. Supa.cc does not read, write, migrate, compare, or remove the CLI's internal credential entries, identifiers, or formats.
 
-An inherited `SUPABASE_ACCESS_TOKEN` takes precedence and blocks synchronization. A plaintext `access-token` fallback is blocked without reading or migrating it. Output, errors, and exceptions are sanitized.
+Inherited `SUPABASE_ACCESS_TOKEN` and `SUPABASE_PROFILE` values are removed from the controlled child environment, preventing their normal precedence from overriding the selected account. Internal subprocesses disable telemetry with `SUPABASE_TELEMETRY_DISABLED=1` and `DO_NOT_TRACK=1`; the user's shell and global consent are not changed. The controlled temporary `SUPABASE_HOME` remains empty while inspecting or ending an existing session, then physically blocks the plaintext `access-token` fallback before login and persisted-session verification. Supa.cc never reads or migrates that fallback. Output, errors, and exceptions are sanitized.
 
 Removing the active account runs `logout --yes`; this may remove project-support credentials managed by the Supabase CLI itself.
 
 ## Rollback, recovery, and concurrency
 
-Rollback and recovery are mutation-aware. The token-free journal records the operation, phase, and names; a secure backup can restore the exact previous credential when required by the phase. The lock coordinates cooperating Supa.cc processes but not concurrent external `supabase` commands.
+Rollback and recovery are mutation-aware. The token-free pending transition records the operation, target, previous alias, and phase in the same atomic state document. After a failed switch, Supa.cc attempts to restore the previous session from its separately stored PAT. If neither target nor previous session can be confirmed, no account is advertised as active and recovery remains explicit. The lock coordinates cooperating Supa.cc processes but not concurrent external `supabase` commands.
+
+The Supabase CLI session is machine-global and derived. External `supabase login` or `supabase logout` commands can therefore replace it outside Supa.cc. Supa.cc never reads, edits, migrates, or deletes the CLI's internal credential identifiers directly.
 
 ## Diagnostics
 
@@ -39,9 +41,9 @@ Only `supa.cc doctor --account <name> --live` opens the selected credential once
 
 ## Platform limits
 
-- macOS: the Python runtime accesses only Supa.cc account credentials. The Supabase CLI accesses its own session credential. Keychain can therefore authorize those executable identities independently; Supa.cc does not bypass locks or expand ACLs.
+- macOS: before accessing a PAT, Supa.cc validates the default user Keychain path and search-list membership with read-only `security` queries. This preflight does not enumerate Keychain items, read credential values, change the default, edit the search list, or expand ACLs. The Python runtime accesses only Supa.cc account credentials, while the Supabase CLI accesses its own session credential; Keychain can authorize those executable identities independently.
 - Linux: user D-Bus and an unlocked Secret Service are required; headless environments without both fail with safe guidance.
-- Windows: only Windows Credential Manager through `WinVaultKeyring` is accepted; `%APPDATA%` stores metadata without secrets. Locks reject reparse paths, additional links, and detectable identity changes before and after acquisition. The directory and files inherit the access controls of `%APPDATA%`; Supa.cc does not create a private ACL or impose POSIX modes on Windows.
+- Windows: only Windows Credential Manager through `WinVaultKeyring` is accepted; `%APPDATA%` stores metadata without secrets. Locks reject reparse paths, additional links, and detectable identity changes before and after acquisition. Supabase CLI subprocesses start suspended, are assigned to a kill-on-close Job Object, and only then resume, so descendants cannot escape containment before timeout and interruption handling is active. The directory and files inherit the access controls of `%APPDATA%`; Supa.cc does not create a private ACL or impose POSIX modes on Windows.
 
 For remediation without exposing secrets, see [Troubleshooting](troubleshooting.md).
 

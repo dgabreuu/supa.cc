@@ -30,6 +30,7 @@ class UIStrings(CommonStrings):
     # Prompts
     PROMPT_ACCOUNT_NAME = "Account name:"
     PROMPT_ACCESS_TOKEN = "Access token:"
+    PROMPT_RESTORE_ACCESS_TOKEN = "Credential for '{}' was removed. New access token:"
     PROMPT_SELECT_ACCOUNT = "Select an account:"
     PROMPT_SELECT_REMOVE = "Select an account to remove:"
     PROMPT_CONFIRM_REMOVE = "Remove account '{}'?"
@@ -57,4 +58,5 @@ class CLIStrings(CommonStrings):
     CMD_REMOVE_HELP = "Remove a registered account."
     MSG_ERROR = "Error: {}"
     MSG_CONFIRM_REMOVE = "Remove account?"
+    MSG_CONFIRM_RESET = "Remove all Supa.cc accounts and credentials?"
     PROMPT_ACCESS_TOKEN = "Access token"

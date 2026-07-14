@@ -83,7 +83,7 @@ def test_docs_describe_supported_runtime_and_state_without_claiming_name_only_fi
     assert "no local file contains" in normalized and "pat" in normalized
     for state in ("accounts.json", "active-account", "session-sync", ".lock"):
         assert state in security
-    assert "backup" in normalized
+    assert "pending transition" in normalized
     assert "mutation" in normalized
     assert "only account names" not in normalized
     assert "local files contain only names" not in normalized
