@@ -56,12 +56,16 @@ class RecordingConsole:
         self.is_terminal = is_terminal
         self.lines = []
         self.clear_calls = 0
+        self.clear_below_calls = []
 
     def print(self, text="", style=None):
         self.lines.append((str(text), style))
 
     def clear(self):
         self.clear_calls += 1
+
+    def clear_below(self, line_count):
+        self.clear_below_calls.append(line_count)
 
     def export_text(self):
         return "\n".join(text for text, _style in self.lines)

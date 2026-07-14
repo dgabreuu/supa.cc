@@ -1,12 +1,12 @@
 # Release checklist
 
-This checklist documents the publication of version 0.4.1. Version 0.4.1 was published and verified on GitHub, PyPI, and Homebrew.
+This checklist documents the publication of version 0.4.2. Version 0.4.2 has not been published yet.
 
 ## 1. Validate the candidate commit
 
 Review `git status --short`, `git remote -v`, and the history. Confirm that tracked content and artifacts contain no PAT, absolute local path, cache, virtual environment, diff, or private document.
 
-Run the following from a clean checkout of the candidate commit:
+Run the following from the candidate checkout:
 
 ```bash
 python3 -m pip install --upgrade "pip>=26.1.2"
@@ -19,14 +19,13 @@ pip-audit --requirement runtime-requirements.txt
 python3 scripts/security_scan.py --tracked --history
 python3 -m pytest --cache-clear --collect-only -q
 python3 scripts/security_scan.py --path .pytest_cache
-rm -rf dist
 python3 -m build
 python3 scripts/inspect_artifacts.py dist
 ```
 
-The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Also install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.4.1`.
+The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.4.2`.
 
-The CI matrix runs the complete standard suite on Python 3.11 and the current stable Python on Ubuntu, macOS, and Windows, plus targeted tests on Fedora and Arch, without accessing real credential stores on hosted runners. Wait for CI to pass on the exact commit before continuing. Native smoke tests remain opt-in and require explicit execution on a host with the native credential store available.
+The CI matrix must pass on Python 3.11 and the current stable Python on Ubuntu, macOS, and Windows, plus the targeted Fedora and Arch jobs, before the release tag is created. Native smoke tests remain opt-in and require explicit execution on a host with the native credential store available.
 
 ## 2. Confirm the operational contract
 
@@ -45,42 +44,36 @@ Protect the `pypi` environment according to repository policy. The workflow uses
 
 ## 4. Publish the GitHub Release
 
-Completed: the annotated tag and stable [GitHub Release v0.4.1](https://github.com/dgabreuu/supa.cc/releases/tag/v0.4.1) point to the CI-validated candidate.
-
-Create the annotated `v0.4.1` tag only on the CI-validated commit. Create the corresponding GitHub Release, use the 0.4.1 section of `CHANGELOG.md` as the release notes, and verify the target before selecting **Publish release**.
+Confirm that the annotated tag and GitHub Release `v0.4.2` do not already exist. Create the annotated tag only on the CI-validated candidate commit, then create a stable, non-draft, non-prerelease GitHub Release using the `0.4.2` section of `CHANGELOG.md` as the release notes.
 
 Publishing the GitHub Release triggers `.github/workflows/release.yml`. The build job checks out the release tag, confirms that it matches the version in `pyproject.toml`, tests, builds once, and uploads one wheel and one sdist as an artifact. Do not attach local builds to the release.
 
 ## 5. Publish to PyPI with Trusted Publishing
 
-Completed: [supa.cc 0.4.1 on PyPI](https://pypi.org/project/supa.cc/0.4.1/) contains one wheel and one sdist published through OIDC.
-
 The `build` job has only `contents: read`. The `publish` job downloads exactly the artifact produced by the build and sends it to PyPI through Trusted Publishing using only `id-token: write`. The verification job receives no `GITHUB_TOKEN` permissions.
 
-If the build, inspection, or publication fails, do not recreate the same version on PyPI and do not proceed to the formula. Correct the cause and prepare a new version according to the immutability of published artifacts.
+Confirm that `supa.cc==0.4.2` is available on PyPI and that the release workflow's Linux and Windows pipx checks pass. If the build, inspection, or publication fails, do not recreate the same version on PyPI and do not proceed to the formula. Correct the cause and prepare a new version according to the immutability of published artifacts.
 
 ## 6. Verify pipx on Linux and Windows
 
-Completed: the [release workflow](https://github.com/dgabreuu/supa.cc/actions/runs/29291629029) passed build, Trusted Publishing, and both pipx smoke jobs.
-
-After publication, the workflow installs `supa.cc==0.4.1` directly from PyPI with pipx on Linux and Windows and runs both version commands. Confirm that the jobs pass and perform an independent manual verification if release policy requires it:
+The release workflow installs `supa.cc==0.4.2` directly from PyPI with pipx on Linux and Windows and runs both version commands. Confirm that these jobs pass and perform an independent manual verification if release policy requires it:
 
 ```bash
-pipx install supa.cc==0.4.1
+pipx install supa.cc==0.4.2
 supa.cc --version
 supa.cc version
 ```
 
 ## 7. Update the Homebrew formula
 
-Completed: [PR #6](https://github.com/dgabreuu/supa.cc/pull/6) promoted the formula with the immutable `v0.4.1` checksum. The [Homebrew validation workflow](https://github.com/dgabreuu/supa.cc/actions/runs/29331050769) passed the fully qualified public installation flow, resource check, strict audit, Supabase CLI compatibility check, installed version checks, and `brew test` on macOS.
+Homebrew has not been verified yet for version 0.4.2.
 
-Only after pipx verification on Linux and Windows and after the tag exists, update `Formula/supa-cc.rb`. Use the real tarball for tag `v0.4.1`, calculate its real SHA256, and update the Python resources; never anticipate or invent the checksum.
+Only after PyPI and pipx verification and after the tag exists, update `Formula/supa-cc.rb`. Download the real tarball for tag `v0.4.2`, calculate its real SHA256, and update the Python resources only through Homebrew tooling; never anticipate or invent the checksum.
 
 ```bash
-archive="${TMPDIR:-.}/supa.cc-v0.4.1.tar.gz"
-curl -L -o "$archive" https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.1.tar.gz
-sha256sum "$archive"
+archive="${TMPDIR:-.}/supa.cc-v0.4.2.tar.gz"
+curl --fail --location --output "$archive" https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.2.tar.gz
+shasum -a 256 "$archive"
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
 cd "$(brew --repo dgabreuu/supa-cc)"
 brew install supabase/tap/supabase
@@ -91,14 +84,12 @@ brew install --build-from-source dgabreuu/supa-cc/supa-cc
 brew test dgabreuu/supa-cc/supa-cc
 ```
 
-On macOS, use `shasum -a 256` if `sha256sum` is unavailable. Keep `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"`.
-The explicit trust command is limited to the formula and is required here because
-resource generation evaluates the local formula before the installation step.
+Keep `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"`. The explicit trust command is limited to the formula and is required because resource generation evaluates the local formula before installation.
+
+Commit and publish the verified formula through a separate PR. Run `.github/workflows/homebrew.yml` manually against the exact formula commit and confirm its audit, resource, installation, version, and test gates pass on macOS.
 
 ## 8. Update availability documentation
 
-Completed on 2026-07-14: the changelog is dated, its comparison closes at `v0.4.1`, and this checklist records the verified GitHub Release, PyPI artifacts, pipx smoke tests, and Homebrew promotion.
-
-Only after PyPI and Homebrew have been verified, finalize the changelog entry by replacing `Unreleased` with the actual release date and replacing `HEAD` with tag `v0.4.1` in the comparison link. Update this checklist to record that the release and formula were published.
+Only after GitHub, PyPI, pipx, and Homebrew have been verified, finalize the `0.4.2` changelog entry with the actual release date and replace the comparison target `HEAD` with `v0.4.2`. Update this checklist with the verified public release, package, workflow, and formula links.
 
 Do not create Debian, AUR, or RPM assets in this process.

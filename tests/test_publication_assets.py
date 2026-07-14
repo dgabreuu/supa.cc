@@ -7,7 +7,12 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-TARBALL_URL = "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.1.tar.gz"
+PACKAGE_VERSION = "0.4.2"
+STABLE_FORMULA_VERSION = "0.4.1"
+TARBALL_URL = (
+    "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
+    f"v{STABLE_FORMULA_VERSION}.tar.gz"
+)
 TARBALL_SHA256 = "c80154f72b3d78fe1d8839e5ca13ad8bf06f6bc68929a9aaa0b9054ce7b3b0ab"
 HOMEBREW_TAP = "dgabreuu/supa-cc"
 HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
@@ -200,7 +205,7 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
     assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in workflow_text
     assert 'brew audit --strict --formula "$formula"' not in workflow_text
     assert 'brew install "$formula"' not in workflow_text
-    assert "0.4.1" in workflow_text
+    assert PACKAGE_VERSION in workflow_text
     for prohibited in (
         "actions/checkout",
         "git commit",
@@ -369,7 +374,7 @@ def test_release_workflow_builds_once_and_publishes_the_same_artifact():
         "ubuntu-latest",
         "windows-latest",
     ]
-    assert "pipx install supa.cc==0.4.1" in workflow_text
+    assert f"pipx install supa.cc=={PACKAGE_VERSION}" in workflow_text
 
 
 def test_pypi_metadata_has_explicit_markdown_and_public_links():
@@ -429,14 +434,13 @@ def test_changelog_marks_0_4_0_as_released():
     assert "## [0.4.0] - Unreleased" not in changelog
 
 
-def test_changelog_marks_0_4_1_as_released():
+def test_changelog_prepares_0_4_2_for_publication():
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert "## [0.4.1] - 2026-07-14" in changelog
-    assert "## [0.4.1] - Unreleased" not in changelog
-    assert "Homebrew" in changelog
+    assert "## [0.4.2] - Unreleased" in changelog
+    assert "Interactive sessions keep" in changelog
     assert (
-        "[0.4.1]: https://github.com/dgabreuu/supa.cc/compare/v0.4.0...v0.4.1"
+        "[0.4.2]: https://github.com/dgabreuu/supa.cc/compare/v0.4.1...HEAD"
         in changelog
     )
 

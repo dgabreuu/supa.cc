@@ -8,9 +8,31 @@ from .theme import OUTPUT_STYLES, get_banner
 class UIRenderer:
     def __init__(self, console=None):
         self.console = console or default_console
+        self._frame_started = False
+        self._frame_line_count = 0
 
     def clear(self) -> None:
         clear_screen(self.console)
+
+    def start_frame(self) -> None:
+        if self._frame_started:
+            return
+
+        self.clear()
+        banner = center_banner_lines(
+            get_banner(self.console.width, self.console.height)
+        )
+        self.console.print(banner, style=OUTPUT_STYLES["banner"])
+        self.console.print(
+            f"{Strings.APP_NAME} · {Strings.APP_DESCRIPTION}",
+            style=OUTPUT_STYLES["title"],
+        )
+        self._frame_line_count = len(banner.splitlines()) + 1
+        self._frame_started = True
+
+    def _clear_dynamic_region(self) -> None:
+        self.start_frame()
+        self.console.clear_below(self._frame_line_count)
 
     def paint_home(
         self,
@@ -18,13 +40,13 @@ class UIRenderer:
         account_count: int,
         active_account=None,
     ) -> None:
-        self.clear()
+        self._clear_dynamic_region()
         self.show_home(state, account_count, active_account=active_account)
 
     def paint_subpage(self, state: NavigationState, title: str) -> None:
-        self.clear()
+        self._clear_dynamic_region()
         self.console.print(
-            create_header(title, Strings.APP_NAME),
+            create_header(title),
             style=OUTPUT_STYLES["title"],
         )
 
@@ -34,18 +56,11 @@ class UIRenderer:
         account_count: int,
         active_account=None,
     ) -> None:
+        self.start_frame()
         account_label = (
             Strings.ACCOUNT_COUNT_ONE
             if account_count == 1
             else Strings.ACCOUNT_COUNT_MANY
-        )
-        banner = center_banner_lines(
-            get_banner(self.console.width, self.console.height)
-        )
-        self.console.print(banner, style=OUTPUT_STYLES["banner"])
-        self.console.print(
-            f"{Strings.APP_NAME} · {Strings.APP_DESCRIPTION}",
-            style=OUTPUT_STYLES["title"],
         )
         active = active_account or Strings.ACTIVE_ACCOUNT_NONE
         self.console.print(
