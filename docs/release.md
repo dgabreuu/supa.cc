@@ -1,6 +1,6 @@
 # Release checklist
 
-This checklist documents the publication of version 0.4.1. Version 0.4.1 was published and verified on GitHub and PyPI. Homebrew has not been verified yet; the formula update remains a separate promotion gate.
+This checklist documents the publication of version 0.4.1. Version 0.4.1 was published and verified on GitHub, PyPI, and Homebrew.
 
 ## 1. Validate the candidate commit
 
@@ -73,6 +73,8 @@ supa.cc version
 
 ## 7. Update the Homebrew formula
 
+Completed: [PR #6](https://github.com/dgabreuu/supa.cc/pull/6) promoted the formula with the immutable `v0.4.1` checksum. The [Homebrew validation workflow](https://github.com/dgabreuu/supa.cc/actions/runs/29331050769) passed the fully qualified public installation flow, resource check, strict audit, Supabase CLI compatibility check, installed version checks, and `brew test` on macOS.
+
 Only after pipx verification on Linux and Windows and after the tag exists, update `Formula/supa-cc.rb`. Use the real tarball for tag `v0.4.1`, calculate its real SHA256, and update the Python resources; never anticipate or invent the checksum.
 
 ```bash
@@ -94,6 +96,8 @@ The explicit trust command is limited to the formula and is required here becaus
 resource generation evaluates the local formula before the installation step.
 
 ## 8. Update availability documentation
+
+Completed on 2026-07-14: the changelog is dated, its comparison closes at `v0.4.1`, and this checklist records the verified GitHub Release, PyPI artifacts, pipx smoke tests, and Homebrew promotion.
 
 Only after PyPI and Homebrew have been verified, finalize the changelog entry by replacing `Unreleased` with the actual release date and replacing `HEAD` with tag `v0.4.1` in the comparison link. Update this checklist to record that the release and formula were published.
 

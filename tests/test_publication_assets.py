@@ -429,13 +429,14 @@ def test_changelog_marks_0_4_0_as_released():
     assert "## [0.4.0] - Unreleased" not in changelog
 
 
-def test_changelog_prepares_0_4_1_without_claiming_publication():
+def test_changelog_marks_0_4_1_as_released():
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert "## [0.4.1] - Unreleased" in changelog
+    assert "## [0.4.1] - 2026-07-14" in changelog
+    assert "## [0.4.1] - Unreleased" not in changelog
     assert "Homebrew" in changelog
     assert (
-        "[0.4.1]: https://github.com/dgabreuu/supa.cc/compare/v0.4.0...HEAD"
+        "[0.4.1]: https://github.com/dgabreuu/supa.cc/compare/v0.4.0...v0.4.1"
         in changelog
     )
 
