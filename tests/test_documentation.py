@@ -311,6 +311,9 @@ def test_readme_stable_installation_uses_platform_release_channels():
         assert _has_command(stable, command), f"{platform} README install command must be exactly: {command}"
         assert not _contains_mutable_ref(stable), f"mutable ref in README {platform} stable section"
 
+    macos = _stable_content(_section(readme, "macOS"))
+    assert _has_command(macos, "brew install supabase/tap/supabase")
+
 
 def test_release_docs_distinguish_published_python_package_from_pending_homebrew():
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -331,6 +334,7 @@ def test_stable_installation_uses_exact_lifecycle_commands():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     expected = {
         "macOS": (
+            "brew install supabase/tap/supabase",
             "brew install dgabreuu/supa-cc/supa-cc",
             "brew upgrade dgabreuu/supa-cc/supa-cc",
             "brew uninstall supa-cc",

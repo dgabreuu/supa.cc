@@ -18,6 +18,8 @@ jobs:
           brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
           tap_repo="$(brew --repo dgabreuu/supa-cc)"
           test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Install Supabase CLI through formula-scoped trust
+        run: brew install --yes supabase/tap/supabase
       - name: Install formula through public flow
         run: brew install --yes dgabreuu/supa-cc/supa-cc
       - name: Verify generated Python resources

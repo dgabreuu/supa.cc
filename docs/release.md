@@ -81,6 +81,7 @@ curl -L -o "$archive" https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4
 sha256sum "$archive"
 brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git
 cd "$(brew --repo dgabreuu/supa-cc)"
+brew install supabase/tap/supabase
 brew trust --formula dgabreuu/supa-cc/supa-cc
 brew update-python-resources --ignore-main-package-cooldown Formula/supa-cc.rb
 brew audit --strict --formula dgabreuu/supa-cc/supa-cc
