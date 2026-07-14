@@ -26,6 +26,7 @@ class TUIApp:
         }
 
     def run(self) -> int:
+        self.renderer.start_frame()
         while self.state.running:
             handler = self.routes.get(self.state.current_page)
             if handler is None:

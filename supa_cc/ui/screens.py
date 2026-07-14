@@ -44,11 +44,16 @@ class TUIScreens:
     def _ask(self, question: Any) -> Any:
         return question.ask()
 
+    def _create_prompt(self, factory: Any, *args: Any, **kwargs: Any) -> Any:
+        kwargs["erase_when_done"] = True
+        return factory(*args, **kwargs)
+
     def _select(self, message: str, choices: List) -> Any:
         # No default: avoids "selected" highlight on first option.
         # Standard pointer for normal items; Back carries its arrow in its formatted title.
         return self._ask(
-            self.prompts.select(
+            self._create_prompt(
+                self.prompts.select,
                 message,
                 choices=choices,
                 style=self.style,
@@ -58,13 +63,24 @@ class TUIScreens:
         )
 
     def _text(self, message: str) -> Any:
-        return self._ask(self.prompts.text(message, style=self.style))
+        return self._ask(
+            self._create_prompt(self.prompts.text, message, style=self.style)
+        )
 
     def _password(self, message: str) -> Any:
-        return self._ask(self.prompts.password(message, style=self.style))
+        return self._ask(
+            self._create_prompt(self.prompts.password, message, style=self.style)
+        )
 
     def _confirm(self, message: str, default: bool = False) -> Any:
-        return self._ask(self.prompts.confirm(message, default=default, style=self.style))
+        return self._ask(
+            self._create_prompt(
+                self.prompts.confirm,
+                message,
+                default=default,
+                style=self.style,
+            )
+        )
 
     def _account_choices(self, accounts: List) -> List:
         base = [Choice(title=account.name, value=account.name) for account in accounts]

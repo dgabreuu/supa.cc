@@ -12,6 +12,8 @@ supa.cc
 
 The home keeps only the compact brand banner, account count, active-account state, and the four useful actions: Add, Switch, Remove, and Exit. Switch and Remove present the account list when needed, avoiding a separate list-only screen. Arrow-key navigation and the existing green visual identity are preserved; smaller terminals receive the compact banner automatically.
 
+During an interactive session, the banner and application title stay fixed. Menus, forms, account state, and feedback messages reuse the same area below that frame, so navigating back to the home does not append another interface to the terminal. Exiting leaves one final Supa.cc frame with the goodbye message.
+
 1. Choose **Add account**, enter a local name, and provide the PAT in the hidden prompt. The name must contain 1 to 50 ASCII letters, numbers, underscores, or hyphens (`[a-zA-Z0-9_-]{1,50}`).
 2. Choose **Switch active account** and select the registered account.
 3. Verify the activated session:

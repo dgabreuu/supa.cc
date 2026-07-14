@@ -9,8 +9,12 @@ from supa_cc.ui.state import MenuAction, NavigationState, PageId
 class FakeRenderer:
     def __init__(self):
         self.goodbye_calls = 0
+        self.start_frame_calls = 0
         self.home_paints = 0
         self.subpage_paints = []
+
+    def start_frame(self):
+        self.start_frame_calls += 1
 
     def paint_home(self, state, account_count, active_account=None):
         self.home_paints += 1
@@ -64,6 +68,7 @@ def test_run_routes_home_to_switch_and_back_until_exit():
 
     assert screens.calls == ["home", "switch_account", "home"]
     assert state.running is False
+    assert renderer.start_frame_calls == 1
     assert renderer.goodbye_calls == 1
     assert exit_code == 0
 

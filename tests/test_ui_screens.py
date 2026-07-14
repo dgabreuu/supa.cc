@@ -9,7 +9,7 @@ from supa_cc.auth import (
     AuthResult,
     InvalidAccessTokenError,
 )
-from supa_cc.ui.screens import TUIScreens
+from supa_cc.ui.screens import MAIN_MENU_CHOICES, TUIScreens
 from supa_cc.ui.state import MenuAction, NavigationState, PageId
 from supa_cc.strings import UIStrings as Strings
 
@@ -52,6 +52,7 @@ class SequencePrompts:
     def __init__(self, **queues):
         self.queues = {key: list(values) for key, values in queues.items()}
         self.select_calls = []
+        self.calls = []
 
     def _next(self, kind):
         values = self.queues.get(kind, [])
@@ -60,18 +61,22 @@ class SequencePrompts:
         return FakePrompt(values.pop(0))
 
     def text(self, *args, **kwargs):
+        self.calls.append(("text", kwargs))
         return self._next("text")
 
     def password(self, *args, **kwargs):
+        self.calls.append(("password", kwargs))
         return self._next("password")
 
     def select(self, message, choices=None, **kwargs):
+        self.calls.append(("select", kwargs))
         self.select_calls.append(
             {"message": message, "choices": list(choices or []), "kwargs": kwargs}
         )
         return self._next("select")
 
     def confirm(self, *args, **kwargs):
+        self.calls.append(("confirm", kwargs))
         return self._next("confirm")
 
 
@@ -163,6 +168,35 @@ def test_home_select_uses_standard_pointer_without_default_selection():
     assert kwargs.get("default") is None
     assert kwargs.get("pointer") == "»"
     assert kwargs.get("use_indicator") is False
+
+
+def test_all_questionary_prompts_are_erased_after_completion():
+    prompts = SequencePrompts(
+        select=[MenuAction.EXIT],
+        text=["work"],
+        password=[fake_pat("prompt_options")],
+        confirm=[False],
+    )
+    screens = TUIScreens(
+        manager=FakeManager(),
+        renderer=FakeRenderer(),
+        prompts=prompts,
+    )
+
+    screens._select(Strings.MENU_TITLE, MAIN_MENU_CHOICES)
+    screens._text(Strings.PROMPT_ACCOUNT_NAME)
+    screens._password(Strings.PROMPT_ACCESS_TOKEN)
+    screens._confirm(Strings.PROMPT_CONFIRM_REMOVE.format("work"))
+
+    assert [kind for kind, _kwargs in prompts.calls] == [
+        "select",
+        "text",
+        "password",
+        "confirm",
+    ]
+    assert all(
+        kwargs.get("erase_when_done") is True for _kind, kwargs in prompts.calls
+    )
 
 
 def test_add_account_success_returns_home_with_message():
