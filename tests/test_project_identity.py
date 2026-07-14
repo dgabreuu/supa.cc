@@ -106,7 +106,7 @@ def test_build_and_audit_dependencies_are_bounded_and_development_only():
 
     assert pyproject["build-system"]["requires"] == ["hatchling>=1.25,<2"]
     assert "pip-audit>=2.7,<3" in pyproject["project"]["optional-dependencies"]["dev"]
-    assert "setuptools>=78.1.1" in pyproject["project"]["optional-dependencies"]["dev"]
+    assert "setuptools>=83.0.0" in pyproject["project"]["optional-dependencies"]["dev"]
     assert not any(
         dependency.startswith("pip-audit")
         for dependency in pyproject["project"]["dependencies"]
