@@ -5,9 +5,6 @@ from pathlib import Path
 from typing import Mapping, Optional
 
 from ..auth import AuthFailureCode, AuthResult, is_valid_account_name
-from ..auth import CredentialAccessError
-from ..credentials import create_supabase_cli_credential_store
-from ..environment import detect_environment
 from ..supabase_cli import SupabaseCLI
 from ..models import Account
 from ..state import atomic_write_json, read_json, read_text, secure_remove
@@ -114,7 +111,6 @@ class NativeSessionSynchronizer:
         config: SupabaseCLI,
         env: Optional[Mapping[str, str]] = None,
         supabase_home: Optional[Path] = None,
-        credential_store=None,
     ):
         self.config = config
         self.env = os.environ if env is None else env
@@ -123,7 +119,6 @@ class NativeSessionSynchronizer:
             if supabase_home is not None
             else access_token_fallback_path(self.env)
         )
-        self.credential_store = credential_store
         self.mutation_state = MutationState.NONE
 
     def preflight(self) -> AuthResult:
@@ -167,25 +162,21 @@ class NativeSessionSynchronizer:
             )
             if not login.ok:
                 return login
-            try:
-                store = self.credential_store
-                if store is None:
-                    store = create_supabase_cli_credential_store(detect_environment())
-                if not store.matches("supabase", account.token):
-                    return AuthResult.failure(
-                        AuthFailureCode.NATIVE_VERIFICATION_FAILED,
-                        "The credential persisted by the Supabase CLI does not match the selected account.",
-                    )
-            except CredentialAccessError:
-                return AuthResult.failure(
-                    AuthFailureCode.NATIVE_VERIFICATION_FAILED,
-                    "Unable to safely verify the native credential.",
-                )
             verification = self.config.verify_persisted_session(
                 supabase_home=controlled_home, profile="supabase"
             )
             if not verification.ok:
                 self.mutation_state = MutationState.UNCERTAIN
+                if verification.code in {
+                    AuthFailureCode.TOKEN_MISSING,
+                    AuthFailureCode.TOKEN_REJECTED,
+                    AuthFailureCode.API_AUTH_FAILED,
+                }:
+                    return AuthResult.failure(
+                        AuthFailureCode.NATIVE_VERIFICATION_FAILED,
+                        "The Supabase CLI could not recover its persisted session.",
+                        exit_code=verification.exit_code,
+                    )
                 return verification
             self.mutation_state = MutationState.VERIFIED
             return AuthResult.success("Account activated and native session synchronized.")

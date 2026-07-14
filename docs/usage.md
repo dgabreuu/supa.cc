@@ -22,7 +22,7 @@ During an interactive session, the banner and application title stay fixed. Menu
 supabase projects list
 ```
 
-Activation validates the PAT, synchronizes the official `supabase` profile, verifies the persisted native credential, and only then records the active account. If it fails, follow [Troubleshooting](troubleshooting.md); see [Security](security.md) for guarantees and limits.
+Activation validates the PAT, asks the Supabase CLI to synchronize the official `supabase` profile, removes the PAT from the verification environment, and confirms that the CLI can recover its own persisted session. Only then does Supa.cc record the active account. Supa.cc treats the CLI credential format and identifiers as private implementation details. If activation fails, follow [Troubleshooting](troubleshooting.md); see [Security](security.md) for guarantees and limits.
 
 ## Workflows
 
@@ -36,7 +36,7 @@ supa.cc remove <name>
 supa.cc remove <name> --yes
 ```
 
-`add` requests the PAT in a hidden prompt. `list` shows names only. `switch` validates and activates the account. `remove` asks for confirmation except with `--yes`; removing the active account also ends its associated official session.
+`add` requests the PAT in a hidden prompt. `list` shows names only, even when a credential later proves unavailable. `switch` checks index consistency, retrieves the selected PAT from native storage, validates it, and activates the account. `remove` asks for confirmation except with `--yes`; removing the active account also ends its associated official session.
 
 ### Use the active account
 

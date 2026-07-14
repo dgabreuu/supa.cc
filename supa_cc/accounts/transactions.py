@@ -6,6 +6,7 @@ from ..auth import (
     ActiveAccountInvalidError,
     ActiveAccountPermissionDeniedError,
     ActiveAccountWriteError,
+    AccountIndexError,
     AccountTransactionError,
     AuthFailureCode,
     AuthResult,
@@ -50,16 +51,20 @@ class AccountTransactionCoordinator:
     def _logout_after_preflight(self) -> AuthResult:
         return self.session_mutations.logout_after_preflight()
 
+    def _read_consistent_active_name(self) -> Optional[str]:
+        active_name = self.active_store.read()
+        if (
+            active_name is not None
+            and not self.keychain.is_account_indexed(active_name)
+        ):
+            raise ActiveAccountInvalidError()
+        return active_name
+
     def add(self, account: Account) -> None:
         recovery = self.recover_pending_sync()
         if not recovery.ok:
             raise AccountTransactionError(recovery.message)
-        try:
-            active_name = self.active_store.read()
-        except ActiveAccountError:
-            raise AccountTransactionError(
-                "Unable to safely verify the active account."
-            ) from None
+        active_name = self._read_consistent_active_name()
         if active_name != account.name:
             self._mutate_inactive_add(account)
             return
@@ -165,12 +170,7 @@ class AccountTransactionCoordinator:
         recovery = self.recover_pending_sync()
         if not recovery.ok:
             raise AccountTransactionError(recovery.message)
-        try:
-            active_name = self.active_store.read()
-        except ActiveAccountError:
-            raise AccountTransactionError(
-                "Unable to safely verify the active account."
-            ) from None
+        active_name = self._read_consistent_active_name()
         if active_name != name:
             self._mutate_inactive_remove(name)
             return
@@ -233,6 +233,22 @@ class AccountTransactionCoordinator:
         if not recovery.ok:
             return recovery
 
+        try:
+            previous_name = self.active_store.read()
+        except ActiveAccountError as error:
+            return classify_local_failure(error)
+        try:
+            target_is_indexed = self.keychain.is_account_indexed(name)
+            previous_is_indexed = (
+                previous_name is None
+                or previous_name == name
+                or self.keychain.is_account_indexed(previous_name)
+            )
+        except AccountIndexError as error:
+            return classify_local_failure(error)
+        if not target_is_indexed or not previous_is_indexed:
+            return classify_local_failure(ActiveAccountInvalidError())
+
         account, failure = self._load_account_for_auth(name)
         if failure is not None:
             return failure
@@ -240,11 +256,6 @@ class AccountTransactionCoordinator:
         validation = self.config.validate_access_token(account)
         if not validation.ok:
             return validation
-        try:
-            previous_name = self.active_store.read()
-        except ActiveAccountError as error:
-            return classify_local_failure(error)
-
         preflight = self.native_session.preflight()
         if preflight.ok is False:
             return preflight

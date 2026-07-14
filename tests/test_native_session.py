@@ -70,7 +70,6 @@ def test_preflighted_activation_does_not_repeat_cli_preflight(tmp_path):
         config,
         env={},
         supabase_home=tmp_path / "supabase",
-        credential_store=Mock(matches=Mock(return_value=True)),
     )
 
     assert synchronizer.preflight().ok
@@ -80,26 +79,26 @@ def test_preflighted_activation_does_not_repeat_cli_preflight(tmp_path):
     config.preflight.assert_called_once_with()
 
 
-def test_activate_uses_controlled_home_and_requires_native_credential_match(tmp_path):
+def test_activate_uses_controlled_home_and_verifies_with_supabase_cli(tmp_path):
     config = Mock()
     config.login_with_access_token.return_value = AuthResult.success()
     config.verify_persisted_session.return_value = AuthResult.success()
-    credentials = Mock()
-    credentials.matches.return_value = False
     account = Account("work", fake_pat("controlled"))
     synchronizer = NativeSessionSynchronizer(
-        config, env={}, supabase_home=tmp_path / "real", credential_store=credentials
+        config, env={}, supabase_home=tmp_path / "real"
     )
 
     result = synchronizer.activate(account)
 
-    assert result.code is AuthFailureCode.NATIVE_VERIFICATION_FAILED
-    assert synchronizer.mutation_state is MutationState.ATTEMPTED
+    assert result.ok is True
+    assert synchronizer.mutation_state is MutationState.VERIFIED
     controlled_home = config.login_with_access_token.call_args.kwargs["supabase_home"]
     assert controlled_home != tmp_path / "real"
     assert not controlled_home.exists()
-    credentials.matches.assert_called_once_with("supabase", account.token)
-    config.verify_persisted_session.assert_not_called()
+    config.verify_persisted_session.assert_called_once_with(
+        supabase_home=controlled_home,
+        profile="supabase",
+    )
 
 
 def test_access_token_fallback_path_honors_supabase_home(tmp_path):
@@ -230,7 +229,6 @@ def test_activate_succeeds_after_login_and_persisted_verification(tmp_path):
         config=config,
         env={},
         supabase_home=tmp_path / "supabase",
-        credential_store=Mock(matches=Mock(return_value=True)),
     )
 
     result = synchronizer.activate(account)
@@ -259,6 +257,32 @@ def test_activate_propagates_login_failure_without_verification(tmp_path):
     assert result.ok is False
     assert result.code is AuthFailureCode.TOKEN_REJECTED
     config.verify_persisted_session.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "verification_code",
+    [AuthFailureCode.TOKEN_MISSING, AuthFailureCode.TOKEN_REJECTED],
+)
+def test_activate_classifies_unusable_persisted_session_by_phase(
+    tmp_path, verification_code
+):
+    config = Mock()
+    config.login_with_access_token.return_value = AuthResult.success("login ok")
+    config.verify_persisted_session.return_value = AuthResult.failure(
+        verification_code,
+        "unsafe implementation detail",
+    )
+    synchronizer = NativeSessionSynchronizer(
+        config=config,
+        env={},
+        supabase_home=tmp_path / "supabase",
+    )
+
+    result = synchronizer.activate(Account(name="work", token=fake_pat("work")))
+
+    assert result.code is AuthFailureCode.NATIVE_VERIFICATION_FAILED
+    assert result.message == "The Supabase CLI could not recover its persisted session."
+    assert synchronizer.mutation_state is MutationState.UNCERTAIN
 
 
 def test_logout_requires_successful_logout_and_failed_verification(tmp_path):

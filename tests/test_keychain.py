@@ -148,6 +148,18 @@ def test_list_accounts_does_not_read_tokens(tmp_path):
     assert store.operations == []
 
 
+def test_is_account_indexed_does_not_read_tokens(tmp_path):
+    path = tmp_path / "accounts.json"
+    path.write_text(json.dumps({"accounts": ["personal", "work"]}), encoding="utf-8")
+    path.chmod(0o600)
+    store = FakeCredentialStore()
+    manager = KeychainManager(index_path=path, credential_store=store)
+
+    assert manager.is_account_indexed("work") is True
+    assert manager.is_account_indexed("missing") is False
+    assert store.operations == []
+
+
 def test_add_persists_account_names_without_tokens_in_the_index(tmp_path):
     store = FakeCredentialStore()
     account = Account(name="work", token=fake_pat("work"))

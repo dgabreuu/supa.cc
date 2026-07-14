@@ -45,6 +45,21 @@ MINIMUM_VERSION = (2, 109, 1)
 _SENSITIVE_ARGUMENTS = ("--token", "--access-token")
 _VERSION_LINE = re.compile(r"^(?:supabase\s+version\s+)?(\d+)\.(\d+)\.(\d+)$", re.IGNORECASE)
 _UNAUTHORIZED = re.compile(r"(?<!\d)401(?!\d)|\bunauthorized\b", re.IGNORECASE)
+_KEYCHAIN_CONTEXT_MARKERS = (
+    "keychain",
+    "keyring",
+    "credential store",
+    "credential-store",
+)
+_KEYCHAIN_DENIAL_MARKERS = (
+    "access denied",
+    "authorization denied",
+    "interaction is not allowed",
+    "not authorized",
+    "permission denied",
+    "user canceled",
+    "user cancelled",
+)
 _MARKERS = {
     AuthFailureCode.TOKEN_MISSING: ("access token not provided", "access token is not provided", "missing access token", "supabase_access_token is not set"),
     AuthFailureCode.TOKEN_REJECTED: ("invalid access token",),
@@ -56,6 +71,7 @@ _MARKERS = {
 }
 _PRECEDENCE = (
     AuthFailureCode.TOKEN_REJECTED,
+    AuthFailureCode.KEYCHAIN_PERMISSION_DENIED,
     AuthFailureCode.TOKEN_MISSING,
     AuthFailureCode.ENVIRONMENT_BLOCKED,
     AuthFailureCode.NETWORK_FAILURE,
@@ -66,13 +82,23 @@ _PRECEDENCE = (
 _MESSAGES = {
     AuthFailureCode.TOKEN_MISSING: "An access token was not provided to the Supabase CLI.",
     AuthFailureCode.TOKEN_REJECTED: "The token was rejected by the Supabase API.",
+    AuthFailureCode.KEYCHAIN_PERMISSION_DENIED: "The native credential store did not authorize the Supabase CLI session.",
     AuthFailureCode.ENVIRONMENT_BLOCKED: "The environment blocked Supabase CLI execution.",
     AuthFailureCode.NETWORK_FAILURE: "Unable to connect to the Supabase API.",
     AuthFailureCode.CLI_INCOMPATIBLE: "The installed Supabase CLI version is incompatible.",
     AuthFailureCode.PROFILE_MISMATCH: "The Supabase CLI profile does not match the selected account.",
     AuthFailureCode.API_AUTH_FAILED: "The Supabase API could not authenticate the account.",
     AuthFailureCode.COMMAND_FAILED: "The Supabase CLI could not complete the command.",
+    AuthFailureCode.NATIVE_LOGIN_FAILED: "The Supabase CLI could not persist the native session.",
+    AuthFailureCode.NATIVE_VERIFICATION_FAILED: "The Supabase CLI could not recover its persisted session.",
+    AuthFailureCode.NATIVE_LOGOUT_FAILED: "The Supabase CLI could not end the native session.",
 }
+
+
+def _contains_keychain_denial(normalized: str) -> bool:
+    return any(marker in normalized for marker in _KEYCHAIN_CONTEXT_MARKERS) and any(
+        marker in normalized for marker in _KEYCHAIN_DENIAL_MARKERS
+    )
 
 
 class _StreamingPATRedactor:
@@ -161,6 +187,8 @@ class _FailureObserver:
         normalized = self.tails.get(stream, "") + text.lower()
         if _UNAUTHORIZED.search(normalized):
             self.codes.add(AuthFailureCode.TOKEN_REJECTED)
+        if _contains_keychain_denial(normalized):
+            self.codes.add(AuthFailureCode.KEYCHAIN_PERMISSION_DENIED)
         for code, markers in _MARKERS.items():
             if any(marker in normalized for marker in markers):
                 self.codes.add(code)
@@ -322,6 +350,8 @@ class SupabaseCLI:
                      if any(marker in normalized for marker in markers)}
             if _UNAUTHORIZED.search(normalized):
                 found.add(AuthFailureCode.TOKEN_REJECTED)
+            if _contains_keychain_denial(normalized):
+                found.add(AuthFailureCode.KEYCHAIN_PERMISSION_DENIED)
             code = observed_code or next((candidate for candidate in _PRECEDENCE if candidate in found), AuthFailureCode.COMMAND_FAILED)
         code = code or AuthFailureCode.COMMAND_FAILED
         message = (_MESSAGES[AuthFailureCode.NETWORK_FAILURE] if result.state is ProcessState.TIMED_OUT
@@ -357,7 +387,8 @@ class SupabaseCLI:
         if result.ok:
             return AuthResult.success(success_message)
         code = fallback_code if result.code is AuthFailureCode.COMMAND_FAILED else result.code
-        return AuthResult.failure(code, result.message, exit_code=result.exit_code)
+        message = _MESSAGES[fallback_code] if code is fallback_code else result.message
+        return AuthResult.failure(code, message, exit_code=result.exit_code)
 
     @staticmethod
     def _native_profile_failure():

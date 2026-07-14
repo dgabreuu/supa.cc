@@ -100,12 +100,6 @@ def _integration_manager(tmp_path, monkeypatch):
     monkeypatch.setenv("SUPABASE_HOME", str(supabase_home))
     monkeypatch.delenv("SUPABASE_ACCESS_TOKEN", raising=False)
     config = SupabaseConfig(binary_resolver=lambda _: str(executable))
-    class NativeCredentials:
-        def matches(self, name, expected):
-            assert name == "supabase"
-            state = _fake_state(state_path)
-            return state.get("session_fingerprint") == hashlib.sha256(expected.encode()).hexdigest()
-
     journal = SessionSyncJournal(tmp_path / "config" / "session-sync.json")
     manager = AccountManager(
         keychain=KeychainManager(
@@ -116,7 +110,6 @@ def _integration_manager(tmp_path, monkeypatch):
         active_store=ActiveAccountStore(tmp_path / "config" / "active-account"),
         native_session=NativeSessionSynchronizer(
             config, env={}, supabase_home=supabase_home,
-            credential_store=NativeCredentials(),
         ),
         sync_journal=journal,
     )
@@ -165,6 +158,45 @@ def test_native_sync_first_selection_switch_and_direct_command(tmp_path, monkeyp
     ]
     assert len(persisted_checks) == 3
     assert state["events"][-1] == {"argv": ["projects", "list"], "has_access_token": False}
+
+
+def test_native_sync_leaves_conflicting_legacy_session_state_opaque(
+    tmp_path, monkeypatch
+):
+    manager, config, state_path, _, _ = _integration_manager(tmp_path, monkeypatch)
+    legacy_fingerprint = hashlib.sha256(b"synthetic-legacy-session").hexdigest()
+    state_path.write_text(
+        json.dumps(
+            {
+                "events": [],
+                "legacy_session_fingerprint": legacy_fingerprint,
+            }
+        ),
+        encoding="utf-8",
+    )
+    selected_token = fake_pat("opaque-current-session")
+    manager.add("work", selected_token)
+
+    result = manager.set_active("work")
+    direct = subprocess.run(
+        [config.supabase_cli_invoked, "projects", "list"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key != "SUPABASE_ACCESS_TOKEN"
+        },
+    )
+
+    state = _fake_state(state_path)
+    selected_fingerprint = hashlib.sha256(selected_token.encode()).hexdigest()
+    assert result.ok
+    assert direct.returncode == 0
+    assert state["session_fingerprint"] == selected_fingerprint
+    assert state["legacy_session_fingerprint"] == legacy_fingerprint
+    assert direct.stdout == f"fingerprint={selected_fingerprint}\n"
 
 
 def test_native_sync_failed_switch_rolls_back_previous_session(tmp_path, monkeypatch):

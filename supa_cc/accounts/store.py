@@ -219,6 +219,10 @@ class AccountStore:
         """List names without retrieving tokens from the Keychain."""
         return [AccountSummary(name=name) for name in self._read_index()]
 
+    def is_account_indexed(self, name: str) -> bool:
+        """Check index membership without retrieving a credential."""
+        return name in self._read_index()
+
     def delete_account(self, name: str) -> None:
         """Remove a credential without changing index names."""
         self._ensure_initialized()

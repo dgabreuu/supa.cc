@@ -133,10 +133,7 @@ def test_windows_probe_reads_only_an_isolated_namespace(fake_windows_keyring):
     assert operation == "get"
     assert service.startswith("supa.cc.probe.")
     assert name.startswith("probe-")
-    assert service not in {
-        "supa.cc.supabase.accounts.v2",
-        credentials.SUPABASE_CLI_CREDENTIAL_SERVICE,
-    }
+    assert service != "supa.cc.supabase.accounts.v2"
 
 
 def test_linux_selects_only_secret_service_backend(fake_secret_service):
@@ -163,10 +160,7 @@ def test_live_probe_is_opt_in_and_uses_an_isolated_namespace(fake_secret_service
     assert status.live_probed is True
     operation, service, name = fake.calls[0]
     assert operation == "get"
-    assert service not in {
-        "supa.cc.supabase.accounts.v2",
-        credentials.SUPABASE_CLI_CREDENTIAL_SERVICE,
-    }
+    assert service != "supa.cc.supabase.accounts.v2"
     assert service.startswith("supa.cc.probe.")
     assert name.startswith("probe-")
 
@@ -213,10 +207,7 @@ def test_macos_probe_reads_only_an_isolated_nonexistent_identity(monkeypatch):
     assert operation == "get"
     assert service.startswith("supa.cc.probe.")
     assert name.startswith("probe-")
-    assert service not in {
-        "supa.cc.supabase.accounts.v2",
-        credentials.SUPABASE_CLI_CREDENTIAL_SERVICE,
-    }
+    assert service != "supa.cc.supabase.accounts.v2"
 
 
 def test_linux_rejects_unavailable_secret_service(monkeypatch):
@@ -439,18 +430,6 @@ def test_matches_normalizes_backend_errors(fake_secret_service):
         store.matches("work", fake_pat("expected"))
 
     assert "private token detail" not in str(raised.value)
-
-
-def test_supabase_cli_store_uses_official_native_namespace_and_selected_backend(
-    fake_secret_service,
-):
-    store = credentials.create_supabase_cli_credential_store(linux_environment())
-
-    assert credentials.SUPABASE_CLI_CREDENTIAL_SERVICE == "Supabase CLI"
-    assert credentials.SUPABASE_CLI_CREDENTIAL_NAME == "supabase"
-    assert store.service == "Supabase CLI"
-    assert store.backend_name == "keyring.backends.SecretService.Keyring"
-    assert fake_secret_service.instances[0].calls == []
 
 
 def test_store_uses_the_selected_fake_for_every_operation(fake_secret_service):

@@ -155,6 +155,57 @@ def test_login_passes_token_only_in_child_environment(tmp_path):
     assert result.ok is True
 
 
+def test_native_login_classifies_cli_session_persistence_failure(tmp_path):
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
+
+    with patch(
+        "supa_cc.process.subprocess.Popen",
+        return_value=_process(returncode=7, stderr="unexpected persistence failure"),
+    ):
+        result = config.login_with_access_token(
+            Account(name="work", token=fake_pat("native-persist"))
+        )
+
+    assert result.code is AuthFailureCode.NATIVE_LOGIN_FAILED
+    assert result.message == "The Supabase CLI could not persist the native session."
+
+
+def test_native_verification_classifies_keychain_denial_as_permission_failure(tmp_path):
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
+
+    with patch(
+        "supa_cc.process.subprocess.Popen",
+        return_value=_process(
+            returncode=7,
+            stderr="macOS Keychain access denied: user interaction is not allowed",
+        ),
+    ):
+        result = config.verify_persisted_session()
+
+    assert result.code is AuthFailureCode.KEYCHAIN_PERMISSION_DENIED
+    assert result.message == (
+        "The native credential store did not authorize the Supabase CLI session."
+    )
+
+
+def test_native_login_classifies_telemetry_eperm_as_environment_failure(tmp_path):
+    config = SupabaseConfig(binary_resolver=lambda _: _binary(tmp_path))
+
+    with patch(
+        "supa_cc.process.subprocess.Popen",
+        return_value=_process(
+            returncode=7,
+            stderr="EPERM: operation not permitted, open telemetry.json",
+        ),
+    ):
+        result = config.login_with_access_token(
+            Account(name="work", token=fake_pat("native-sandbox"))
+        )
+
+    assert result.code is AuthFailureCode.ENVIRONMENT_BLOCKED
+    assert result.message == "The environment blocked Supabase CLI execution."
+
+
 @pytest.mark.parametrize(
     "method,arguments",
     [

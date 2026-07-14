@@ -256,7 +256,7 @@ def classify_local_failure(error: BaseException) -> AuthResult:
     if isinstance(error, ActiveAccountInvalidError):
         return AuthResult.failure(
             AuthFailureCode.ACTIVE_ACCOUNT_INVALID,
-            "The active-account file contains an invalid name.",
+            "The active-account selection is invalid or is not present in the local account index.",
         )
     if isinstance(error, PermissionError):
         return AuthResult.failure(

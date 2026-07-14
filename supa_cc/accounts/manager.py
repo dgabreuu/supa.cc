@@ -4,7 +4,9 @@ from typing import Callable, Iterator, List, Optional, Sequence
 
 from .store import AccountStore
 from ..auth import (
+    AccountIndexError,
     ActiveAccountError,
+    ActiveAccountInvalidError,
     ActiveAccountStore,
     AccountTransactionError,
     AuthFailureCode,
@@ -134,7 +136,13 @@ class AccountManager:
         try:
             with self._sync_lock():
                 self.transactions.add(account)
-        except (AccountTransactionError, CredentialAccessError, OSError):
+        except (
+            AccountIndexError,
+            AccountTransactionError,
+            ActiveAccountError,
+            CredentialAccessError,
+            OSError,
+        ):
             raise
         except Exception:
             raise AccountTransactionError(
@@ -154,7 +162,13 @@ class AccountManager:
         try:
             with self._sync_lock():
                 self.transactions.remove(name)
-        except (AccountTransactionError, CredentialAccessError, OSError):
+        except (
+            AccountIndexError,
+            AccountTransactionError,
+            ActiveAccountError,
+            CredentialAccessError,
+            OSError,
+        ):
             raise
         except Exception:
             raise AccountTransactionError(
@@ -204,7 +218,10 @@ class AccountManager:
 
     def get_active_name(self) -> Optional[str]:
         """Return the selected account name without reading its credential."""
-        return self.active_store.read()
+        name = self.active_store.read()
+        if name is not None and not self.keychain.is_account_indexed(name):
+            raise ActiveAccountInvalidError()
+        return name
 
     def run_active(
         self,
@@ -213,8 +230,8 @@ class AccountManager:
         stderr_sink: Optional[Callable[[str], None]] = None,
     ) -> CommandResult:
         try:
-            name = self.active_store.read()
-        except ActiveAccountError as error:
+            name = self.get_active_name()
+        except (ActiveAccountError, AccountIndexError) as error:
             failure = classify_local_failure(error)
             return CommandResult.failure(
                 failure.code, failure.message, exit_code=failure.exit_code

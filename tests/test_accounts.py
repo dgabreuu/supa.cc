@@ -768,6 +768,20 @@ class TestAccountManager:
         manager.native_session.activate.assert_not_called()
         manager.native_session.logout.assert_not_called()
 
+    def test_add_rejects_unindexed_active_selection_without_reading_token(
+        self, tmp_path
+    ):
+        manager = self.transactional_manager(tmp_path, previous="stale")
+        manager.keychain.is_account_indexed.return_value = False
+
+        with pytest.raises(ActiveAccountInvalidError):
+            manager.add("work", fake_pat("unindexed-add"))
+
+        manager.keychain.get_account.assert_not_called()
+        manager.keychain.add_account.assert_not_called()
+        manager.native_session.preflight.assert_not_called()
+        manager.native_session.activate.assert_not_called()
+
     def test_add_active_account_resynchronizes_replacement_token(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="work")
         replacement = Account(name="work", token=fake_pat("replacement"))
@@ -940,6 +954,20 @@ class TestAccountManager:
         manager.native_session.logout.assert_not_called()
         assert manager.active_store.name == "old"
 
+    def test_remove_rejects_unindexed_active_selection_without_reading_token(
+        self, tmp_path
+    ):
+        manager = self.transactional_manager(tmp_path, previous="stale")
+        manager.keychain.is_account_indexed.return_value = False
+
+        with pytest.raises(ActiveAccountInvalidError):
+            manager.remove("work")
+
+        manager.keychain.get_account.assert_not_called()
+        manager.keychain.remove_account.assert_not_called()
+        manager.native_session.preflight.assert_not_called()
+        manager.native_session.logout.assert_not_called()
+
     def test_remove_active_account_logs_out_before_clearing_and_deleting(self, tmp_path):
         manager = self.transactional_manager(tmp_path, previous="work")
         events = Mock()
@@ -951,6 +979,7 @@ class TestAccountManager:
         manager.remove("work")
 
         assert events.mock_calls == [
+            call.keychain.is_account_indexed("work"),
             call.native.preflight(),
             call.keychain.get_account("work"),
             call.keychain.create_account_backup("work"),
@@ -1064,6 +1093,7 @@ class TestAccountManager:
         active = MemoryActiveAccountStore("old")
         durable = SessionSyncJournal(tmp_path / "session-sync.json")
         manager = self.durable_manager(tmp_path, store, active, Mock(), durable)
+        manager.keychain.add_account(Account("old", fake_pat("active-old")))
         if operation == "remove":
             manager.keychain.add_account(Account("work", fake_pat("old-work")))
         manager.sync_journal = FaultInjectingJournal(
@@ -1087,6 +1117,7 @@ class TestAccountManager:
         active = MemoryActiveAccountStore("old")
         durable = SessionSyncJournal(tmp_path / "session-sync.json")
         manager = self.durable_manager(tmp_path, store, active, Mock(), durable)
+        manager.keychain.add_account(Account("old", fake_pat("active-old")))
         manager.keychain.add_account(Account("work", fake_pat("old-work")))
         manager.sync_journal = InterruptingJournal(durable, write_call=1)
 
@@ -1096,7 +1127,7 @@ class TestAccountManager:
             else:
                 manager.remove("work")
 
-        assert set(store.tokens) == {"work"}
+        assert set(store.tokens) == {"old", "work"}
 
     def test_stale_active_recovery_completes_native_sync_before_clear(self, tmp_path):
         store = FakeCredentialStore()
@@ -1122,6 +1153,7 @@ class TestAccountManager:
         native.preflight.return_value = AuthResult.success()
         native.activate.return_value = AuthResult.success()
         manager = self.durable_manager(tmp_path, store, active, native, durable)
+        manager.keychain.update_index(["stale"])
         manager.sync_journal = FaultInjectingJournal(durable, "write", 4)
 
         with pytest.raises(AccountTransactionError):
@@ -1386,9 +1418,10 @@ class TestAccountManager:
         assert result.ok is True
         assert result.code is AuthFailureCode.NONE
         assert events.mock_calls == [
+            call.store.read(),
+            call.keychain.is_account_indexed("work"),
             call.keychain.get_account("work"),
             call.config.validate_access_token(account),
-            call.store.read(),
             call.store.write("work"),
         ]
         native_session.activate.assert_called_once_with(account)
@@ -1414,6 +1447,52 @@ class TestAccountManager:
 
         assert result.ok is False
         assert result.code is AuthFailureCode.TOKEN_MISSING
+        config.validate_access_token.assert_not_called()
+        active_store.write.assert_not_called()
+
+    def test_set_active_rejects_unindexed_target_without_reading_token(self, tmp_path):
+        keychain = Mock()
+        config = Mock()
+        active_store = Mock()
+        active_store.read.return_value = None
+        keychain.is_account_indexed.return_value = False
+        manager = AccountManager(
+            keychain=keychain,
+            config=config,
+            active_store=active_store,
+            sync_journal=SessionSyncJournal(tmp_path / "session-sync.json"),
+        )
+
+        result = manager.set_active("work")
+
+        assert result.code is AuthFailureCode.ACTIVE_ACCOUNT_INVALID
+        keychain.get_account.assert_not_called()
+        config.validate_access_token.assert_not_called()
+        active_store.write.assert_not_called()
+
+    def test_set_active_rejects_unindexed_previous_selection_without_reading_token(
+        self, tmp_path
+    ):
+        keychain = Mock()
+        config = Mock()
+        active_store = Mock()
+        active_store.read.return_value = "previous"
+        keychain.is_account_indexed.side_effect = [True, False]
+        manager = AccountManager(
+            keychain=keychain,
+            config=config,
+            active_store=active_store,
+            sync_journal=SessionSyncJournal(tmp_path / "session-sync.json"),
+        )
+
+        result = manager.set_active("work")
+
+        assert result.code is AuthFailureCode.ACTIVE_ACCOUNT_INVALID
+        assert keychain.is_account_indexed.call_args_list == [
+            call("work"),
+            call("previous"),
+        ]
+        keychain.get_account.assert_not_called()
         config.validate_access_token.assert_not_called()
         active_store.write.assert_not_called()
 
@@ -1551,6 +1630,38 @@ class TestAccountManager:
             stderr_sink=stderr_sink,
         )
         config.validate_access_token.assert_not_called()
+
+    def test_get_active_name_rejects_selection_absent_from_index_without_reading_token(self):
+        keychain = Mock()
+        active_store = Mock()
+        active_store.read.return_value = "work"
+        keychain.is_account_indexed.return_value = False
+        manager = AccountManager(keychain=keychain, active_store=active_store)
+
+        with pytest.raises(ActiveAccountInvalidError):
+            manager.get_active_name()
+
+        keychain.is_account_indexed.assert_called_once_with("work")
+        keychain.get_account.assert_not_called()
+
+    def test_run_active_rejects_selection_absent_from_index_without_reading_token(self):
+        keychain = Mock()
+        config = Mock()
+        active_store = Mock()
+        active_store.read.return_value = "work"
+        keychain.is_account_indexed.return_value = False
+        manager = AccountManager(
+            keychain=keychain,
+            config=config,
+            active_store=active_store,
+        )
+
+        result = manager.run_active(["projects", "list"])
+
+        assert result.ok is False
+        assert result.code is AuthFailureCode.ACTIVE_ACCOUNT_INVALID
+        keychain.get_account.assert_not_called()
+        config.execute_authenticated_streaming.assert_not_called()
 
     def test_run_active_requires_selected_account(self):
         keychain = Mock()

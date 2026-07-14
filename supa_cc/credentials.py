@@ -33,8 +33,6 @@ from supa_cc.models import Account
 
 
 _CREDENTIAL_SERVICE = "supa.cc.supabase.accounts.v2"
-SUPABASE_CLI_CREDENTIAL_SERVICE = "Supabase CLI"
-SUPABASE_CLI_CREDENTIAL_NAME = "supabase"
 _MACOS_BACKEND_NAME = "keyring.backends.macOS.Keyring"
 _SECRET_SERVICE_BACKEND_NAME = "keyring.backends.SecretService.Keyring"
 _WINDOWS_BACKEND_NAME = "keyring.backends.Windows.WinVaultKeyring"
@@ -132,15 +130,6 @@ def create_credential_store(
         return CredentialStore(_WINDOWS_BACKEND_NAME, service=service)
     raise CredentialAccessError(
         "The credential store is unavailable in this environment."
-    )
-
-
-def create_supabase_cli_credential_store(
-    environment: Environment,
-) -> CredentialStore:
-    return create_credential_store(
-        environment,
-        service=SUPABASE_CLI_CREDENTIAL_SERVICE,
     )
 
 

@@ -41,7 +41,7 @@ The CI matrix must pass on Python 3.11 and the current stable Python on Ubuntu, 
 
 ## 2. Confirm the operational contract
 
-Confirm Supabase CLI >= 2.109.1, the official `supabase` profile, executable trust, verification of the exact native credential, mutation-aware recovery, logout when removing the active account, and blocking of the plaintext fallback. `doctor` must remain non-live by default; only `doctor --account <name> --live` opens the token for explicit validation. The lock does not coordinate concurrent external `supabase` commands.
+Confirm Supabase CLI >= 2.109.1, the official `supabase` profile, executable trust, CLI-owned session recovery without the PAT environment override, mutation-aware recovery, logout when removing the active account, and blocking of the plaintext fallback. CLI credential identifiers and formats remain opaque. `doctor` must remain non-live by default; only `doctor --account <name> --live` opens the token for explicit validation. The lock does not coordinate concurrent external `supabase` commands.
 
 ## 3. Configure Trusted Publishing
 

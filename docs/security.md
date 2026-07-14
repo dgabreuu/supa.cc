@@ -21,7 +21,7 @@ Executable binding is explicit per platform:
 - macOS applies the same file checks, keeps the file open, rejects group- or world-writable ancestors, revalidates identity immediately before spawning, and executes the validated path. `/dev/fd` is not assumed to be executable on macOS.
 - Windows opens a regular file and compares path identity with the descriptor after opening and again immediately before process creation. The API executes the validated path; Supa.cc does not claim descriptor-bound execution, owner validation, ACL validation, or POSIX-mode validation.
 
-Post-login verification confirms the exact persisted native credential. Supa.cc does not edit CLI credentials or profiles directly.
+After login, Supa.cc removes `SUPABASE_ACCESS_TOKEN` from the child environment and runs `projects list`. Success confirms that the Supabase CLI persisted and recovered a usable native session through its own credential layer. Supa.cc does not read, write, migrate, compare, or remove the CLI's internal credential entries, identifiers, or formats.
 
 An inherited `SUPABASE_ACCESS_TOKEN` takes precedence and blocks synchronization. A plaintext `access-token` fallback is blocked without reading or migrating it. Output, errors, and exceptions are sanitized.
 
@@ -39,7 +39,7 @@ Only `supa.cc doctor --account <name> --live` opens the selected credential once
 
 ## Platform limits
 
-- macOS: the Python runtime is the Keychain accessor; Supa.cc does not bypass locks or expand ACLs.
+- macOS: the Python runtime accesses only Supa.cc account credentials. The Supabase CLI accesses its own session credential. Keychain can therefore authorize those executable identities independently; Supa.cc does not bypass locks or expand ACLs.
 - Linux: user D-Bus and an unlocked Secret Service are required; headless environments without both fail with safe guidance.
 - Windows: only Windows Credential Manager through `WinVaultKeyring` is accepted; `%APPDATA%` stores metadata without secrets. Locks reject reparse paths, additional links, and detectable identity changes before and after acquisition. The directory and files inherit the access controls of `%APPDATA%`; Supa.cc does not create a private ACL or impose POSIX modes on Windows.
 
