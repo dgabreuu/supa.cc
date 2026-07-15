@@ -45,7 +45,7 @@ def test_editable_metadata_takes_precedence_over_pipx_runtime():
 
 def test_local_wheel_metadata_is_reported_without_exposing_its_path():
     wheel = FakeDistribution(
-        '{"url":"file:///private/location/supa_cc-0.5.0.dev1.whl",'
+        '{"url":"file:///private/location/supa_cc-0.5.0.whl",'
         '"archive_info":{"hash":"sha256=safe"}}',
         "pip",
     )
