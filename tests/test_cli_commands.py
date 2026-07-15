@@ -112,8 +112,8 @@ class TestCLICommands:
         )
         message = _check_for_updates()
 
-        assert 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"' in message
-        assert "pipx upgrade supa.cc" not in message
+        assert "pipx upgrade supa.cc" in message
+        assert "git+https://" not in message
         assert "brew" not in message
 
     def test_update_check_never_invokes_subprocess(self):
@@ -471,7 +471,7 @@ class TestCLICommands:
         assert "Supabase CLI" in result.output
         assert "/safe/supabase" in result.output
         service_class.return_value.run.assert_called_once_with(
-            account=None, live=False
+            account=None, live=False, installation_check=False
         )
 
     def test_doctor_json_and_live_failure_exit(self):
@@ -502,8 +502,30 @@ class TestCLICommands:
         assert result.exit_code == 11
         assert '"token_rejected"' in result.output
         service_class.return_value.run.assert_called_once_with(
-            account="work", live=True
+            account="work", live=True, installation_check=False
         )
+
+    def test_doctor_installation_check_is_explicit_and_mutually_exclusive(self):
+        runner = CliRunner()
+        report = MagicMock(ok=True, exit_code=0)
+        report.to_human.return_value = "installation ready"
+        with patch("supa_cc.diagnostics.DiagnosticService") as service_class:
+            service_class.return_value.run.return_value = report
+            result = runner.invoke(main, ["doctor", "--installation-check"])
+
+        assert result.exit_code == 0
+        assert "installation ready" in result.output
+        service_class.return_value.run.assert_called_once_with(
+            account=None, live=False, installation_check=True
+        )
+
+        for arguments in (
+            ["doctor", "--installation-check", "--live"],
+            ["doctor", "--installation-check", "--account", "work"],
+        ):
+            conflict = runner.invoke(main, arguments)
+            assert conflict.exit_code == 2
+            assert "cannot be combined" in conflict.output.lower()
 
     def test_main_without_command_launches_tui(self):
         runner = CliRunner()

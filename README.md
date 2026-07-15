@@ -6,29 +6,22 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/supa.cc?label=PyPI)](https://pypi.org/project/supa.cc/)
 [![Python versions](https://img.shields.io/pypi/pyversions/supa.cc?label=Python)](https://pypi.org/project/supa.cc/)
-[![License](https://img.shields.io/github/license/dgabreuu/supa.cc?label=License)](LICENSE)
+[![License](https://img.shields.io/github/license/dgabreuu/supa.cc?label=License)](https://github.com/dgabreuu/supa.cc/blob/main/LICENSE)
 
-Supa.cc is a local CLI for managing multiple Supabase accounts without spreading Personal Access Tokens (PATs) across files or commands. After activation, the official `supabase` CLI uses the selected account.
+```text
+ ____
+/ ___| _   _ _ __   __ _   ___ ___
+\___ \| | | | '_ \ / _` | / __/ __|
+ ___) | |_| | |_) | (_| || (_| (__
+|____/ \__,_| .__/ \__,_(_)___\___|
+            |_|
+```
 
-## ✨ Why Supa.cc?
+Supa.cc manages multiple Supabase accounts locally while keeping Personal Access Tokens in Keychain, Secret Service, or Windows Credential Manager. The public source is available from the [official repository](https://github.com/dgabreuu/supa.cc.git).
 
-- **Switch accounts locally.** Move between Supabase accounts without changing your everyday CLI workflow.
-- **Use native credential storage.** PATs stay in Keychain, Secret Service, or Windows Credential Manager instead of local files.
-- **Keep using the official CLI.** Activate an account with Supa.cc, then run `supabase` normally.
+## Installation
 
-## 🧩 Supported platforms
-
-| Platform | Installation channel | Native credential store |
-| --- | --- | --- |
-| macOS | Homebrew | Keychain |
-| Debian/Ubuntu, Arch Linux, and Fedora | `pipx` | Secret Service |
-| Windows | `pipx` | Windows Credential Manager |
-
-Supa.cc requires Python 3.11+ and the [official Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) >= 2.109.1 on `PATH`. Linux derivatives are best-effort; a user D-Bus session and an unlocked Secret Service are required.
-
-## 📦 Installation
-
-Install the official Supabase CLI first, then choose the stable installation for your platform.
+Supa.cc requires Python 3.11+ and the [official Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) 2.109.1 or newer. The current stable release uses the following platform channels.
 
 ### macOS
 
@@ -50,54 +43,12 @@ pipx install supa.cc
 pipx install supa.cc
 ```
 
-See the [installation guide](docs/installation.md) for prerequisites, verification, upgrades, uninstallation, and platform-specific remediation.
+The [installation guide](https://github.com/dgabreuu/supa.cc/blob/main/docs/installation.md) covers the official bootstrap rollout, prerequisites, verification, upgrades, uninstallation, and platform-specific remediation.
 
-## 🚀 First use
+## Security
 
-1. Create a Personal Access Token on the [official Supabase token page](https://supabase.com/dashboard/account/tokens). Never put the PAT in commands, files, logs, or reports.
-2. Open the interactive interface:
+PATs are accepted only through hidden prompts, stored only in the platform-native credential store, and never passed as command-line arguments. Read the [security model](https://github.com/dgabreuu/supa.cc/blob/main/docs/security.md) and [safe troubleshooting guide](https://github.com/dgabreuu/supa.cc/blob/main/docs/troubleshooting.md) before sharing diagnostics or changing an installation.
 
-   ```bash
-   supa.cc
-   ```
+## License
 
-3. Choose **Add account**, enter a local name, provide the PAT in the hidden prompt, and then choose **Switch active account**.
-4. Verify the activated session:
-
-   ```bash
-   supabase projects list
-   ```
-
-Supa.cc validates the selected account before marking it active. The [usage guide](docs/usage.md) covers account management, isolated commands, diagnostics, and the complete command reference.
-
-## 🛠️ Essential commands
-
-| Command | Purpose |
-| --- | --- |
-| `supa.cc` | Open the interactive account switcher |
-| `supa.cc add <name>` | Add or update an account |
-| `supa.cc list` | List registered account names |
-| `supa.cc switch <name>` | Validate and activate an account |
-| `supa.cc remove <name> [--yes]` | Remove an account |
-| `supa.cc doctor` | Generate a local, non-live diagnostic |
-
-Use the [usage guide](docs/usage.md) for reset, isolated execution, live diagnostics, and all supported options.
-
-## 📚 Documentation
-
-| Guide | Covers |
-| --- | --- |
-| [Installation](docs/installation.md) | Prerequisites, stable channels, upgrades, and uninstallation |
-| [Usage](docs/usage.md) | TUI workflow, account commands, and diagnostics |
-| [Security model](docs/security.md) | Credential storage, activation, recovery, and platform limits |
-| [Troubleshooting](docs/troubleshooting.md) | Safe remediation for supported platforms |
-
-> 🔐 Supa.cc stores PATs only in each platform's native credential store and never passes them as command-line arguments. Read the [security model](docs/security.md) before sharing diagnostics or changing an installation.
-
-## 🤝 Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, native smoke tests, and contribution guidelines.
-
-## 📄 License
-
-Supa.cc is released under the MIT license. See the [full license](LICENSE).
+Supa.cc is released under the [MIT license](https://github.com/dgabreuu/supa.cc/blob/main/LICENSE).

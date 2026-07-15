@@ -1,6 +1,7 @@
 import inspect
 import os
 from subprocess import CompletedProcess
+from types import SimpleNamespace
 
 import pytest
 from keyring.errors import (
@@ -101,6 +102,18 @@ def fake_secret_service(monkeypatch):
         "Keyring",
         FakeSecretServiceKeyring,
     )
+    def fake_probe(backend, _secretstorage=None):
+        suffix = credentials.uuid4().hex
+        backend.get_password(
+            f"supa.cc.probe.{suffix}",
+            f"probe-{suffix}",
+        )
+
+    monkeypatch.setattr(
+        credentials,
+        "_probe_secret_service_without_unlock",
+        fake_probe,
+    )
     return FakeSecretServiceKeyring
 
 
@@ -194,6 +207,41 @@ def test_live_probe_is_opt_in_and_uses_an_isolated_namespace(fake_secret_service
     assert service != "supa.cc.supabase.accounts.v2"
     assert service.startswith("supa.cc.probe.")
     assert name.startswith("probe-")
+
+
+def test_linux_probe_never_unlocks_a_locked_secret_service_collection(monkeypatch):
+    class Connection:
+        def close(self):
+            pass
+
+    class Collection:
+        def __init__(self):
+            self.unlock_calls = 0
+            self.search_calls = 0
+
+        def is_locked(self):
+            return True
+
+        def unlock(self):
+            self.unlock_calls += 1
+
+        def search_items(self, _query):
+            self.search_calls += 1
+            return []
+
+    connection = Connection()
+    collection = Collection()
+    secretstorage = SimpleNamespace(
+        dbus_init=lambda: connection,
+        get_default_collection=lambda _connection: collection,
+    )
+    backend = SimpleNamespace(_query=lambda service, name: {service: name})
+
+    with pytest.raises(KeyringLocked):
+        credentials._probe_secret_service_without_unlock(backend, secretstorage)
+
+    assert collection.unlock_calls == 0
+    assert collection.search_calls == 0
 
 
 def test_darwin_selects_only_macos_backend(monkeypatch):

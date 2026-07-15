@@ -14,7 +14,12 @@ from supa_cc.auth import (
     AuthFailureCode,
     AuthResult,
 )
-from supa_cc.supabase_cli import SupabaseCLI as SupabaseConfig
+from supa_cc.supabase_cli import (
+    MINIMUM_VERSION_TEXT,
+    SupabaseCLI as SupabaseConfig,
+    SupabaseCLICompatibility,
+    SupabaseCLICompatibilityState,
+)
 from supa_cc.credentials import CredentialStoreStatus
 from supa_cc.diagnostics import DiagnosticService
 from supa_cc.diagnostic_collectors import collect_activation_consistency
@@ -719,6 +724,56 @@ def test_default_doctor_preserves_legacy_status_but_marks_availability_unverifie
     assert "(available)" not in human
     assert "(available)" not in human
     credential_store.probe.assert_not_called()
+
+
+def test_installation_check_runs_cli_and_isolated_credential_probe_once(tmp_path):
+    credential_store = Mock()
+    credential_store.service = "supa.cc.tests.credentials"
+    credential_store.probe.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.SecretService.Keyring",
+        available=True,
+        live_probed=True,
+    )
+    manager = Mock()
+    manager.keychain = Mock()
+    manager.active_store = Mock()
+    manager.keychain.index_path = tmp_path / "accounts.json"
+    manager.active_store.read.return_value = None
+    manager.config = Mock(
+        supabase_cli_invoked=None,
+        supabase_cli=None,
+    )
+    manager.config.inspect_compatibility.return_value = SupabaseCLICompatibility(
+        state=SupabaseCLICompatibilityState.COMPATIBLE,
+        minimum_version=MINIMUM_VERSION_TEXT,
+        version="2.109.1",
+        result=AuthResult.success("Supabase CLI is compatible."),
+    )
+
+    report = _service(
+        tmp_path,
+        manager=manager,
+        credential_store=credential_store,
+        environment=detect_environment(
+            system_name="Linux", os_release="ID=ubuntu\n"
+        ),
+    ).run(installation_check=True)
+
+    assert report.supabase_cli["minimum_version"] == "2.109.1"
+    assert report.supabase_cli["compatibility"] == "compatible"
+    assert report.credentials["availability"] == "available"
+    manager.config.inspect_compatibility.assert_called_once_with()
+    credential_store.probe.assert_called_once_with()
+    credential_store.status.assert_not_called()
+    manager.get.assert_not_called()
+    manager.validate_named_account.assert_not_called()
+
+
+def test_default_doctor_marks_cli_compatibility_not_checked(tmp_path):
+    report = _service(tmp_path).run()
+
+    assert report.supabase_cli["minimum_version"] == "2.109.1"
+    assert report.supabase_cli["compatibility"] == "not_checked"
 
 
 def test_linux_doctor_human_output_reports_distribution_and_remediation(

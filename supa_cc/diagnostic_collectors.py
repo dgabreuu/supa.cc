@@ -28,6 +28,7 @@ from .installation import detect_installation_channel, installation_guidance
 from .native_session import access_token_fallback_path
 from .state import read_text
 from .diagnostic_renderers import render_human, render_json, report_to_dict
+from .supabase_cli import MINIMUM_VERSION_TEXT
 
 
 BackendResolver = Callable[[], str]
@@ -360,7 +361,9 @@ class DiagnosticService:
             self._manager = AccountService()
         return self._manager
 
-    def _environment_blocked_report(self) -> DoctorReport:
+    def _environment_blocked_report(
+        self, *, installation_check: bool = False
+    ) -> DoctorReport:
         guidance = installation_guidance(self.environment)
         launcher_invoked = _safe_invoked_path(self.launcher_path)
         launcher_realpath = _safe_realpath(self.launcher_path)
@@ -400,6 +403,10 @@ class DiagnosticService:
                 "version": "unknown",
                 "provenance": "unknown",
                 "signature": {"status": "not_applicable"},
+                "minimum_version": MINIMUM_VERSION_TEXT,
+                "compatibility": (
+                    "blocked" if installation_check else "not_checked"
+                ),
             },
             keychain_service=KEYCHAIN_SERVICE,
             keychain_backend="unavailable",
@@ -441,9 +448,12 @@ class DiagnosticService:
         self,
         account: Optional[str] = None,
         live: bool = False,
+        installation_check: bool = False,
     ) -> DoctorReport:
         if not self.environment.is_supported:
-            return self._environment_blocked_report()
+            return self._environment_blocked_report(
+                installation_check=installation_check
+            )
 
         manager = self._get_manager()
         uses_versioned_state = isinstance(manager, AccountService)
@@ -501,9 +511,20 @@ class DiagnosticService:
         credential_status = None
         if credential_store is not None:
             try:
-                status = credential_store.status()
+                status = (
+                    credential_store.probe()
+                    if installation_check
+                    else credential_store.status()
+                )
             except Exception:
-                status = None
+                status = CredentialStoreStatus(
+                    backend_name="unavailable",
+                    available=False,
+                    message=(
+                        "The native credential store could not be verified."
+                    ),
+                    live_probed=installation_check,
+                )
             if isinstance(status, CredentialStoreStatus):
                 credential_status = status
 
@@ -525,8 +546,23 @@ class DiagnosticService:
             self.signature_resolver,
             self.environment,
         )
+        cli_identity["minimum_version"] = MINIMUM_VERSION_TEXT
+        cli_identity["compatibility"] = "not_checked"
+        if installation_check:
+            compatibility = cli.inspect_compatibility()
+            cli_identity["minimum_version"] = compatibility.minimum_version
+            cli_identity["compatibility"] = compatibility.state.value
+            if compatibility.version is not None:
+                cli_identity["version"] = compatibility.version
+            if not compatibility.result.ok:
+                code = compatibility.result.code.value
+                if code not in codes:
+                    codes.append(code)
+                ok = False
+                exit_code = compatibility.result.exit_code or 1
         if cli_identity["realpath"] is None:
-            codes.append(AuthFailureCode.CLI_NOT_FOUND.value)
+            if AuthFailureCode.CLI_NOT_FOUND.value not in codes:
+                codes.append(AuthFailureCode.CLI_NOT_FOUND.value)
             ok = False
             exit_code = 1
 

@@ -77,6 +77,8 @@ def render_human(report) -> str:
         identity_line("Python", python.get("invoked"), python.get("realpath"), python.get("signature")),
         identity_line("Supabase CLI", report.supabase_cli.get("invoked") or cli_path, report.supabase_cli.get("realpath") or cli_path, report.supabase_cli.get("signature")),
         f"Supabase CLI version: {report.supabase_cli.get('version') or 'unknown'}",
+        f"Supabase CLI minimum version: {report.supabase_cli.get('minimum_version') or 'unknown'}",
+        f"Supabase CLI compatibility: {report.supabase_cli.get('compatibility') or 'not_checked'}",
         f"Provenance: {report.supabase_cli.get('provenance') or 'unknown'}",
         f"Credential store: {report.credentials.get('backend', report.keychain_backend)} ({credential_state})",
         f"Index: {report.index.get('state')} ({report.index.get('account_count', 0)} accounts)",

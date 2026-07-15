@@ -8,12 +8,18 @@ from .environment import Environment, LinuxDistribution, OperatingSystem
 
 
 DEBIAN = (
-    "sudo apt install python3 python3-venv pipx gnome-keyring libsecret-tools"
+    "sudo apt install python3 python3-venv pipx gnome-keyring "
+    "curl ca-certificates tar"
 )
-ARCH = "sudo pacman -S python python-pipx gnome-keyring libsecret"
-FEDORA = "sudo dnf install python3 pipx gnome-keyring libsecret"
-VCS_INSTALL = 'pipx install "git+https://github.com/dgabreuu/supa.cc.git"'
-VCS_UPDATE = 'pipx install --force "git+https://github.com/dgabreuu/supa.cc.git"'
+ARCH = (
+    "sudo pacman -S python python-pipx gnome-keyring "
+    "curl ca-certificates tar"
+)
+FEDORA = (
+    "sudo dnf install python3 pipx gnome-keyring curl ca-certificates tar"
+)
+PIPX_INSTALL = "pipx install supa.cc"
+PIPX_UPDATE = "pipx upgrade supa.cc"
 HOMEBREW_TAP = "dgabreuu/supa-cc"
 HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
 HOMEBREW_TAP_COMMAND = (
@@ -31,6 +37,22 @@ class InstallationGuidance:
     remediation: str
 
 
+class RequirementState(str, Enum):
+    AVAILABLE = "available"
+    MISSING = "missing"
+    OUTDATED = "outdated"
+    BLOCKED = "blocked"
+    ACTION_REQUIRED = "action_required"
+
+
+@dataclass(frozen=True)
+class InstallationRequirement:
+    name: str
+    state: RequirementState
+    message: str
+    remediation: str = ""
+
+
 class InstallationChannel(str, Enum):
     HOMEBREW = "homebrew"
     PIPX = "pipx"
@@ -39,6 +61,27 @@ class InstallationChannel(str, Enum):
     WHEEL = "wheel"
     PACKAGE = "package"
     UNKNOWN = "unknown"
+
+
+def expected_installation_channel(environment: Environment) -> InstallationChannel:
+    if environment.operating_system is OperatingSystem.MACOS:
+        return InstallationChannel.HOMEBREW
+    if environment.operating_system in {
+        OperatingSystem.LINUX,
+        OperatingSystem.WINDOWS,
+    }:
+        return InstallationChannel.PIPX
+    return InstallationChannel.UNKNOWN
+
+
+def installation_channel_conflict(
+    environment: Environment, channel: InstallationChannel
+) -> bool:
+    """Return whether a bootstrap would overwrite a different install channel."""
+    if channel is InstallationChannel.UNKNOWN:
+        return False
+    expected = expected_installation_channel(environment)
+    return expected is not InstallationChannel.UNKNOWN and channel is not expected
 
 
 def detect_installation_channel(
@@ -86,32 +129,36 @@ def installation_guidance(
 ) -> InstallationGuidance:
     if environment.operating_system is OperatingSystem.MACOS:
         if channel in {
-            InstallationChannel.PIPX,
             InstallationChannel.EDITABLE,
             InstallationChannel.VCS,
+        }:
+            update_hint = (
+                "Keep this development installation isolated or remove it before "
+                "installing the stable Homebrew formula."
+            )
+        elif channel in {
+            InstallationChannel.PIPX,
             InstallationChannel.WHEEL,
             InstallationChannel.PACKAGE,
         }:
-            update_hint = VCS_UPDATE
+            update_hint = (
+                "Remove this non-Homebrew installation before installing the "
+                "stable Homebrew formula."
+            )
         elif channel is InstallationChannel.HOMEBREW:
             update_hint = f"{HOMEBREW_UPDATE} or {HOMEBREW_HEAD_UPDATE}"
         else:
-            update_hint = (
-                f"{HOMEBREW_UPDATE} or {HOMEBREW_HEAD_UPDATE}; "
-                f"for pipx: {VCS_UPDATE}"
-            )
+            update_hint = f"{HOMEBREW_UPDATE} or {HOMEBREW_HEAD_UPDATE}"
         return InstallationGuidance(
-            install_hint=(
-                f"{HOMEBREW_TAP_COMMAND} && {HOMEBREW_INSTALL}; or {VCS_INSTALL}"
-            ),
+            install_hint=f"{HOMEBREW_TAP_COMMAND} && {HOMEBREW_INSTALL}",
             update_hint=update_hint,
             remediation="Check whether the macOS credential store is available.",
         )
 
     if environment.operating_system is OperatingSystem.WINDOWS:
         return InstallationGuidance(
-            install_hint=VCS_INSTALL,
-            update_hint=VCS_UPDATE,
+            install_hint=PIPX_INSTALL,
+            update_hint=PIPX_UPDATE,
             remediation=(
                 "Check whether Windows Credential Manager is available "
                 "for the user session."
@@ -127,8 +174,8 @@ def installation_guidance(
     command = commands.get(environment.distribution)
     if command is not None:
         return InstallationGuidance(
-            install_hint=f"Prerequisites (informational only): {command}; {VCS_INSTALL}",
-            update_hint=VCS_UPDATE,
+            install_hint=f"Prerequisites (informational only): {command}; {PIPX_INSTALL}",
+            update_hint=PIPX_UPDATE,
             remediation=(
                 "Install the listed prerequisites and verify that the Secret "
                 "Service is available and unlocked."
@@ -137,6 +184,6 @@ def installation_guidance(
 
     return InstallationGuidance(
         install_hint="This Linux system is not supported for automatic installation.",
-        update_hint=VCS_UPDATE,
+        update_hint=PIPX_UPDATE,
         remediation="Use a supported Linux distribution and configure a compatible credential store.",
     )

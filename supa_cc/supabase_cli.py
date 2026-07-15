@@ -3,6 +3,8 @@ import re
 import shutil
 import stat
 import sys
+from dataclasses import dataclass
+from enum import Enum
 from typing import Callable, Mapping, Optional, Sequence
 
 from .auth import (ACCESS_TOKEN_PREFIX, AuthFailureCode, AuthResult, CommandResult,
@@ -62,6 +64,7 @@ def _has_trusted_path_ancestors(path: str) -> bool:
 BinaryResolver = Callable[[str], Optional[str]]
 AUTH_VALIDATION_TIMEOUT_SECONDS = 30
 MINIMUM_VERSION = (2, 109, 1)
+MINIMUM_VERSION_TEXT = ".".join(str(part) for part in MINIMUM_VERSION)
 _SENSITIVE_ARGUMENTS = ("--token", "--access-token")
 _VERSION_LINE = re.compile(r"^(?:supabase\s+version\s+)?(\d+)\.(\d+)\.(\d+)$", re.IGNORECASE)
 _UNAUTHORIZED = re.compile(r"(?<!\d)401(?!\d)|\bunauthorized\b", re.IGNORECASE)
@@ -121,6 +124,22 @@ _MESSAGES = {
     AuthFailureCode.NATIVE_VERIFICATION_FAILED: "The Supabase CLI could not recover its persisted session.",
     AuthFailureCode.NATIVE_LOGOUT_FAILED: "The Supabase CLI could not end the native session.",
 }
+
+
+class SupabaseCLICompatibilityState(str, Enum):
+    COMPATIBLE = "compatible"
+    MISSING = "missing"
+    INCOMPATIBLE = "incompatible"
+    BLOCKED = "blocked"
+    NOT_CHECKED = "not_checked"
+
+
+@dataclass(frozen=True)
+class SupabaseCLICompatibility:
+    state: SupabaseCLICompatibilityState
+    minimum_version: str
+    version: Optional[str]
+    result: AuthResult
 
 
 def _contains_keychain_denial(normalized: str) -> bool:
@@ -514,11 +533,42 @@ class SupabaseCLI:
         env = self._native_environment(None)
         return self._run(["--version"], env, timeout_seconds=self.validation_timeout_seconds)
 
-    def preflight(self) -> AuthResult:
+    def inspect_compatibility(self) -> SupabaseCLICompatibility:
         result = self._version_command()
         if not result.ok:
-            return AuthResult.failure(result.code, result.message, exit_code=result.exit_code)
-        version = _parse_version(result.stdout, result.stderr)
-        if version is None or version < MINIMUM_VERSION:
-            return AuthResult.failure(AuthFailureCode.CLI_INCOMPATIBLE, "The installed Supabase CLI version is incompatible.")
-        return AuthResult.success("Supabase CLI is compatible.")
+            state = (
+                SupabaseCLICompatibilityState.MISSING
+                if result.code is AuthFailureCode.CLI_NOT_FOUND
+                else SupabaseCLICompatibilityState.BLOCKED
+            )
+            return SupabaseCLICompatibility(
+                state=state,
+                minimum_version=MINIMUM_VERSION_TEXT,
+                version=None,
+                result=AuthResult.failure(
+                    result.code, result.message, exit_code=result.exit_code
+                ),
+            )
+
+        parsed = _parse_version(result.stdout, result.stderr)
+        version = ".".join(str(part) for part in parsed[:3]) if parsed else None
+        if parsed is None or parsed < MINIMUM_VERSION:
+            compatibility = AuthResult.failure(
+                AuthFailureCode.CLI_INCOMPATIBLE,
+                "The installed Supabase CLI version is incompatible.",
+            )
+            return SupabaseCLICompatibility(
+                state=SupabaseCLICompatibilityState.INCOMPATIBLE,
+                minimum_version=MINIMUM_VERSION_TEXT,
+                version=version,
+                result=compatibility,
+            )
+        return SupabaseCLICompatibility(
+            state=SupabaseCLICompatibilityState.COMPATIBLE,
+            minimum_version=MINIMUM_VERSION_TEXT,
+            version=version,
+            result=AuthResult.success("Supabase CLI is compatible."),
+        )
+
+    def preflight(self) -> AuthResult:
+        return self.inspect_compatibility().result

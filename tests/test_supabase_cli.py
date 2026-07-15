@@ -7,7 +7,11 @@ import pytest
 import supa_cc.supabase_cli as supabase_cli
 from supa_cc.auth import AuthFailureCode, CommandResult
 from supa_cc.models import Account
-from supa_cc.supabase_cli import SupabaseCLI
+from supa_cc.supabase_cli import (
+    MINIMUM_VERSION_TEXT,
+    SupabaseCLI,
+    SupabaseCLICompatibilityState,
+)
 
 from helpers import fake_pat
 
@@ -346,6 +350,45 @@ def test_preflight_accepts_minimum_version(tmp_path):
         result = cli.preflight()
 
     assert result.ok is True
+
+
+@pytest.mark.parametrize(
+    ("command_result", "state"),
+    [
+        (
+            CommandResult.failure(
+                AuthFailureCode.CLI_NOT_FOUND, "Supabase CLI not found."
+            ),
+            SupabaseCLICompatibilityState.MISSING,
+        ),
+        (
+            CommandResult.failure(
+                AuthFailureCode.ENVIRONMENT_BLOCKED, "Execution is blocked."
+            ),
+            SupabaseCLICompatibilityState.BLOCKED,
+        ),
+        (
+            CommandResult.success(stdout="2.109.0"),
+            SupabaseCLICompatibilityState.INCOMPATIBLE,
+        ),
+        (
+            CommandResult.success(stdout="2.109.1"),
+            SupabaseCLICompatibilityState.COMPATIBLE,
+        ),
+    ],
+)
+def test_inspect_compatibility_has_explicit_sanitized_states(
+    tmp_path, command_result, state
+):
+    cli = SupabaseCLI(binary_resolver=lambda _: str(_executable(tmp_path)))
+
+    with patch.object(cli, "_version_command", return_value=command_result) as command:
+        compatibility = cli.inspect_compatibility()
+
+    assert compatibility.state is state
+    assert compatibility.minimum_version == MINIMUM_VERSION_TEXT == "2.109.1"
+    assert compatibility.version in {"2.109.0", "2.109.1", None}
+    command.assert_called_once_with()
 
 
 def test_native_login_uses_captured_sanitized_environment_and_explicit_profile(

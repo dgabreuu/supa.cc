@@ -274,6 +274,15 @@ def test_ci_has_least_privilege_cross_platform_build_and_security_jobs():
     assert "wheel-test/bin/supa.cc version" in workflow
 
 
+def test_ci_validates_public_installers_with_native_shells():
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert "bash -n install.sh" in workflow
+    assert "bash install.sh --dry-run --yes" in workflow
+    assert "System.Management.Automation.Language.Parser" in workflow
+    assert ".\\install.ps1 -DryRun -Yes" in workflow
+
+
 def test_windows_ci_runs_full_suite_without_claiming_real_vault_coverage():
     workflow = yaml.safe_load(Path(".github/workflows/ci.yml").read_text(encoding="utf-8"))
     steps = workflow["jobs"]["test-build"]["steps"]

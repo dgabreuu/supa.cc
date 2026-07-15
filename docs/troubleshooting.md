@@ -9,9 +9,30 @@ supa.cc doctor --json
 
 It does not open a PAT or test credential-store availability; it shows only the configured backend. Standard `doctor` output is safe to share because account names are reduced to selected/indexed booleans and local paths are sanitized. Never share live diagnostic output, complete environments, or credential-store dumps without reviewing them separately.
 
+After installing or repairing requirements, use the explicit local installation check:
+
+```bash
+supa.cc doctor --installation-check
+supa.cc doctor --installation-check --json
+```
+
+This mode runs `supabase --version`, compares it with the minimum supported version, and probes an isolated native credential-store entry without reading any account or PAT. It cannot be combined with `--live` or `--account`.
+
+## Installer bootstrap
+
+Start with the installer's dry-run and review its complete plan. The POSIX script requires `/dev/tty` for its one confirmation; when execution is intentionally non-interactive, review the tagged script first and pass `--yes`. PowerShell uses the equivalent `-DryRun` and `-Yes` options.
+
+A checksum error is final. Do not bypass it, substitute an unofficial mirror, or extract the archive manually. Retry only after confirming the tagged installer still points to the expected official release. A download, system-package, Python, Homebrew, `pipx`, or final-validation failure identifies its phase and stops without trying an unverified alternative.
+
+If the installer reports a conflicting channel, inspect `supa.cc doctor` and remove the Homebrew, `pipx`, editable, VCS, wheel, or package-manager installation that is not the platform's stable channel. The bootstrap never migrates or overwrites a different channel automatically.
+
+The installers update `PATH` in the current process whenever technically possible. If the final executable is still not found, run `pipx ensurepath` through the selected Python on Linux or Windows, or load `brew shellenv` on macOS, then retry from a normal user session. Do not add an unknown executable directory merely to silence the check.
+
+“Installed, but environment still blocked” means the packages and executables passed installation but the native credential store could not complete its isolated probe. Unlock Keychain through macOS, restore a real user D-Bus and unlocked Secret Service collection on Linux, or use Windows Credential Manager from the same interactive user session, then rerun `supa.cc doctor --installation-check`. The installer does not unlock stores, create Secret Service collections, alter ACLs, or change system policy.
+
 ## Safe reinstallation
 
-Before reinstalling, record the installation channel, provenance, and version shown by the diagnostic. Do not keep Homebrew, `pipx`, and editable installations active simultaneously on `PATH`. Preserve invalid state for diagnostics and remember that reinstalling does not remove native credentials. If a completely clean Supa.cc state is intentional, run `supa.cc reset --all` before uninstalling; it is safer than guessing native credential identifiers.
+Before reinstalling, record the installation channel, provenance, and version shown by the diagnostic. Do not keep Homebrew, `pipx`, editable, VCS, wheel, and package-manager installations active simultaneously on `PATH`. Preserve invalid state for diagnostics and remember that reinstalling does not remove native credentials. If a completely clean Supa.cc state is intentional, run `supa.cc reset --all` before uninstalling; it is safer than guessing native credential identifiers.
 
 ## macOS
 
@@ -79,7 +100,7 @@ If `pipx` or `supa.cc` is not on `PATH`, run this in PowerShell:
 py -m pipx ensurepath
 ```
 
-Close and reopen PowerShell. `%APPDATA%` must be defined as an absolute path; secret-free metadata is stored in `%APPDATA%\supa.cc`. Missing or relative paths cause a safe failure.
+Add the directory reported by `pipx` to the current session only if the bootstrap could not do so, or open a new PowerShell after `ensurepath`. `%APPDATA%` must be defined as an absolute path; secret-free metadata is stored in `%APPDATA%\supa.cc`. Missing or relative paths cause a safe failure.
 
 ## Inherited variables
 

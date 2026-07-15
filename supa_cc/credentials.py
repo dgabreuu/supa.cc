@@ -269,15 +269,39 @@ def _probe_secret_service_provider() -> None:
     SecretService.Keyring.priority
 
 
+def _probe_secret_service_without_unlock(backend, secretstorage_module=None) -> None:
+    """Check the default collection without prompting for or changing its lock."""
+    storage = (
+        getattr(SecretService, "secretstorage")
+        if secretstorage_module is None
+        else secretstorage_module
+    )
+    connection = storage.dbus_init()
+    try:
+        if hasattr(backend, "preferred_collection"):
+            collection = storage.Collection(
+                connection, backend.preferred_collection
+            )
+        else:
+            collection = storage.get_default_collection(connection)
+        if collection.is_locked():
+            raise KeyringLocked("The Secret Service collection is locked.")
+        suffix = uuid4().hex
+        collection.search_items(
+            backend._query(
+                f"supa.cc.probe.{suffix}",
+                f"probe-{suffix}",
+            )
+        )
+    finally:
+        connection.close()
+
+
 def _probe_backend(backend, backend_name: str) -> CredentialStoreStatus:
     try:
         if backend_name == _SECRET_SERVICE_BACKEND_NAME:
             _probe_secret_service_provider()
-            suffix = uuid4().hex
-            backend.get_password(
-                f"supa.cc.probe.{suffix}",
-                f"probe-{suffix}",
-            )
+            _probe_secret_service_without_unlock(backend)
         elif backend_name == _MACOS_BACKEND_NAME:
             macOS.Keyring.priority
             suffix = uuid4().hex

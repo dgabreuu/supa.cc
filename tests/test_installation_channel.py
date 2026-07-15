@@ -2,6 +2,7 @@ from supa_cc.environment import detect_environment
 from supa_cc.installation import (
     InstallationChannel,
     detect_installation_channel,
+    installation_channel_conflict,
     installation_guidance,
 )
 
@@ -65,11 +66,38 @@ def test_detects_homebrew_from_runtime_prefix():
     assert channel is InstallationChannel.HOMEBREW
 
 
+def test_detects_pipx_runtime_and_package_installer_metadata():
+    pipx = detect_installation_channel(
+        distribution=FakeDistribution(installer="pip"),
+        executable="/safe/pipx/venvs/supa-cc/bin/python",
+    )
+    package = detect_installation_channel(
+        distribution=FakeDistribution(installer="pip"),
+        executable="/safe/python",
+    )
+
+    assert pipx is InstallationChannel.PIPX
+    assert package is InstallationChannel.PACKAGE
+
+
 def test_macos_editable_update_guidance_does_not_recommend_brew_upgrade():
     guidance = installation_guidance(
         detect_environment(system_name="Darwin"),
         channel=InstallationChannel.EDITABLE,
     )
 
-    assert "pipx install --force" in guidance.update_hint
+    assert "development installation" in guidance.update_hint
     assert "brew upgrade" not in guidance.update_hint
+
+
+def test_refuses_to_overlay_a_different_supported_installation_channel():
+    macos = detect_environment(system_name="Darwin")
+    linux = detect_environment(system_name="Linux", os_release="ID=ubuntu\n")
+    windows = detect_environment(system_name="Windows")
+
+    assert installation_channel_conflict(macos, InstallationChannel.PIPX)
+    assert installation_channel_conflict(linux, InstallationChannel.HOMEBREW)
+    assert installation_channel_conflict(windows, InstallationChannel.WHEEL)
+    assert not installation_channel_conflict(macos, InstallationChannel.HOMEBREW)
+    assert not installation_channel_conflict(linux, InstallationChannel.PIPX)
+    assert not installation_channel_conflict(windows, InstallationChannel.UNKNOWN)

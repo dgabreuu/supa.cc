@@ -1,16 +1,30 @@
 # Installation
 
-This guide covers prerequisites and the complete installation lifecycle for each platform. Stable commands are instructions for releases published through the respective channel.
+This guide covers the supported installation lifecycle. Supa.cc requires Python 3.11+ and the [official Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) 2.109.1 or newer.
 
-On every platform, install the [official Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) >= 2.109.1 first and confirm that `supabase` is on `PATH`. Supa.cc requires Python 3.11+.
+## Official bootstrap rollout
+
+`install.sh` and `install.ps1` make the installation self-sufficient: they inspect the environment, reject conflicting installation channels, show one plan, request at most one installation confirmation, install missing requirements, update the current session's `PATH`, and finish with `supa.cc doctor --installation-check`.
+
+The public bootstrap URL must always use a release tag that already contains the reviewed scripts. It must never point to `main`, `HEAD`, a branch, or an unpublished tag. Until the first such stable release is published, use the current stable manual channels documented below. During that release, replace `<release-tag>` in these commands with the newly published immutable tag and then promote them to the README:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/<release-tag>/install.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/dgabreuu/supa.cc/<release-tag>/install.ps1 | iex
+```
+
+Use `--dry-run` or `-DryRun` from a downloaded script when the plan must be reviewed without changes. `--yes` and `-Yes` skip only Supa.cc's confirmation; administrator passwords and native operating-system prompts remain under system control. The POSIX installer reads confirmation from `/dev/tty`, so a piped non-interactive run must use `--yes` after review.
+
+Downloads come only from the official Homebrew, Python, Supabase, PyPI, and project sources. Release archives require their official SHA-256 checksum. Temporary files are removed on success and failure. Neither installer creates, unlocks, weakens, or replaces a native credential store.
 
 ## Installation by platform
 
 ### Homebrew (macOS only)
 
-#### Prerequisites
-
-Install Homebrew and the official Supabase CLI. The stable channel uses Homebrew and stores PATs in Keychain.
+The stable manual channel is Homebrew and stores PATs in Keychain. The bootstrap can install Homebrew from a reviewed immutable revision, load `brew shellenv`, and install the two fully qualified formulae. An administrator password or the normal Homebrew installer interaction may still be required.
 
 #### Install
 
@@ -20,16 +34,16 @@ brew install supabase/tap/supabase
 brew install dgabreuu/supa-cc/supa-cc
 ```
 
-The fully qualified formula names record trust only for the Supabase CLI and
-Supa.cc while leaving both non-official taps untrusted. Run the Supabase CLI
-command even when it is already installed so Homebrew records its formula-scoped
-trust before evaluating Supa.cc's dependency.
+Fully qualified formula names keep trust limited to the selected Supabase CLI and Supa.cc formulae. Do not trust the complete tap or disable Homebrew's trust protection.
 
 #### Verify
 
 ```bash
 supa.cc --version
+supa.cc doctor --installation-check
 ```
+
+The installation check executes `supabase --version` and performs an isolated Keychain availability probe. It does not read an account or PAT. A locked Keychain must be unlocked through macOS before retrying.
 
 #### Upgrade
 
@@ -39,34 +53,32 @@ brew upgrade dgabreuu/supa-cc/supa-cc
 
 #### Uninstall
 
-To remove Supa.cc accounts and PATs intentionally before uninstalling, run `supa.cc reset --all`. Package removal alone preserves credentials.
+Run `supa.cc reset --all` first only when the intent is to remove Supa.cc accounts and native credentials. Package removal alone preserves them.
 
 ```bash
 brew uninstall supa-cc
 ```
 
-The installed Python runtime accesses Keychain. A path, environment, or signature change may request one new authorization; repeated prompts without a change should be diagnosed, not bypassed.
-
 ### Linux (pipx only)
 
-Debian/Ubuntu, Arch Linux, and Fedora are supported; derivatives are best-effort. The stable installation is available only through `pipx`.
+Debian 12+, Ubuntu 24.04+, Arch Linux, and Fedora are supported. These minimum Debian/Ubuntu releases guarantee a distribution Python that satisfies Python 3.11+ without introducing an unofficial runtime source. Derivatives are best-effort. The stable package channel is PyPI through `pipx`; PATs remain in Secret Service on the user-session D-Bus.
 
-#### Prerequisites
+The bootstrap uses a shared flow with distribution-specific package data. It installs Python, venv support where needed, `pipx`, GNOME Keyring, download tools, and CA certificates. The Python `keyring` dependency already supplies SecretStorage and Jeepney, so `libsecret-tools` and separate `libsecret` packages are not installed explicitly.
 
-Install Python, `pipx`, Secret Service, and its tools with your distribution's command:
+Manual prerequisite commands are available as an advanced fallback:
 
 ```bash
 # Debian or Ubuntu
-sudo apt install python3 python3-venv pipx gnome-keyring libsecret-tools
+sudo apt install python3 python3-venv pipx gnome-keyring curl ca-certificates tar
 
 # Arch Linux
-sudo pacman -S python python-pipx gnome-keyring libsecret
+sudo pacman -S python python-pipx gnome-keyring curl ca-certificates tar
 
 # Fedora
-sudo dnf install python3 pipx gnome-keyring libsecret
+sudo dnf install python3 pipx gnome-keyring curl ca-certificates tar
 ```
 
-Run `pipx ensurepath` and reopen the shell if instructed. A user D-Bus and an unlocked Secret Service are required. Headless sessions without these services fail safely, without plaintext, `keyrings.alt`, or an alternative backend.
+The bootstrap downloads the official x64 or arm64 Supabase CLI archive and `checksums.txt`, requires a matching SHA-256, and installs it in the user's executable directory. It runs `pipx ensurepath` and updates the current session so reopening the shell is normally unnecessary.
 
 #### Install
 
@@ -78,7 +90,10 @@ pipx install supa.cc
 
 ```bash
 supa.cc --version
+supa.cc doctor --installation-check
 ```
+
+A real user D-Bus session and an unlocked Secret Service collection are required. The installer never creates or unlocks a collection. In a headless session, container, or incomplete login session, it stops safely with a remediation and retry instruction—never with plaintext, `keyrings.alt`, or a fallback backend.
 
 #### Upgrade
 
@@ -88,29 +103,27 @@ pipx upgrade supa.cc
 
 #### Uninstall
 
-Optionally run `supa.cc reset --all` first when the intent is to remove all Supa.cc credentials and state. `pipx uninstall` alone preserves them.
+Run `supa.cc reset --all` first only when native credentials should also be removed.
 
 ```bash
 pipx uninstall supa.cc
 ```
 
-After installation, run `supa.cc doctor`. Secret-free state is stored in `$XDG_CONFIG_HOME/supa.cc` when the variable is defined, or in `~/.config/supa.cc`.
+Secret-free state is stored in `$XDG_CONFIG_HOME/supa.cc` when defined, otherwise in `~/.config/supa.cc`.
 
 ### Windows (pipx only)
 
-The stable installation is available only through `pipx`. PATs are stored in Windows Credential Manager exclusively through the `WinVaultKeyring` backend; secret-free metadata is stored in `%APPDATA%\supa.cc`.
+The stable package channel is PyPI through `pipx`; PATs remain in Windows Credential Manager through `WinVaultKeyring` and secret-free metadata remains under `%APPDATA%\supa.cc`.
 
-#### Prerequisites in PowerShell
+The bootstrap reuses Python 3.11+ when available. Otherwise it installs Python for the current user with `winget`; if `winget` is unavailable, it downloads a fixed official Python x64 or arm64 installer and requires its pinned SHA-256 before silent execution. It then installs `pipx`, updates both the persistent user `PATH` and current PowerShell session, downloads and verifies the official Supabase CLI archive, and installs Supa.cc from PyPI without requiring a PowerShell restart.
 
-Install Python 3.11+ for the current user and the official Supabase CLI. Then install and configure `pipx`:
+Manual setup is available as an advanced fallback:
 
 ```powershell
 py -m pip install --user pipx
 py -m pipx ensurepath
 ```
 
-Close and reopen PowerShell to apply `PATH`. Confirm that `pipx` and `supabase` are found before continuing. `%APPDATA%` must exist and be an absolute path.
-
 #### Install
 
 ```powershell
@@ -121,7 +134,10 @@ pipx install supa.cc
 
 ```powershell
 supa.cc --version
+supa.cc doctor --installation-check
 ```
+
+The installation check probes Windows Credential Manager without reading or modifying existing credentials, ACLs, or policy.
 
 #### Upgrade
 
@@ -131,14 +147,14 @@ pipx upgrade supa.cc
 
 #### Uninstall
 
-Optionally run `supa.cc reset --all` first when the intent is to remove all Supa.cc credentials and state. `pipx uninstall` alone preserves them.
+Run `supa.cc reset --all` first only when native credentials should also be removed.
 
 ```powershell
 pipx uninstall supa.cc
 ```
 
-If `supa.cc` is not found after reopening the shell, run `py -m pipx ensurepath` again and see [Troubleshooting](troubleshooting.md#windows).
-
 ## After installation
 
-Follow [first use with the TUI](usage.md#first-use-with-the-tui). The default diagnostic shows the backend as configured but not verified: it does not test D-Bus or open credential storage. Before changing the installation method, follow [safe reinstallation](troubleshooting.md#safe-reinstallation). Details about Keychain, Secret Service, and Credential Manager are in [Troubleshooting](troubleshooting.md); state and rollback guarantees are in [Security](security.md).
+Continue with [first use](usage.md#first-use-with-the-tui). The default `supa.cc doctor` remains non-live and does not probe credential availability; only `--installation-check` performs the isolated local probe. It is incompatible with `--live` and `--account` and can be combined with `--json`.
+
+Before changing channels, follow [safe reinstallation](troubleshooting.md#safe-reinstallation). Credential-store and blocked-environment remediation is documented in [Troubleshooting](troubleshooting.md), and state guarantees are documented in [Security](security.md).

@@ -174,13 +174,22 @@ def run(arguments):
 @main.command()
 @click.option("--account", type=str, default=None)
 @click.option("--live", is_flag=True, default=False)
+@click.option("--installation-check", is_flag=True, default=False)
 @click.option("--json", "as_json", is_flag=True, default=False)
-def doctor(account, live, as_json):
+def doctor(account, live, installation_check, as_json):
     """Diagnose executables, the index, the environment, and optional authentication."""
     from .diagnostics import DiagnosticService
 
+    if installation_check and (live or account is not None):
+        raise click.UsageError(
+            "--installation-check cannot be combined with --live or --account."
+        )
     try:
-        report = DiagnosticService().run(account=account, live=live)
+        report = DiagnosticService().run(
+            account=account,
+            live=live,
+            installation_check=installation_check,
+        )
     except Exception as error:
         _exit_with_local_failure(error)
     click.echo(report.to_json() if as_json else report.to_human())

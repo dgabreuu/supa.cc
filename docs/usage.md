@@ -60,10 +60,12 @@ supa.cc run -- projects list
 ```bash
 supa.cc doctor
 supa.cc doctor --json
+supa.cc doctor --installation-check
+supa.cc doctor --installation-check --json
 supa.cc doctor --account <name> --live
 ```
 
-The first two commands are non-live and do not open a token. Their standard human and JSON output omits the account name and sanitizes local paths. In JSON, `active_account` is an object with the booleans `selected` and `indexed`; executable path objects include `path_relation`. `--live` requires `--account` and authorizes reading and online validation of the selected credential. See [platform remediation](troubleshooting.md#macos) before manually inspecting any storage.
+The first two commands are non-live and do not open a token or native credential store. Their standard human and JSON output omits the account name and sanitizes local paths. The explicit installation check runs `supabase --version` once and performs one isolated credential-store probe without reading an account or PAT; its `supabase_cli` object adds `minimum_version` and `compatibility` (`compatible`, `missing`, `incompatible`, `blocked`, or `not_checked`). It cannot be combined with `--live` or `--account`. `--live` requires `--account` and authorizes reading and online validation of the selected credential. See [platform remediation](troubleshooting.md#macos) before manually inspecting any storage.
 
 ## Commands
 
@@ -77,6 +79,7 @@ The first two commands are non-live and do not open a token. Their standard huma
 | `supa.cc reset --all [--yes]` | Intentionally clear all Supa.cc accounts, PATs, and local state |
 | `supa.cc run -- <arguments>` | Run the Supabase CLI with the active account |
 | `supa.cc doctor [--json]` | Generate a local non-live diagnostic |
+| `supa.cc doctor --installation-check [--json]` | Validate the CLI and native credential-store availability without reading an account |
 | `supa.cc doctor --account <name> --live` | Authorize an authenticated diagnostic |
 | `supa.cc --version` | Show the version and sanitized installation channel |
 | `supa.cc version` | Show the installed version, installation channel, and deterministic official update guidance, without network access |

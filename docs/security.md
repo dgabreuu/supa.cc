@@ -37,6 +37,8 @@ The Supabase CLI session is machine-global and derived. External `supabase login
 
 `supa.cc doctor` and `supa.cc doctor --json` are non-live by default: they do not open a token or perform an authenticated operation. The backend appears as configured but not verified; this execution does not test credential-store availability. Standard output is designed to be shareable: it reports only whether an account is selected and indexed, sanitizes local paths, and never includes the account name or PAT. The `invoked` and `realpath` fields remain present and `path_relation` reports `same`, `symlinked`, or `unavailable`.
 
+`supa.cc doctor --installation-check` remains unauthenticated. It executes the Supabase CLI version check and uses a random, isolated lookup to verify the native store without reading an account or PAT. On Linux it checks that the default Secret Service collection is already unlocked before the lookup and never calls an unlock operation. Failures are sanitized. This option is mutually exclusive with `--live` and `--account`.
+
 Only `supa.cc doctor --account <name> --live` opens the selected credential once and performs explicit online validation with `projects list`.
 
 ## Platform limits

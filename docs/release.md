@@ -33,11 +33,26 @@ python3 -m pytest --cache-clear --collect-only -q
 python3 scripts/security_scan.py --path .pytest_cache
 python3 -m build
 python3 scripts/inspect_artifacts.py dist
+bash -n install.sh
+bash install.sh --dry-run --yes
+pwsh -NoProfile -File install.ps1 -Help
+pwsh -NoProfile -File install.ps1 -DryRun -Yes
 ```
 
 The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.5.0`.
 
 The CI matrix must pass on Python 3.11 and the current stable Python on Ubuntu, macOS, and Windows, plus the targeted Fedora and Arch jobs, before the release tag is created. Native smoke tests remain opt-in and require explicit execution on a host with the native credential store available.
+
+For a release that promotes the official bootstrap, also review `install.sh` and `install.ps1` as publication assets. Confirm that:
+
+- `SUPABASE_VERSION`/`SupabaseVersion` exactly match the Python `MINIMUM_VERSION` source, and `SUPA_CC_VERSION`/`SupaCcVersion` match `pyproject.toml`;
+- the Homebrew installer URL contains a reviewed 40-character upstream commit, not a branch;
+- the fixed official Python installer version, URLs, architectures, and SHA-256 values still match Python.org;
+- the Supabase x64 and arm64 artifact names exist in the pinned release and every download requires `checksums.txt`;
+- dry-run plans cover a complete, empty, outdated, conflicting-channel, and non-interactive environment without mutation;
+- no command uses broad Homebrew trust, a plaintext credential backend, an unofficial mirror, or a fallback after checksum failure.
+
+After the new stable tag is published, verify that both raw script URLs resolve from that exact tag before replacing `<release-tag>` in `docs/installation.md` and promoting the one-command bootstrap in the README. Never advertise a tag before it contains the reviewed scripts.
 
 ## 2. Confirm the operational contract
 
