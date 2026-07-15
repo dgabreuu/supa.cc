@@ -3,8 +3,8 @@ class SupaCc < Formula
 
   desc "Local Supabase account switcher for macOS Keychain"
   homepage "https://github.com/dgabreuu/supa.cc"
-  url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.4.2.tar.gz"
-  sha256 "917a22b0bbf29b3f76dec009994d597adad7d03307d9a7fb57b177c61c2380d5"
+  url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.5.0.tar.gz"
+  sha256 "a23f5f57d663cc5989b353e77475f7f0154116961c8d343257ff9d0cd28b0a49"
   license "MIT"
   head "https://github.com/dgabreuu/supa.cc.git", branch: "main"
 
