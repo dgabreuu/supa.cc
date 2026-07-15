@@ -318,7 +318,8 @@ def test_release_workflow_uses_published_release_and_least_privilege_oidc():
     workflow = yaml.safe_load(workflow_text)
     trigger = workflow.get("on", workflow.get(True))
 
-    assert trigger == {"release": {"types": ["published"]}}
+    assert trigger["release"] == {"types": ["published"]}
+    assert "workflow_dispatch" in trigger
     assert workflow["permissions"] == {}
     assert workflow["jobs"]["build"]["permissions"] == {"contents": "read"}
     publish = workflow["jobs"]["publish"]
@@ -331,7 +332,7 @@ def test_release_workflow_uses_published_release_and_least_privilege_oidc():
 def test_release_workflow_rejects_draft_and_prerelease_before_build_or_publish():
     workflow = yaml.safe_load(Path(".github/workflows/release.yml").read_text(encoding="utf-8"))
     jobs = workflow["jobs"]
-    stable_guard = "github.event.release.draft == false && github.event.release.prerelease == false"
+    stable_guard = "github.event_name == 'workflow_dispatch' || (github.event.release.draft == false && github.event.release.prerelease == false)"
 
     assert jobs["build"]["if"] == stable_guard
     for job_name in ("publish", "verify-pypi"):
@@ -339,6 +340,7 @@ def test_release_workflow_rejects_draft_and_prerelease_before_build_or_publish()
 
     validation = jobs["build"]["steps"][0]
     assert validation["name"] == "Require stable published release"
+    assert validation["if"] == "github.event_name == 'release'"
     assert validation["env"] == {
         "RELEASE_DRAFT": "${{ github.event.release.draft }}",
         "RELEASE_PRERELEASE": "${{ github.event.release.prerelease }}",
