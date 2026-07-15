@@ -3,6 +3,17 @@
 All notable changes to this project will be documented in this file.
 The format follows Keep a Changelog in a simplified form.
 
+## [0.5.1] - 2026-07-15
+
+### Added
+
+- Cross-platform bootstrap installers for macOS, Linux, and Windows with dependency detection, checksum verification, PATH setup, and a final installation check.
+- Explicit `supa.cc doctor --installation-check` diagnostics for Supabase CLI compatibility and native credential-store availability.
+
+### Changed
+
+- Installation guidance now detects conflicting channels, reports blocked requirements, and keeps stable Homebrew and pipx flows separate.
+
 ## [0.5.0] - 2026-07-15
 
 ### Changed
@@ -22,6 +33,7 @@ The format follows Keep a Changelog in a simplified form.
 - Uninstall guidance now distinguishes package removal from intentional native credential and state cleanup.
 
 [0.5.0]: https://github.com/dgabreuu/supa.cc/compare/v0.4.2...v0.5.0
+[0.5.1]: https://github.com/dgabreuu/supa.cc/compare/v0.5.0...v0.5.1
 
 ## [0.4.2] - 2026-07-14
 

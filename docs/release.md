@@ -2,6 +2,8 @@
 
 This document records the publication of version 0.5.0 on 2026-07-15.
 
+The next stable release is `0.5.1`. Its candidate checklist includes the official bootstrap scripts; the historical `0.5.0` record below describes only assets that existed in that tag.
+
 ## Publication record
 
 - GitHub Release: https://github.com/dgabreuu/supa.cc/releases/tag/v0.5.0
@@ -13,6 +15,10 @@ This document records the publication of version 0.5.0 on 2026-07-15.
 - The Homebrew formula was promoted in commit `b1dbcbe13c29f8ad3301cc2a0c2db5135dc1964c`.
 - The release workflow produced and published one wheel and one sdist through Trusted Publishing; its build, publish, Linux pipx, and Windows pipx jobs passed.
 - The Homebrew workflow passed its exact-tap, resource, audit, installation, version, and test gates.
+
+## 0.5.1 candidate checklist
+
+The numbered steps below apply to the `0.5.1` candidate. The publication record above remains the historical record for `0.5.0`.
 
 ## 1. Validate the candidate commit
 
@@ -39,11 +45,11 @@ pwsh -NoProfile -File install.ps1 -Help
 pwsh -NoProfile -File install.ps1 -DryRun -Yes
 ```
 
-The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.5.0`.
+The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.5.1`.
 
 The CI matrix must pass on Python 3.11 and the current stable Python on Ubuntu, macOS, and Windows, plus the targeted Fedora and Arch jobs, before the release tag is created. Native smoke tests remain opt-in and require explicit execution on a host with the native credential store available.
 
-For a release that promotes the official bootstrap, also review `install.sh` and `install.ps1` as publication assets. Confirm that:
+For the `0.5.1` release that promotes the official bootstrap, also review `install.sh` and `install.ps1` as publication assets. Confirm that:
 
 - `SUPABASE_VERSION`/`SupabaseVersion` exactly match the Python `MINIMUM_VERSION` source, and `SUPA_CC_VERSION`/`SupaCcVersion` match `pyproject.toml`;
 - the Homebrew installer URL contains a reviewed 40-character upstream commit, not a branch;

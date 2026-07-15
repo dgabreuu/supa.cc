@@ -7,7 +7,7 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-PACKAGE_VERSION = "0.5.0"
+PACKAGE_VERSION = "0.5.1"
 STABLE_FORMULA_VERSION = "0.5.0"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
@@ -209,7 +209,7 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
     assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in workflow_text
     assert 'brew audit --strict --formula "$formula"' not in workflow_text
     assert 'brew install "$formula"' not in workflow_text
-    assert PACKAGE_VERSION in workflow_text
+    assert STABLE_FORMULA_VERSION in workflow_text
     for prohibited in (
         "actions/checkout",
         "git commit",

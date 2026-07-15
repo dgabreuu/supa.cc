@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $SupabaseVersion = "2.109.1"
-$SupaCcVersion = "0.5.0"
+$SupaCcVersion = "0.5.1"
 $SupabaseReleaseUrl = "https://github.com/supabase/cli/releases/download/v$SupabaseVersion"
 $SupabaseArtifactAmd64 = "supabase_2.109.1_windows_amd64.zip"
 $SupabaseArtifactArm64 = "supabase_2.109.1_windows_arm64.zip"
