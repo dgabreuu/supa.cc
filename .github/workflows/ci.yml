@@ -50,6 +50,20 @@ jobs:
           python -m pip install --upgrade "pip>=26.1.2"
           python -m pip install -e ".[dev]"
       - name: Test and validate dependencies
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          python_bin="$(command -v python)"
+          python_dir="${python_bin%/*}"
+          clean_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          PATH="$clean_path" "$python_bin" -m pytest
+          PATH="$clean_path" "$python_bin" -m pip check
+          PATH="$clean_path" "$python_dir/pip-audit" --skip-editable
+          PATH="$clean_path" "$python_bin" scripts/runtime_requirements.py runtime-requirements.txt
+          PATH="$clean_path" "$python_dir/pip-audit" --requirement runtime-requirements.txt
+      - name: Test and validate dependencies on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
           python -m pytest
           python -m pip check

@@ -289,10 +289,14 @@ def test_windows_ci_runs_full_suite_without_claiming_real_vault_coverage():
     steps = workflow["jobs"]["test-build"]["steps"]
     test_steps = [step for step in steps if "pytest" in step.get("run", "")]
 
-    assert len(test_steps) == 1
-    assert "python -m pytest\n" in test_steps[0]["run"]
-    assert "tests/test_" not in test_steps[0]["run"]
-    assert "SUPA_CC_RUN_WINDOWS_CREDENTIAL_MANAGER_SMOKE" not in test_steps[0]["run"]
+    assert len(test_steps) == 2
+    windows_steps = [
+        step for step in test_steps if step.get("if") == "runner.os == 'Windows'"
+    ]
+    assert len(windows_steps) == 1
+    assert "python -m pytest\n" in windows_steps[0]["run"]
+    assert "tests/test_" not in windows_steps[0]["run"]
+    assert "SUPA_CC_RUN_WINDOWS_CREDENTIAL_MANAGER_SMOKE" not in windows_steps[0]["run"]
 
 
 def test_release_uses_the_same_audit_and_artifact_inspection_commands_as_ci():

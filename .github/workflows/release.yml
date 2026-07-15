@@ -50,15 +50,19 @@ jobs:
           python -m pip install --upgrade "pip>=26.1.2"
           python -m pip install -e ".[dev]"
       - name: Test and validate dependencies
+        shell: bash
         run: |
-          python scripts/security_scan.py --tracked --history
-          python -m pytest --cache-clear --collect-only -q
-          python scripts/security_scan.py --path .pytest_cache
-          python -m pytest
-          python -m pip check
-          pip-audit --skip-editable
-          python scripts/runtime_requirements.py runtime-requirements.txt
-          pip-audit --requirement runtime-requirements.txt
+          python_bin="$(command -v python)"
+          python_dir="${python_bin%/*}"
+          clean_path="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          PATH="$clean_path" "$python_bin" scripts/security_scan.py --tracked --history
+          PATH="$clean_path" "$python_bin" -m pytest --cache-clear --collect-only -q
+          PATH="$clean_path" "$python_bin" scripts/security_scan.py --path .pytest_cache
+          PATH="$clean_path" "$python_bin" -m pytest
+          PATH="$clean_path" "$python_bin" -m pip check
+          PATH="$clean_path" "$python_dir/pip-audit" --skip-editable
+          PATH="$clean_path" "$python_bin" scripts/runtime_requirements.py runtime-requirements.txt
+          PATH="$clean_path" "$python_dir/pip-audit" --requirement runtime-requirements.txt
       - name: Build release artifacts once
         run: python -m build
       - name: Inspect release artifacts
