@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/supa.cc/0.4.2/
+      url: https://pypi.org/project/supa.cc/0.5.0/
     permissions:
       id-token: write
     steps:
@@ -103,6 +103,6 @@ jobs:
         run: python -m pip install pipx
       - name: Verify package from PyPI
         run: |
-          pipx install supa.cc==0.4.2
+          pipx install supa.cc==0.5.0
           supa.cc --version
           supa.cc version

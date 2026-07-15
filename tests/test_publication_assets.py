@@ -7,7 +7,7 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-PACKAGE_VERSION = "0.4.2"
+PACKAGE_VERSION = "0.5.0"
 STABLE_FORMULA_VERSION = "0.4.2"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
@@ -441,6 +441,17 @@ def test_changelog_records_0_4_2_publication():
     assert "Interactive sessions keep" in changelog
     assert (
         "[0.4.2]: https://github.com/dgabreuu/supa.cc/compare/v0.4.1...v0.4.2"
+        in changelog
+    )
+
+
+def test_changelog_records_0_5_0_release_candidate():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.5.0] - 2026-07-15" in changelog
+    assert "versioned, secret-free state document" in changelog
+    assert (
+        "[0.5.0]: https://github.com/dgabreuu/supa.cc/compare/v0.4.2...v0.5.0"
         in changelog
     )
 

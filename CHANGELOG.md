@@ -3,6 +3,26 @@
 All notable changes to this project will be documented in this file.
 The format follows Keep a Changelog in a simplified form.
 
+## [0.5.0] - 2026-07-15
+
+### Changed
+
+- Account state and transaction handling now use one versioned, secret-free state document with atomic migration and recovery metadata.
+- Native Supabase session synchronization now relies on the official CLI profile and verifies the persisted session without retaining the PAT in the child environment.
+- Account, session, credential, process, and platform boundaries were reorganized to keep authentication results typed and sanitized across the CLI and TUI.
+
+### Security
+
+- Internal subprocesses remove inherited token and profile overrides, block the plaintext access-token fallback, and keep CLI credential identifiers opaque.
+- macOS Keychain routing and Homebrew executable trust checks are explicit; Windows CLI subprocesses are contained in a kill-on-close Job Object.
+
+### Fixed
+
+- Interrupted account additions, replacements, switches, removals, and legacy migrations now recover without advertising an unverified active account.
+- Uninstall guidance now distinguishes package removal from intentional native credential and state cleanup.
+
+[0.5.0]: https://github.com/dgabreuu/supa.cc/compare/v0.4.2...v0.5.0
+
 ## [0.4.2] - 2026-07-14
 
 ### Fixed

@@ -446,13 +446,12 @@ def test_macos_keychain_configuration_remediation_is_explicit_and_safe():
     assert "does not enumerate Keychain items" in security
 
 
-def test_version_and_development_wheel_are_verifiable_without_local_paths():
+def test_stable_installation_is_not_described_as_a_development_wheel():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     usage = Path("docs/usage.md").read_text(encoding="utf-8")
 
-    assert "0.5.0.dev1" in installation
-    assert "pipx install --force" in installation
-    assert "Installation channel: wheel" in installation
+    assert "0.5.0.dev1" not in installation
+    assert "Development wheel" not in installation
     assert "installation channel" in usage.lower()
 
 

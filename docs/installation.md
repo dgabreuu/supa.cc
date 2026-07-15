@@ -139,18 +139,6 @@ pipx uninstall supa.cc
 
 If `supa.cc` is not found after reopening the shell, run `py -m pipx ensurepath` again and see [Troubleshooting](troubleshooting.md#windows).
 
-## Development wheel
-
-Version `0.5.0.dev1` identifies the current development package and remains separate from the stable Homebrew formula. From a reviewed source checkout with the development dependencies installed, build and install the wheel rather than leaving an editable checkout on `PATH`:
-
-```bash
-python3 -m build
-pipx install --force dist/supa_cc-0.5.0.dev1-py3-none-any.whl
-supa.cc --version
-```
-
-The verification output must include `Installation channel: wheel`. If it reports `editable`, the command is still bound to a source checkout; if it reports another version, locate the executable selected by `PATH` before testing credentials. Do not keep stable, editable, and development-wheel commands active simultaneously.
-
 ## After installation
 
 Follow [first use with the TUI](usage.md#first-use-with-the-tui). The default diagnostic shows the backend as configured but not verified: it does not test D-Bus or open credential storage. Before changing the installation method, follow [safe reinstallation](troubleshooting.md#safe-reinstallation). Details about Keychain, Secret Service, and Credential Manager are in [Troubleshooting](troubleshooting.md); state and rollback guarantees are in [Security](security.md).
