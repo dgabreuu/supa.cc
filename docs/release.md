@@ -1,8 +1,8 @@
 # Release record and checklist
 
-This document records the publication of version 0.5.1 on 2026-07-15.
+This document records the publication of version 0.5.2 on 2026-07-15.
 
-The next stable release is `0.5.2`. Its candidate checklist includes the PowerShell bootstrap exit-status fix; the historical `0.5.0` record below describes only assets that existed in that tag.
+The `0.5.2` candidate checklist below records the PowerShell bootstrap exit-status fix and its publication gates. The historical `0.5.0` record below describes only assets that existed in that tag.
 
 ## 0.5.1 publication record
 
@@ -13,6 +13,16 @@ The next stable release is `0.5.2`. Its candidate checklist includes the PowerSh
 - Source archive SHA-256 used for the follow-up Homebrew formula: `db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15`
 
 The initial release-event workflow run failed before publication because its tag checkout exposed the editable package on `PATH`; the corrected workflow was verified with a manual dispatch from a temporary `v0.5.1-ci` tag. That temporary tag was deleted after the successful Trusted Publishing and Linux/Windows pipx verification. The public `v0.5.1` tag and release were not rewritten.
+
+## 0.5.2 publication record
+
+- GitHub Release: https://github.com/dgabreuu/supa.cc/releases/tag/v0.5.2
+- PyPI package: https://pypi.org/project/supa.cc/0.5.2/
+- Release tag: `v0.5.2` (`db7c179ca7c72a910865b7b722ce8e4a83cd4eee`)
+- Verified release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29450123806
+- Source archive SHA-256: `cc1bd04ddcd1f5684340fcfc8378859fde8da0ec63d843a4c12f9857335b09e2`
+
+The release workflow built one wheel and one sdist, published them through Trusted Publishing, and verified pipx installation on Ubuntu and Windows. The Windows verification used the workflow's bounded retry for regional PyPI propagation. The temporary `v0.5.2-ci` ref used to satisfy the protected PyPI environment was deleted after verification.
 
 ## Publication record
 
@@ -138,15 +148,13 @@ After GitHub, PyPI, pipx, and Homebrew were verified, the `0.5.0` changelog entr
 
 Do not create Debian, AUR, or RPM assets in this process.
 
-## 0.5.2 publication follow-up
+## 0.5.2 publication summary
 
-After the candidate checks pass, execute the following sequence for `0.5.2`:
+The candidate sequence for `0.5.2` completed as follows:
 
-1. Push the release commit and create the annotated tag `v0.5.2`.
-2. Create a stable, published, non-draft GitHub Release from that tag.
-3. Confirm the release workflow publishes `supa.cc==0.5.2` through Trusted Publishing and that Linux and Windows `pipx` verification passes.
-4. Download the `v0.5.2` source archive, calculate its SHA-256, update `Formula/supa-cc.rb`, and run the Homebrew audit, install, version, and test gates.
-5. Verify both raw installer URLs resolve from `v0.5.2` and that the scripts contain the reviewed checksums and pinned upstream revisions.
-6. Only after those checks, update the bootstrap links in `docs/installation.md` and `README.md` to `v0.5.2`; retain this immutable-tag requirement for future releases.
+1. The annotated tag `v0.5.2` was pushed and a stable, published, non-draft GitHub Release was created.
+2. The release workflow published `supa.cc==0.5.2` through Trusted Publishing and verified Linux and Windows `pipx` installation.
+3. The real `v0.5.2` source archive was hashed, and `Formula/supa-cc.rb` was updated to the verified URL and SHA-256.
+4. Both raw installer URLs were verified against `v0.5.2`; `docs/installation.md` and `README.md` now use that immutable tag.
 
-The verified `v0.5.1` source archive SHA-256 is `db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15`. The `v0.5.2` archive hash must be calculated from the public tag after publication.
+The verified `v0.5.1` source archive SHA-256 remains `db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15`.

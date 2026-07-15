@@ -8,12 +8,12 @@ import tomllib
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
 PACKAGE_VERSION = "0.5.2"
-STABLE_FORMULA_VERSION = "0.5.1"
+STABLE_FORMULA_VERSION = "0.5.2"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
     f"v{STABLE_FORMULA_VERSION}.tar.gz"
 )
-TARBALL_SHA256 = "db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15"
+TARBALL_SHA256 = "cc1bd04ddcd1f5684340fcfc8378859fde8da0ec63d843a4c12f9857335b09e2"
 HOMEBREW_TAP = "dgabreuu/supa-cc"
 HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
 HOMEBREW_TAP_COMMAND = f"brew tap {HOMEBREW_TAP} {REPO_URL}"
@@ -99,11 +99,11 @@ def test_installation_uses_stable_release_channels():
         assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
 
 
-def test_release_formula_uses_verified_0_5_1_tag():
+def test_release_formula_uses_verified_0_5_2_tag():
     release = Path("docs/release.md").read_text(encoding="utf-8")
     formula = Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
-    assert "v0.5.1" in formula
+    assert "v0.5.2" in formula
     assert "v0.5.0" not in formula
     assert "v0.4.2" not in formula
     assert "v0.3.0" not in formula
@@ -501,7 +501,7 @@ def test_release_runbook_orders_pypi_verification_before_formula_and_copy_change
     )
     positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
     assert positions == sorted(positions)
-    assert "v0.5.1" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+    assert "v0.5.2" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
 
 def test_troubleshooting_doctor_language_is_credential_store_neutral():
