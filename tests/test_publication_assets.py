@@ -182,6 +182,8 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
         "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git",
         'tap_repo="$(brew --repo dgabreuu/supa-cc)"',
         'test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"',
+        "brew trust --formula supabase/tap/supabase",
+        "brew trust --formula dgabreuu/supa-cc/supa-cc",
         "brew install --yes supabase/tap/supabase",
         "brew install --yes dgabreuu/supa-cc/supa-cc",
         'formula="$tap_repo/Formula/supa-cc.rb"',
@@ -194,13 +196,14 @@ def test_homebrew_workflow_validates_committed_formula_without_publishing():
     ):
         assert command in workflow_text
     sha_guard = workflow_text.index('test "$(git -C "$tap_repo" rev-parse HEAD)" = "$GITHUB_SHA"')
+    supabase_trust = workflow_text.index("brew trust --formula supabase/tap/supabase")
+    formula_trust = workflow_text.index("brew trust --formula dgabreuu/supa-cc/supa-cc")
     supabase_install = workflow_text.index("brew install --yes supabase/tap/supabase")
     install = workflow_text.index("brew install --yes dgabreuu/supa-cc/supa-cc")
     resource_update = workflow_text.index(
         'brew update-python-resources --ignore-main-package-cooldown "$formula"'
     )
-    assert sha_guard < supabase_install < install < resource_update
-    assert "brew trust --formula dgabreuu/supa-cc/supa-cc" not in workflow_text
+    assert sha_guard < supabase_trust < formula_trust < supabase_install < install < resource_update
     assert "brew trust dgabreuu/supa-cc" not in workflow_text
     assert "brew trust supabase/tap" not in workflow_text
     assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in workflow_text
