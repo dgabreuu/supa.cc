@@ -3,6 +3,12 @@
 All notable changes to this project will be documented in this file.
 The format follows Keep a Changelog in a simplified form.
 
+## [0.5.2] - 2026-07-15
+
+### Fixed
+
+- PowerShell bootstrap runs now return success after a completed dry-run or installation instead of leaking a non-zero native command status.
+
 ## [0.5.1] - 2026-07-15
 
 ### Added
@@ -34,6 +40,7 @@ The format follows Keep a Changelog in a simplified form.
 
 [0.5.0]: https://github.com/dgabreuu/supa.cc/compare/v0.4.2...v0.5.0
 [0.5.1]: https://github.com/dgabreuu/supa.cc/compare/v0.5.0...v0.5.1
+[0.5.2]: https://github.com/dgabreuu/supa.cc/compare/v0.5.1...v0.5.2
 
 ## [0.4.2] - 2026-07-14
 

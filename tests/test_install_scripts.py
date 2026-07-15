@@ -240,6 +240,7 @@ def test_windows_installer_declares_equivalent_public_options():
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )["project"]["version"]
     assert f'$SupaCcVersion = "{package_version}"' in source
+    assert "Invoke-Main\n        exit 0" in source
 
 
 def test_windows_plan_is_self_sufficient_and_does_not_require_scoop():

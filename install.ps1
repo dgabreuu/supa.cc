@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $SupabaseVersion = "2.109.1"
-$SupaCcVersion = "0.5.1"
+$SupaCcVersion = "0.5.2"
 $SupabaseReleaseUrl = "https://github.com/supabase/cli/releases/download/v$SupabaseVersion"
 $SupabaseArtifactAmd64 = "supabase_2.109.1_windows_amd64.zip"
 $SupabaseArtifactArm64 = "supabase_2.109.1_windows_arm64.zip"
@@ -400,6 +400,7 @@ function Invoke-Main {
 if ($MyInvocation.InvocationName -ne ".") {
     try {
         Invoke-Main
+        exit 0
     }
     catch {
         Write-Error $_.Exception.Message

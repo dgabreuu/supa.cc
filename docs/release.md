@@ -1,8 +1,18 @@
 # Release record and checklist
 
-This document records the publication of version 0.5.0 on 2026-07-15.
+This document records the publication of version 0.5.1 on 2026-07-15.
 
-The next stable release is `0.5.1`. Its candidate checklist includes the official bootstrap scripts; the historical `0.5.0` record below describes only assets that existed in that tag.
+The next stable release is `0.5.2`. Its candidate checklist includes the PowerShell bootstrap exit-status fix; the historical `0.5.0` record below describes only assets that existed in that tag.
+
+## 0.5.1 publication record
+
+- GitHub Release: https://github.com/dgabreuu/supa.cc/releases/tag/v0.5.1
+- PyPI package: https://pypi.org/project/supa.cc/0.5.1/
+- Release tag: `v0.5.1` (`4cc3d51462a02e1a523e10e445f8085bfe6d35e6`)
+- Verified release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29449131978
+- Source archive SHA-256 used for the follow-up Homebrew formula: `db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15`
+
+The initial release-event workflow run failed before publication because its tag checkout exposed the editable package on `PATH`; the corrected workflow was verified with a manual dispatch from a temporary `v0.5.1-ci` tag. That temporary tag was deleted after the successful Trusted Publishing and Linux/Windows pipx verification. The public `v0.5.1` tag and release were not rewritten.
 
 ## Publication record
 
@@ -16,9 +26,9 @@ The next stable release is `0.5.1`. Its candidate checklist includes the officia
 - The release workflow produced and published one wheel and one sdist through Trusted Publishing; its build, publish, Linux pipx, and Windows pipx jobs passed.
 - The Homebrew workflow passed its exact-tap, resource, audit, installation, version, and test gates.
 
-## 0.5.1 candidate checklist
+## 0.5.2 candidate checklist
 
-Sections 1–3 below apply to the `0.5.1` candidate. Sections 4–8 are retained as the historical publication record for `0.5.0`.
+Sections 1–3 below apply to the `0.5.2` candidate. Sections 4–8 are retained as the historical publication record for `0.5.0`.
 
 ## 1. Validate the candidate commit
 
@@ -45,11 +55,11 @@ pwsh -NoProfile -File install.ps1 -Help
 pwsh -NoProfile -File install.ps1 -DryRun -Yes
 ```
 
-The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.5.1`.
+The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.5.2`.
 
 The CI matrix must pass on Python 3.11 and the current stable Python on Ubuntu, macOS, and Windows, plus the targeted Fedora and Arch jobs, before the release tag is created. Native smoke tests remain opt-in and require explicit execution on a host with the native credential store available.
 
-For the `0.5.1` release that promotes the official bootstrap, also review `install.sh` and `install.ps1` as publication assets. Confirm that:
+For the `0.5.2` release that carries the corrected bootstrap, also review `install.sh` and `install.ps1` as publication assets. Confirm that:
 
 - `SUPABASE_VERSION`/`SupabaseVersion` exactly match the Python `MINIMUM_VERSION` source, and `SUPA_CC_VERSION`/`SupaCcVersion` match `pyproject.toml`;
 - the Homebrew installer URL contains a reviewed 40-character upstream commit, not a branch;
@@ -58,7 +68,7 @@ For the `0.5.1` release that promotes the official bootstrap, also review `insta
 - dry-run plans cover a complete, empty, outdated, conflicting-channel, and non-interactive environment without mutation;
 - no command uses broad Homebrew trust, a plaintext credential backend, an unofficial mirror, or a fallback after checksum failure.
 
-For `v0.5.1`, both raw script URLs were verified against the exact published tag before the one-command bootstrap was promoted in `docs/installation.md` and the README. Never advertise a tag before it contains the reviewed scripts.
+For `v0.5.2`, both raw script URLs must be verified against the exact published tag before the one-command bootstrap is promoted in `docs/installation.md` and the README. Never advertise a tag before it contains the reviewed scripts.
 
 ## 2. Confirm the operational contract
 
@@ -128,15 +138,15 @@ After GitHub, PyPI, pipx, and Homebrew were verified, the `0.5.0` changelog entr
 
 Do not create Debian, AUR, or RPM assets in this process.
 
-## 0.5.1 publication follow-up
+## 0.5.2 publication follow-up
 
-After the candidate checks pass, execute the following sequence for `0.5.1`:
+After the candidate checks pass, execute the following sequence for `0.5.2`:
 
-1. Push the release commit and create the annotated tag `v0.5.1`.
+1. Push the release commit and create the annotated tag `v0.5.2`.
 2. Create a stable, published, non-draft GitHub Release from that tag.
-3. Confirm the release workflow publishes `supa.cc==0.5.1` through Trusted Publishing and that Linux and Windows `pipx` verification passes.
-4. Download the `v0.5.1` source archive, calculate its SHA-256, update `Formula/supa-cc.rb`, and run the Homebrew audit, install, version, and test gates.
-5. Verify both raw installer URLs resolve from `v0.5.1` and that the scripts contain the reviewed checksums and pinned upstream revisions.
-6. The bootstrap links in `docs/installation.md` and `README.md` now use `v0.5.1`; retain this immutable-tag requirement for future releases.
+3. Confirm the release workflow publishes `supa.cc==0.5.2` through Trusted Publishing and that Linux and Windows `pipx` verification passes.
+4. Download the `v0.5.2` source archive, calculate its SHA-256, update `Formula/supa-cc.rb`, and run the Homebrew audit, install, version, and test gates.
+5. Verify both raw installer URLs resolve from `v0.5.2` and that the scripts contain the reviewed checksums and pinned upstream revisions.
+6. Only after those checks, update the bootstrap links in `docs/installation.md` and `README.md` to `v0.5.2`; retain this immutable-tag requirement for future releases.
 
-The verified `v0.5.1` source archive SHA-256 is `db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15`.
+The verified `v0.5.1` source archive SHA-256 is `db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15`. The `v0.5.2` archive hash must be calculated from the public tag after publication.

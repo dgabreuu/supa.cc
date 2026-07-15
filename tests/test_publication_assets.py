@@ -7,7 +7,7 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-PACKAGE_VERSION = "0.5.1"
+PACKAGE_VERSION = "0.5.2"
 STABLE_FORMULA_VERSION = "0.5.1"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
@@ -472,6 +472,17 @@ def test_changelog_records_0_5_0_release_candidate():
     assert "versioned, secret-free state document" in changelog
     assert (
         "[0.5.0]: https://github.com/dgabreuu/supa.cc/compare/v0.4.2...v0.5.0"
+        in changelog
+    )
+
+
+def test_changelog_records_0_5_2_windows_bootstrap_fix():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.5.2] - 2026-07-15" in changelog
+    assert "PowerShell bootstrap runs now return success" in changelog
+    assert (
+        "[0.5.2]: https://github.com/dgabreuu/supa.cc/compare/v0.5.1...v0.5.2"
         in changelog
     )
 
