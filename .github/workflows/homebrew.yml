@@ -48,7 +48,7 @@ jobs:
           ' "$supabase_version_output" "$minimum_version"
       - name: Verify installed version
         run: |
-          supa.cc --version | grep -Fx "supa.cc, version 0.5.0"
-          supa.cc version | grep -Fx "Supa.cc v0.5.0"
+          supa.cc --version | grep -Fx "supa.cc, version 0.5.1"
+          supa.cc version | grep -Fx "Supa.cc v0.5.1"
       - name: Test formula
         run: brew test dgabreuu/supa-cc/supa-cc

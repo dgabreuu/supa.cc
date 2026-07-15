@@ -8,12 +8,12 @@ import tomllib
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
 PACKAGE_VERSION = "0.5.1"
-STABLE_FORMULA_VERSION = "0.5.0"
+STABLE_FORMULA_VERSION = "0.5.1"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
     f"v{STABLE_FORMULA_VERSION}.tar.gz"
 )
-TARBALL_SHA256 = "a23f5f57d663cc5989b353e77475f7f0154116961c8d343257ff9d0cd28b0a49"
+TARBALL_SHA256 = "db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15"
 HOMEBREW_TAP = "dgabreuu/supa-cc"
 HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
 HOMEBREW_TAP_COMMAND = f"brew tap {HOMEBREW_TAP} {REPO_URL}"
@@ -99,11 +99,12 @@ def test_installation_uses_stable_release_channels():
         assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
 
 
-def test_release_formula_uses_verified_0_5_0_tag():
+def test_release_formula_uses_verified_0_5_1_tag():
     release = Path("docs/release.md").read_text(encoding="utf-8")
     formula = Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
-    assert "v0.5.0" in formula
+    assert "v0.5.1" in formula
+    assert "v0.5.0" not in formula
     assert "v0.4.2" not in formula
     assert "v0.3.0" not in formula
     assert "brew test dgabreuu/supa-cc/supa-cc" in release
@@ -483,7 +484,7 @@ def test_release_runbook_orders_pypi_verification_before_formula_and_copy_change
     )
     positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
     assert positions == sorted(positions)
-    assert "v0.5.0" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+    assert "v0.5.1" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
 
 def test_troubleshooting_doctor_language_is_credential_store_neutral():

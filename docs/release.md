@@ -137,4 +137,6 @@ After the candidate checks pass, execute the following sequence for `0.5.1`:
 3. Confirm the release workflow publishes `supa.cc==0.5.1` through Trusted Publishing and that Linux and Windows `pipx` verification passes.
 4. Download the `v0.5.1` source archive, calculate its SHA-256, update `Formula/supa-cc.rb`, and run the Homebrew audit, install, version, and test gates.
 5. Verify both raw installer URLs resolve from `v0.5.1` and that the scripts contain the reviewed checksums and pinned upstream revisions.
-6. Replace `<release-tag>` with `v0.5.1` in `docs/installation.md`, promote the one-command bootstrap in `README.md`, and publish the documentation update only after the tag is confirmed.
+6. Replace the bootstrap placeholders with `v0.5.1` in `docs/installation.md`, promote the one-command bootstrap in `README.md`, and publish the documentation update only after the tag is confirmed.
+
+The verified `v0.5.1` source archive SHA-256 is `db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15`.
