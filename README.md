@@ -1,11 +1,4 @@
-```text
- ____
-/ ___| _   _ _ __   __ _   ___ ___
-\___ \| | | | '_ \ / _` | / __/ __|
- ___) | |_| | |_) | (_| || (_| (__
-|____/ \__,_| .__/ \__,_(_)___\___|
-            |_|
-```
+![Supa.cc showing the compact home and available terminal actions](https://raw.githubusercontent.com/dgabreuu/supa.cc/main/assets/terminal.svg)
 
 # Supa.cc
 
@@ -16,8 +9,6 @@
 [![License](https://img.shields.io/github/license/dgabreuu/supa.cc?label=License)](LICENSE)
 
 Supa.cc is a local CLI for managing multiple Supabase accounts without spreading Personal Access Tokens (PATs) across files or commands. After activation, the official `supabase` CLI uses the selected account.
-
-![Supa.cc showing the compact home and available terminal actions](https://raw.githubusercontent.com/dgabreuu/supa.cc/main/assets/terminal.svg)
 
 ## ✨ Why Supa.cc?
 
