@@ -24,7 +24,9 @@ Downloads come only from the official Homebrew, Python, Supabase, PyPI, and proj
 
 ### Homebrew (macOS only)
 
-The stable manual channel is Homebrew and stores PATs in Keychain. The bootstrap can install Homebrew from a reviewed immutable revision, load `brew shellenv`, and install the two fully qualified formulae. An administrator password or the normal Homebrew installer interaction may still be required.
+The immutable bootstrap above is the recommended path. The stable manual channel is Homebrew and stores PATs in Keychain; use it only as an advanced fallback when Homebrew is already managed separately. The bootstrap can install Homebrew from a reviewed immutable revision, load `brew shellenv`, and install the two fully qualified formulae. An administrator password or the normal Homebrew installer interaction may still be required.
+
+The commands below are the manual fallback and are not required after a successful bootstrap.
 
 #### Install
 
@@ -63,7 +65,7 @@ brew uninstall supa-cc
 
 Debian 12+, Ubuntu 24.04+, Arch Linux, and Fedora are supported. These minimum Debian/Ubuntu releases guarantee a distribution Python that satisfies Python 3.11+ without introducing an unofficial runtime source. Derivatives are best-effort. The stable package channel is PyPI through `pipx`; PATs remain in Secret Service on the user-session D-Bus.
 
-The bootstrap uses a shared flow with distribution-specific package data. It installs Python, venv support where needed, `pipx`, GNOME Keyring, download tools, and CA certificates. The Python `keyring` dependency already supplies SecretStorage and Jeepney, so `libsecret-tools` and separate `libsecret` packages are not installed explicitly.
+The immutable bootstrap above is the recommended path. The bootstrap uses a shared flow with distribution-specific package data. It installs Python, venv support where needed, `pipx`, GNOME Keyring, download tools, and CA certificates. The Python `keyring` dependency already supplies SecretStorage and Jeepney, so `libsecret-tools` and separate `libsecret` packages are not installed explicitly.
 
 Manual prerequisite commands are available as an advanced fallback:
 
@@ -79,6 +81,8 @@ sudo dnf install python3 pipx gnome-keyring curl ca-certificates tar
 ```
 
 The bootstrap downloads the official x64 or arm64 Supabase CLI archive and `checksums.txt`, requires a matching SHA-256, and installs it in the user's executable directory. It runs `pipx ensurepath` and updates the current session so reopening the shell is normally unnecessary.
+
+The command below is the manual `pipx` fallback and is not required after a successful bootstrap.
 
 #### Install
 
@@ -115,7 +119,7 @@ Secret-free state is stored in `$XDG_CONFIG_HOME/supa.cc` when defined, otherwis
 
 The stable package channel is PyPI through `pipx`; PATs remain in Windows Credential Manager through `WinVaultKeyring` and secret-free metadata remains under `%APPDATA%\supa.cc`.
 
-The bootstrap reuses Python 3.11+ when available. Otherwise it installs Python for the current user with `winget`; if `winget` is unavailable, it downloads a fixed official Python x64 or arm64 installer and requires its pinned SHA-256 before silent execution. It then installs `pipx`, updates both the persistent user `PATH` and current PowerShell session, downloads and verifies the official Supabase CLI archive, and installs Supa.cc from PyPI without requiring a PowerShell restart.
+The immutable bootstrap above is the recommended path. It reuses Python 3.11+ when available. Otherwise it installs Python for the current user with `winget`; if `winget` is unavailable, it downloads a fixed official Python x64 or arm64 installer and requires its pinned SHA-256 before silent execution. It then installs `pipx`, updates both the persistent user `PATH` and current PowerShell session, downloads and verifies the official Supabase CLI archive, and installs Supa.cc from PyPI without requiring a PowerShell restart.
 
 Manual setup is available as an advanced fallback:
 
@@ -123,6 +127,8 @@ Manual setup is available as an advanced fallback:
 py -m pip install --user pipx
 py -m pipx ensurepath
 ```
+
+The commands below are the manual `pipx` fallback and are not required after a successful bootstrap.
 
 #### Install
 
