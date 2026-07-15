@@ -322,11 +322,11 @@ def test_release_docs_record_all_publication_channels():
 
     assert "the channels below are planned for the release" not in readme
     assert "do not mean that version 0.3.0 has already been published" not in installation
-    assert "Version 0.4.2 has not been published yet." not in release
+    assert "Version 0.5.0 has not been published yet." not in release
     assert "Homebrew has not been verified yet" not in release
-    assert "v0.4.2" in release
-    assert "https://github.com/dgabreuu/supa.cc/actions/runs/29337523022" in release
-    assert "https://github.com/dgabreuu/supa.cc/actions/runs/29338145621" in release
+    assert "v0.5.0" in release
+    assert "https://github.com/dgabreuu/supa.cc/actions/runs/29432932472" in release
+    assert "https://github.com/dgabreuu/supa.cc/actions/runs/29434531777" in release
     assert "continua não lançada" not in release
     assert "deve permanecer em `v0.2.0`" not in release
 
