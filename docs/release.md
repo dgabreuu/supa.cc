@@ -58,7 +58,7 @@ For the `0.5.1` release that promotes the official bootstrap, also review `insta
 - dry-run plans cover a complete, empty, outdated, conflicting-channel, and non-interactive environment without mutation;
 - no command uses broad Homebrew trust, a plaintext credential backend, an unofficial mirror, or a fallback after checksum failure.
 
-After the new stable tag is published, verify that both raw script URLs resolve from that exact tag before replacing `<release-tag>` in `docs/installation.md` and promoting the one-command bootstrap in the README. Never advertise a tag before it contains the reviewed scripts.
+For `v0.5.1`, both raw script URLs were verified against the exact published tag before the one-command bootstrap was promoted in `docs/installation.md` and the README. Never advertise a tag before it contains the reviewed scripts.
 
 ## 2. Confirm the operational contract
 
@@ -137,6 +137,6 @@ After the candidate checks pass, execute the following sequence for `0.5.1`:
 3. Confirm the release workflow publishes `supa.cc==0.5.1` through Trusted Publishing and that Linux and Windows `pipx` verification passes.
 4. Download the `v0.5.1` source archive, calculate its SHA-256, update `Formula/supa-cc.rb`, and run the Homebrew audit, install, version, and test gates.
 5. Verify both raw installer URLs resolve from `v0.5.1` and that the scripts contain the reviewed checksums and pinned upstream revisions.
-6. Replace the bootstrap placeholders with `v0.5.1` in `docs/installation.md`, promote the one-command bootstrap in `README.md`, and publish the documentation update only after the tag is confirmed.
+6. The bootstrap links in `docs/installation.md` and `README.md` now use `v0.5.1`; retain this immutable-tag requirement for future releases.
 
 The verified `v0.5.1` source archive SHA-256 is `db263e555a7a0e4b1d9003f3cb87d72cfcceac0b02dbb9e4c794889110815d15`.
