@@ -18,7 +18,7 @@ The next stable release is `0.5.1`. Its candidate checklist includes the officia
 
 ## 0.5.1 candidate checklist
 
-The numbered steps below apply to the `0.5.1` candidate. The publication record above remains the historical record for `0.5.0`.
+Sections 1–3 below apply to the `0.5.1` candidate. Sections 4–8 are retained as the historical publication record for `0.5.0`.
 
 ## 1. Validate the candidate commit
 
@@ -127,3 +127,14 @@ Keep `head "https://github.com/dgabreuu/supa.cc.git", branch: "main"`. The expli
 After GitHub, PyPI, pipx, and Homebrew were verified, the `0.5.0` changelog entry was finalized with the publication date and its comparison target was set to `v0.4.2...v0.5.0`. This checklist records the verified public release, package, workflow, and formula links above.
 
 Do not create Debian, AUR, or RPM assets in this process.
+
+## 0.5.1 publication follow-up
+
+After the candidate checks pass, execute the following sequence for `0.5.1`:
+
+1. Push the release commit and create the annotated tag `v0.5.1`.
+2. Create a stable, published, non-draft GitHub Release from that tag.
+3. Confirm the release workflow publishes `supa.cc==0.5.1` through Trusted Publishing and that Linux and Windows `pipx` verification passes.
+4. Download the `v0.5.1` source archive, calculate its SHA-256, update `Formula/supa-cc.rb`, and run the Homebrew audit, install, version, and test gates.
+5. Verify both raw installer URLs resolve from `v0.5.1` and that the scripts contain the reviewed checksums and pinned upstream revisions.
+6. Replace `<release-tag>` with `v0.5.1` in `docs/installation.md`, promote the one-command bootstrap in `README.md`, and publish the documentation update only after the tag is confirmed.
