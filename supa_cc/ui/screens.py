@@ -193,7 +193,7 @@ class TUIScreens:
                     ),
                 )
         except Exception as error:
-            result = classify_local_failure(error)
+            result = classify_local_failure(error, operation="switch")
 
         if result.ok:
             state.set_message(result.message, "success")

@@ -19,4 +19,6 @@ A switch validates the selected PAT, records `prepared`, logs out the public CLI
 
 Infrastructure exceptions are normalized at their boundary. Public results contain an operation, phase, code, recoverability classification, and sanitized message. Credential values, native error details, raw subprocess output, and private paths cannot cross those boundaries.
 
+At the UI boundary, semantic theme keys are resolved to concrete prompt-toolkit styles before styled output is handed to Questionary. Questionary therefore receives only the style format it implements, independently of the host operating system.
+
 The CLI profile and credential implementation belong to the Supabase CLI. Supa.cc uses only its public commands and does not depend on internal keyring names or file formats.

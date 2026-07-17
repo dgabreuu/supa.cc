@@ -1,5 +1,7 @@
 from unittest.mock import Mock
 
+import questionary
+
 from supa_cc.models import Account
 from supa_cc.auth import (
     AccountIndexReadError,
@@ -8,6 +10,8 @@ from supa_cc.auth import (
     AuthResult,
     InvalidAccessTokenError,
 )
+from supa_cc.ui.console import TerminalConsole
+from supa_cc.ui.render import UIRenderer
 from supa_cc.ui.screens import MAIN_MENU_CHOICES, TUIScreens
 from supa_cc.ui.state import MenuAction, NavigationState, PageId
 from supa_cc.strings import UIStrings as Strings
@@ -260,9 +264,15 @@ def test_switch_account_success_returns_home():
         accounts=[account], activate_result=AuthResult.success(message)
     )
     prompts = SequencePrompts(select=["work"])
+    console = TerminalConsole(
+        printer=questionary.print,
+        width=80,
+        height=24,
+        is_terminal=False,
+    )
     screens = TUIScreens(
         manager=manager,
-        renderer=FakeRenderer(),
+        renderer=UIRenderer(console=console),
         prompts=prompts,
     )
     state = NavigationState()
@@ -316,6 +326,31 @@ def test_switch_account_failure_uses_same_typed_message_as_cli():
     assert state.current_page == PageId.HOME
     assert state.last_message.text == failure.message
     assert state.last_message.level == "error"
+
+
+def test_switch_account_unexpected_failure_has_safe_operation_context():
+    account = Account(name="work", token=fake_pat("token"))
+
+    class FailingManager(FakeManager):
+        def set_active(self, name, token_provider=None):
+            raise ValueError("private account detail")
+
+    screens = TUIScreens(
+        manager=FailingManager(accounts=[account]),
+        renderer=FakeRenderer(),
+        prompts=SequencePrompts(select=["work"]),
+    )
+    state = NavigationState()
+    state.open(PageId.SWITCH)
+
+    screens.switch_account(state)
+
+    assert state.current_page == PageId.HOME
+    assert state.last_message.level == "error"
+    assert state.last_message.text == (
+        "Unexpected local failure during account switch (ValueError)."
+    )
+    assert "private account detail" not in state.last_message.text
 
 
 def test_remove_account_success_returns_home():

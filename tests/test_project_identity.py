@@ -46,8 +46,8 @@ def test_source_uses_release_version_and_verified_stable_formula():
     with open("Formula/supa-cc.rb", "r", encoding="utf-8") as formula_file:
         formula = formula_file.read()
 
-    assert project["version"] == "0.5.2"
-    assert __version__ == "0.5.2"
+    assert project["version"] == "0.5.3"
+    assert __version__ == "0.5.3"
     assert (
         'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.5.2.tar.gz"'
         in formula

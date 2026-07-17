@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 The format follows Keep a Changelog in a simplified form.
 
+## [Unreleased]
+
+## [0.5.3] - 2026-07-17
+
+### Fixed
+
+- The TUI resolves semantic loading styles before passing output to Questionary, so switching the active account reaches activation consistently on every supported platform and unexpected switch failures retain safe operation context.
+
 ## [0.5.2] - 2026-07-15
 
 ### Fixed
@@ -41,6 +49,8 @@ The format follows Keep a Changelog in a simplified form.
 [0.5.0]: https://github.com/dgabreuu/supa.cc/compare/v0.4.2...v0.5.0
 [0.5.1]: https://github.com/dgabreuu/supa.cc/compare/v0.5.0...v0.5.1
 [0.5.2]: https://github.com/dgabreuu/supa.cc/compare/v0.5.1...v0.5.2
+[0.5.3]: https://github.com/dgabreuu/supa.cc/compare/v0.5.2...v0.5.3
+[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...HEAD
 
 ## [0.4.2] - 2026-07-14
 

@@ -414,9 +414,10 @@ def classify_local_failure(
             operation=operation,
             phase="local_io",
         )
+    operation_context = " during account switch" if operation == "switch" else ""
     return AuthResult.failure(
         AuthFailureCode.UNEXPECTED_LOCAL_FAILURE,
-        f"Unexpected local failure ({type(error).__name__}).",
+        f"Unexpected local failure{operation_context} ({type(error).__name__}).",
         operation=operation,
         phase="unexpected",
     )
