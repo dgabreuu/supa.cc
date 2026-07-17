@@ -302,9 +302,9 @@ def test_readme_stable_installation_uses_platform_bootstrap_commands():
     readme = _section(Path("README.md").read_text(encoding="utf-8"), "Installation")
 
     expected = {
-        "macOS": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.2/install.sh | bash",
-        "Linux": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.2/install.sh | bash",
-        "Windows": "irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.2/install.ps1 | iex",
+        "macOS": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.sh | bash",
+        "Linux": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.sh | bash",
+        "Windows": "irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.ps1 | iex",
     }
     for platform, command in expected.items():
         stable = _stable_content(_section(readme, platform))

@@ -7,13 +7,13 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-PACKAGE_VERSION = "0.5.3"
-STABLE_FORMULA_VERSION = "0.5.2"
+PACKAGE_VERSION = "0.5.4"
+STABLE_FORMULA_VERSION = "0.5.3"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
     f"v{STABLE_FORMULA_VERSION}.tar.gz"
 )
-TARBALL_SHA256 = "cc1bd04ddcd1f5684340fcfc8378859fde8da0ec63d843a4c12f9857335b09e2"
+TARBALL_SHA256 = "1fe25483fba910160328559e1433fe09e962cb494cf34da6122ad4f238aa9914"
 HOMEBREW_TAP = "dgabreuu/supa-cc"
 HOMEBREW_FORMULA = f"{HOMEBREW_TAP}/supa-cc"
 HOMEBREW_TAP_COMMAND = f"brew tap {HOMEBREW_TAP} {REPO_URL}"
@@ -99,11 +99,11 @@ def test_installation_uses_stable_release_channels():
         assert re.search(rf"(?m)^pipx {command} supa\.cc\s*$", installation)
 
 
-def test_release_formula_uses_verified_0_5_2_tag():
+def test_release_formula_uses_verified_0_5_3_tag():
     release = Path("docs/release.md").read_text(encoding="utf-8")
     formula = Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
-    assert "v0.5.2" in formula
+    assert "v0.5.3" in formula
     assert "v0.5.0" not in formula
     assert "v0.4.2" not in formula
     assert "v0.3.0" not in formula
@@ -509,7 +509,18 @@ def test_changelog_records_0_5_3_tui_fix_and_unreleased_comparison():
         in changelog
     )
     assert (
-        "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...HEAD"
+        "[0.5.4]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...v0.5.4"
+        in changelog
+    )
+
+
+def test_changelog_records_0_5_4_publication_metadata_correction():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.5.4] - 2026-07-17" in changelog
+    assert "published package metadata and immutable bootstrap references" in changelog
+    assert (
+        "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...HEAD"
         in changelog
     )
 
@@ -528,7 +539,7 @@ def test_release_runbook_orders_pypi_verification_before_formula_and_copy_change
     )
     positions = [re.search(pattern, normalized, re.MULTILINE).start() for pattern in concepts]
     assert positions == sorted(positions)
-    assert "v0.5.2" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
+    assert "v0.5.3" in Path("Formula/supa-cc.rb").read_text(encoding="utf-8")
 
 
 def test_troubleshooting_doctor_language_is_credential_store_neutral():

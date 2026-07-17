@@ -5,6 +5,12 @@ The format follows Keep a Changelog in a simplified form.
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-07-17
+
+### Fixed
+
+- Corrected the published package metadata and immutable bootstrap references so PyPI, source archives, and installation guidance all resolve to the same release.
+
 ## [0.5.3] - 2026-07-17
 
 ### Fixed
@@ -50,7 +56,8 @@ The format follows Keep a Changelog in a simplified form.
 [0.5.1]: https://github.com/dgabreuu/supa.cc/compare/v0.5.0...v0.5.1
 [0.5.2]: https://github.com/dgabreuu/supa.cc/compare/v0.5.1...v0.5.2
 [0.5.3]: https://github.com/dgabreuu/supa.cc/compare/v0.5.2...v0.5.3
-[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...HEAD
+[0.5.4]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...v0.5.4
+[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...HEAD
 
 ## [0.4.2] - 2026-07-14
 
