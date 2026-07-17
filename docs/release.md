@@ -1,12 +1,21 @@
 # Release record and checklist
 
-## 0.5.4 candidate record (2026-07-17)
+## 0.5.4 publication record (2026-07-17)
 
-`v0.5.4` is the corrective release for the immutable `v0.5.3` publication snapshot. The `v0.5.3` tag and PyPI files cannot be rewritten; their embedded README still contains the earlier `v0.5.2` bootstrap references. This candidate puts every package-facing reference on `v0.5.4` before the tag is created. The Homebrew formula remains on the verified stable `v0.5.3` archive until PyPI and the source checksum for `v0.5.4` are confirmed.
+`v0.5.4` is the corrective release for the immutable `v0.5.3` publication snapshot. The `v0.5.3` tag and PyPI files cannot be rewritten; their embedded README still contains the earlier `v0.5.2` bootstrap references. The corrective package was tagged only after all package-facing references were aligned to `v0.5.4`; the formula was then promoted after PyPI and source-archive verification.
 
 The historical `0.5.3`, `0.5.2`, and `0.5.0` publication records remain below. No credentials, local paths, build artifacts, or private documents belong in the release commit.
 
-## 1. Validate the 0.5.4 candidate
+### Publication details
+
+- GitHub Release: https://github.com/dgabreuu/supa.cc/releases/tag/v0.5.4
+- PyPI package: https://pypi.org/project/supa.cc/0.5.4/
+- Release tag: `v0.5.4` (`ae6e149a326e8f3db135e6eb0643a9732ccde1a5`)
+- Verified release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29590240342
+- Source archive SHA-256: `ac98e4c7c4a39fe0ded8684fac5fca7c3c4c38314ed6c2ce66ccde30481ca47f`
+- Homebrew promotion: pending the dedicated validation workflow on the promoted `main` commit.
+
+## 1. Validate the 0.5.4 candidate (completed)
 
 Review `git status --short`, `git remote -v`, and the history. Confirm that tracked content and artifacts contain no PAT, absolute local path, cache, virtual environment, diff, or private document.
 
@@ -72,7 +81,7 @@ supa.cc --version
 supa.cc version
 ```
 
-## 7. Promote the Homebrew formula and post-publication assets
+## 7. Promote the Homebrew formula and post-publication assets (completed)
 
 After `supa.cc==0.5.4` becomes available on PyPI and the real `v0.5.4` source archive is downloaded and independently verified, promote the following assets together:
 
@@ -87,11 +96,11 @@ shasum -a 256 "$archive"
 - Update `.github/workflows/homebrew.yml` to validate the promoted formula revision.
 - Update `tests/test_project_identity.py` and `tests/test_publication_assets.py`, including `STABLE_FORMULA_VERSION`, `TARBALL_URL`, `TARBALL_SHA256`, and the formula assertions, to the verified `v0.5.4` values.
 
-The `v0.5.3` values in the candidate checklist are transient only; the stable formula, workflow checks, and test constants use the verified `v0.5.4` archive and SHA after promotion.
+The `v0.5.3` values in the candidate checklist were transient only; the stable formula, workflow checks, and test constants now use the verified `v0.5.4` archive and SHA.
 
 ## 8. Update availability documentation
 
-Record the GitHub Release, PyPI package, release workflow, source-archive SHA, Homebrew workflow, exact tap commit, and formula version here after each gate passes. The `0.5.4` changelog is final and the reviewed `README.md` and `docs/installation.md` links use immutable `v0.5.4` refs. No Debian, AUR, or RPM assets are created.
+The GitHub Release, PyPI package, release workflow, source-archive SHA, and formula promotion are complete. Record the Homebrew workflow URL, exact tap commit, and final formula validation here after that gate passes. The `0.5.4` changelog is final and the reviewed `README.md` and `docs/installation.md` links use immutable `v0.5.4` refs. No Debian, AUR, or RPM assets are created.
 
 ## 0.5.3 publication record (historical)
 
