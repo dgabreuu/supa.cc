@@ -21,7 +21,7 @@ Supa.cc manages multiple Supabase accounts locally while keeping Personal Access
 
 ## 📦 Installation
 
-Supa.cc requires Python 3.11+ and the [official Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) 2.109.1 or newer. The recommended path is the immutable `v0.5.4` bootstrap for your operating system.
+Supa.cc requires Python 3.11+ and the [official Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) 2.109.1 or newer. The recommended path is the immutable `v0.5.5` bootstrap for your operating system.
 
 | Platform | Recommended method | Native credential store |
 | --- | --- | --- |
@@ -34,22 +34,24 @@ The bootstrap detects supported dependencies, configures the current session's `
 ### 🍎 macOS
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.5/install.sh | bash
 ```
 
 ### 🐧 Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.5/install.sh | bash
 ```
 
 ### 🪟 Windows
 
 ```powershell
-irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.ps1 | iex
+irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.5/install.ps1 | iex
 ```
 
 The [installation guide](https://github.com/dgabreuu/supa.cc/blob/main/docs/installation.md) covers prerequisites, manual Homebrew and `pipx` fallbacks, verification, upgrades, uninstallation, and platform-specific remediation.
+
+To operate Supa.cc through OpenCode, Claude Code, Codex, or Cursor, install the portable [coding-agent skill](https://github.com/dgabreuu/supa.cc/blob/main/docs/agent-skill.md) separately.
 
 ## 🔐 Security
 

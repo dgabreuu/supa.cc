@@ -1,5 +1,67 @@
 # Release record and checklist
 
+## 0.5.5 candidate checklist
+
+`v0.5.5` is the next patch candidate after `v0.5.4`. It packages the portable coding-agent skill and its installation documentation. The tag, GitHub Release, PyPI artifacts, source checksum, workflow URLs, and Homebrew promotion remain pending until their respective gates pass. Do not publish a guessed checksum or attach local build artifacts to the release.
+
+## 1. Validate the 0.5.5 candidate
+
+Review `git status --short`, `git remote -v`, the exact candidate commit, and the complete staged scope. Confirm that the candidate contains no PAT, absolute local path, cache, virtual environment, diff, or private document, and that no file under `supa_cc/` changed.
+
+Run the following from the candidate checkout:
+
+```bash
+python -m pytest
+python -m pip check
+pip-audit --skip-editable
+python scripts/runtime_requirements.py runtime-requirements.txt
+pip-audit --requirement runtime-requirements.txt
+python scripts/security_scan.py --tracked --history
+python -m pytest --cache-clear --collect-only -q
+python scripts/security_scan.py --path .pytest_cache
+python -m build
+python scripts/inspect_artifacts.py dist
+bash -n install.sh
+bash install.sh --dry-run --yes
+pwsh -NoProfile -File install.ps1 -Help
+pwsh -NoProfile -File install.ps1 -DryRun -Yes
+git diff --check
+```
+
+Verify that the wheel and sdist metadata identify `supa.cc` version `0.5.5`, that the immutable installer references are `v0.5.5`, and that the Agent Skills validator accepts `.agents/skills/supa-cc`.
+
+## 2. Confirm the 0.5.5 operational and publication contract
+
+Confirm Supabase CLI >= 2.109.1, the official `supabase` profile, native credential-store protections, and the existing release workflow's OIDC configuration. Do not create a PyPI API token. The public skill remains separate from package installation and does not change the CLI behavior.
+
+## 3. Publish the GitHub Release for 0.5.5
+
+After the candidate PR is merged and its CI is green, create the annotated tag `v0.5.5` on that exact commit and publish a stable, non-draft, non-prerelease GitHub Release using the `0.5.5` changelog section. The release workflow must validate the tag/version match, test, build one wheel and one sdist, inspect them, and upload only that artifact set.
+
+## 4. Publish 0.5.5 to PyPI with Trusted Publishing
+
+The existing `release.yml` workflow publishes through the protected `pypi` environment using OIDC `id-token: write`. It must build once and publish only the inspected wheel and sdist.
+
+## 5. Verify pipx for 0.5.5 on Linux and Windows
+
+The release workflow installs `supa.cc==0.5.5` on Linux and Windows with `pipx`. Verify that both version commands complete successfully before changing the Homebrew formula.
+
+## 6. Update the Homebrew formula after PyPI verification
+
+Download the real source archive only after `v0.5.5` exists:
+
+```bash
+archive="${TMPDIR:-.}/supa.cc-v0.5.5.tar.gz"
+curl --fail --location --output "$archive" https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.5.5.tar.gz
+shasum -a 256 "$archive"
+```
+
+Use that measured SHA-256 to update `Formula/supa-cc.rb` and its publication tests. Run the formula-scoped trust, audit, install, version, resource, and test gates through the manual Homebrew workflow. Never infer or prefill the checksum.
+
+## 7. Update availability documentation
+
+After GitHub, PyPI, pipx, and Homebrew verification, record the actual tag SHA, release URL, workflow URLs, source SHA-256, tap commit, and validation results here. Keep the changelog comparison link at `v0.5.4...v0.5.5` and do not create Debian, AUR, or RPM assets.
+
 ## 0.5.4 publication record (2026-07-17)
 
 `v0.5.4` is the corrective release for the immutable `v0.5.3` publication snapshot. The `v0.5.3` tag and PyPI files cannot be rewritten; their embedded README still contains the earlier `v0.5.2` bootstrap references. The corrective package was tagged only after all package-facing references were aligned to `v0.5.4`; the formula was then promoted after PyPI and source-archive verification.

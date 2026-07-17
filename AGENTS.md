@@ -9,10 +9,10 @@ Keep every contribution generic and safe for this public open source repository.
 | `supa_cc/` | Python source code |
 | `tests/` | `pytest` suite |
 | `docs/` | Installation, usage, security, remediation, and release documentation |
+| `.agents/skills/supa-cc/` | Portable coding-agent skill and operational references |
 | `Formula/` | Homebrew formula |
 | `pyproject.toml` | Metadata, dependencies, build, and tooling |
 | `README.md` | Concise public overview |
-| `SKILL.md` | Operational invariants for agents |
 
 ## Conventions
 
@@ -32,6 +32,6 @@ Keep every contribution generic and safe for this public open source repository.
 
 - Never expose real PATs in code, tests, logs, documentation, prompts, or transcripts. Accepted formats begin with `sbp_` or `sbp_oauth_` and are validated before storage; do not publish credential-shaped examples.
 - Do not publish absolute local paths, personal email addresses, usernames, private remotes, complete environment dumps, or native credential-store contents.
-- Do not introduce a plaintext fallback, `keyrings.alt`, or unsupported backends. Preserve the invariants in [SKILL.md](SKILL.md) and the [security model](docs/security.md).
+- Do not introduce a plaintext fallback, `keyrings.alt`, or unsupported backends. Preserve the operational invariants in the [Supa.cc skill](.agents/skills/supa-cc/SKILL.md) and the [security model](docs/security.md).
 - Preserve the native backends: Keychain on macOS, Secret Service on Linux, and Windows Credential Manager through `WinVaultKeyring` on Windows.
 - Before publishing, review history, ignored files, logs, caches, virtual environments, fixtures, and screenshots for secrets.

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Supa.cc"
+  short_description: "Manage Supabase CLI accounts securely with Supa.cc"
+  default_prompt: "Use $supa-cc to carry out this Supa.cc account or diagnostic request safely."
+policy:
+  allow_implicit_invocation: true
