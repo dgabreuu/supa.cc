@@ -5,6 +5,12 @@ The format follows Keep a Changelog in a simplified form.
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-07-17
+
+### Added
+
+- Portable `supa-cc` coding-agent skill with deterministic CLI command selection, credential safety rules, result interpretation, and installation guidance for OpenCode, Claude Code, Codex, and Cursor.
+
 ## [0.5.4] - 2026-07-17
 
 ### Fixed
@@ -57,7 +63,8 @@ The format follows Keep a Changelog in a simplified form.
 [0.5.2]: https://github.com/dgabreuu/supa.cc/compare/v0.5.1...v0.5.2
 [0.5.3]: https://github.com/dgabreuu/supa.cc/compare/v0.5.2...v0.5.3
 [0.5.4]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...v0.5.4
-[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...HEAD
+[0.5.5]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...v0.5.5
+[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.5...HEAD
 
 ## [0.4.2] - 2026-07-14
 

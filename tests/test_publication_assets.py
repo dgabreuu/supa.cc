@@ -7,7 +7,7 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-PACKAGE_VERSION = "0.5.4"
+PACKAGE_VERSION = "0.5.5"
 STABLE_FORMULA_VERSION = "0.5.4"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
@@ -521,6 +521,21 @@ def test_changelog_records_0_5_4_publication_metadata_correction():
     assert "published package metadata and immutable bootstrap references" in changelog
     assert (
         "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...HEAD"
+        not in changelog
+    )
+
+
+def test_changelog_records_0_5_5_agent_skill_release_candidate():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.5.5] - 2026-07-17" in changelog
+    assert "Portable `supa-cc` coding-agent skill" in changelog
+    assert (
+        "[0.5.5]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...v0.5.5"
+        in changelog
+    )
+    assert (
+        "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.5...HEAD"
         in changelog
     )
 

@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SUPABASE_VERSION="2.109.1"
-SUPA_CC_VERSION="0.5.4"
+SUPA_CC_VERSION="0.5.5"
 HOMEBREW_INSTALL_REVISION="4b0227cf8416504142d23893368c2e1d211d5191"
 HOMEBREW_INSTALL_URL="https://raw.githubusercontent.com/Homebrew/install/${HOMEBREW_INSTALL_REVISION}/install.sh"
 SUPABASE_RELEASE_URL="https://github.com/supabase/cli/releases/download/v${SUPABASE_VERSION}"
