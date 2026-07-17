@@ -2,10 +2,10 @@
 
 ## 0.5.5 publication record (2026-07-17)
 
-The GitHub Release, PyPI publication, and Linux/Windows `pipx` verification for
-`v0.5.5` completed successfully. The Homebrew formula promotion below is the
-remaining post-PyPI gate; its tap commit and workflow result will be recorded
-after the formula change is merged and the manual workflow finishes.
+The GitHub Release, PyPI publication, Linux/Windows `pipx` verification, and
+Homebrew promotion for `v0.5.5` completed successfully. The formula was
+promoted only after the immutable source archive checksum was verified and the
+manual Homebrew workflow passed.
 
 ### Publication details
 
@@ -14,16 +14,15 @@ after the formula change is merged and the manual workflow finishes.
 - Release tag: `v0.5.5` (`2d286b03e8ddb4d5484ba4c6bb496d97e7e35aa1`)
 - Verified release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29598792471
 - Source archive SHA-256: `9c7fc187d3d25ad9eec6a7fad88b0c64df519968cf3beb3439ef4d3764376166`
-- Homebrew promotion commit/tap revision: pending formula merge and workflow validation
-- Homebrew validation workflow: pending formula merge and workflow dispatch
+- Homebrew promotion commit/tap revision: `6442b35e088bd1b225b8b1f3057a6e73ce4b9f62` (PR #17)
+- Homebrew validation workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29599592869
 
 ## 0.5.5 candidate checklist
 
 `v0.5.5` is the patch release after `v0.5.4`. It packages the portable
 coding-agent skill and its installation documentation. The checklist below
-records the gates used for publication; Homebrew remains pending until its
-formula PR and manual validation workflow complete. Do not publish a guessed
-checksum or attach local build artifacts to the release.
+records the gates used for publication and the completed Homebrew promotion.
+Do not publish a guessed checksum or attach local build artifacts to a release.
 
 ## 1. Validate the 0.5.5 candidate
 
