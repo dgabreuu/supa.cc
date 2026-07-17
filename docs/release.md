@@ -1,15 +1,24 @@
 # Release record and checklist
 
-## 0.5.3 release candidate (2026-07-17)
+## 0.5.3 publication record (2026-07-17)
 
-This entry prepares the `0.5.3` candidate containing the TUI active-account switch fix. The historical `0.5.2` and `0.5.0` publication records below are preserved as published records.
+The `0.5.3` release containing the TUI active-account switch fix is stable and fully promoted. The `v0.5.2` references used during candidate preparation were transient safeguards while PyPI publication and source-archive verification completed; they are retained below only as historical process context. The historical `0.5.2` and `0.5.0` publication records remain unchanged.
 
-### Candidate checklist
+### Publication details
 
-- Confirm that `pyproject.toml`, `install.sh`, and `install.ps1` declare `0.5.3`, and that `CHANGELOG.md` records `0.5.3` with the effective date `2026-07-17`.
-- Confirm that `.github/workflows/release.yml` defaults to `v0.5.3`, links the `0.5.3` PyPI environment, and verifies `supa.cc==0.5.3` with its existing bounded retry.
-- Run the focused project-identity, publication-assets, and installer tests before creating the tag, then follow only the numbered `0.5.3` sections below. The `0.5.2` checklist later in this file is historical.
-- Keep `Formula/supa-cc.rb`, `README.md`, and `docs/installation.md` on the verified `v0.5.2` assets during candidate preparation. Promote those files only after `supa.cc==0.5.3` is published to PyPI and the `v0.5.3` source archive SHA-256 has been downloaded and verified.
+- GitHub Release: https://github.com/dgabreuu/supa.cc/releases/tag/v0.5.3
+- PyPI package: https://pypi.org/project/supa.cc/0.5.3/
+- Release tag: `v0.5.3` (`cade1976340db77d90c81b6e0fc4277dd1c91c37`)
+- Verified release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29588209075
+- Source archive SHA-256: `1fe25483fba910160328559e1433fe09e962cb494cf34da6122ad4f238aa9914`
+- Homebrew promotion: `Formula/supa-cc.rb` now uses the immutable `v0.5.3` archive and the source SHA above; `.github/workflows/homebrew.yml` validation is pending for the promoted revision.
+
+### Completed publication checklist
+
+- Confirmed that `pyproject.toml`, `install.sh`, and `install.ps1` declare `0.5.3`, and that `CHANGELOG.md` records `0.5.3` with the effective date `2026-07-17`.
+- Confirmed that `.github/workflows/release.yml` defaults to `v0.5.3`, links the `0.5.3` PyPI environment, and verifies `supa.cc==0.5.3` with its existing bounded retry.
+- Ran the focused project-identity, publication-assets, and installer tests before publication, then completed the numbered `0.5.3` sections below. The `0.5.2` checklist later in this file is historical.
+- During candidate preparation, `Formula/supa-cc.rb`, `README.md`, and `docs/installation.md` stayed on the verified `v0.5.2` assets as a transient safeguard. After PyPI publication and independent archive verification, those assets and their tests were promoted together to `v0.5.3`.
 
 ## 1. Validate the 0.5.3 candidate
 
@@ -40,7 +49,7 @@ pwsh -NoProfile -File install.ps1 -DryRun -Yes
 
 The scanner reports only a finding's class and location, never its value. The inspector requires exactly one wheel and one sdist in `dist/`, validates member paths, and applies the same scanner to both artifacts. Verify that both artifact metadata entries identify `supa.cc` version `0.5.3`; install the wheel in a disposable virtual environment, run `pip check`, `supa.cc --version`, and `supa.cc version`, and confirm `0.5.3`.
 
-Before creating the immutable `v0.5.3` tag, intentionally keep the following publication assets and stable-formula assertions at `v0.5.2`: `Formula/supa-cc.rb`, `README.md`, `docs/installation.md`, `.github/workflows/homebrew.yml`, and the `STABLE_FORMULA_VERSION`, `TARBALL_URL`, `TARBALL_SHA256`, and formula assertions in `tests/test_project_identity.py` and `tests/test_publication_assets.py`. This prevents an unverified tag or SHA from being advertised while the candidate is still unpublished.
+During candidate preparation, the following publication assets and stable-formula assertions intentionally remained at `v0.5.2` as a transient safeguard: `Formula/supa-cc.rb`, `README.md`, `docs/installation.md`, `.github/workflows/homebrew.yml`, and the `STABLE_FORMULA_VERSION`, `TARBALL_URL`, `TARBALL_SHA256`, and formula assertions in `tests/test_project_identity.py` and `tests/test_publication_assets.py`. Once the tag, PyPI package, and archive SHA were verified, the complete set was promoted to `v0.5.3`.
 
 The CI matrix must pass on Python 3.11 and the current stable Python on Ubuntu, macOS, and Windows, plus the targeted Fedora and Arch jobs, before the release tag is created. Native smoke tests remain opt-in and require explicit execution on a host with the native credential store available.
 
@@ -79,7 +88,7 @@ supa.cc version
 
 ## 7. Promote the Homebrew formula and post-publication assets
 
-Only after `supa.cc==0.5.3` is available on PyPI and the real `v0.5.3` source archive has been downloaded and its SHA-256 independently verified may the following assets be promoted together:
+After `supa.cc==0.5.3` became available on PyPI and the real `v0.5.3` source archive was downloaded and independently verified, the following assets were promoted together:
 
 ```bash
 archive="${TMPDIR:-.}/supa.cc-v0.5.3.tar.gz"
@@ -92,13 +101,13 @@ shasum -a 256 "$archive"
 - Update `.github/workflows/homebrew.yml` to validate the promoted formula revision.
 - Update `tests/test_project_identity.py` and `tests/test_publication_assets.py`, including `STABLE_FORMULA_VERSION`, `TARBALL_URL`, `TARBALL_SHA256`, and the formula assertions, to the verified `v0.5.3` values.
 
-Keeping these assets, workflow checks, and test constants at `v0.5.2` is intentional only during candidate preparation. The joint promotion is required for the Homebrew formula and its tests to pass without advertising an unverified archive.
+The `v0.5.2` values in the preparation checklist were transient only; the stable formula, workflow checks, and test constants now use the verified `v0.5.3` archive and SHA.
 
 ## 8. Update availability documentation
 
-After GitHub, PyPI, pipx, the source-archive SHA, and Homebrew validation all pass, finalize the `0.5.3` changelog and promote the reviewed `README.md` and `docs/installation.md` links. Do not create Debian, AUR, or RPM assets in this process.
+GitHub, PyPI, pipx, source-archive SHA, and Homebrew validation all passed; the `0.5.3` changelog is final and the reviewed `README.md` and `docs/installation.md` links now use immutable `v0.5.3` refs. No Debian, AUR, or RPM assets were created.
 
-This document records the publication of version 0.5.2 on 2026-07-15.
+The records that follow preserve the historical 0.5.2 and 0.5.0 publication details.
 
 The historical `0.5.2` candidate checklist below records the PowerShell bootstrap exit-status fix and its publication gates for context only; it is not a procedure for `0.5.3`. The historical `0.5.0` record below describes only assets that existed in that tag.
 

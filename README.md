@@ -23,14 +23,14 @@ Supa.cc manages multiple Supabase accounts locally while keeping Personal Access
 
 Supa.cc requires Python 3.11+ and the [official Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) 2.109.1 or newer.
 
-For the supported platforms, the recommended installation is the immutable `v0.5.2` bootstrap:
+For the supported platforms, the recommended installation is the immutable `v0.5.3` bootstrap:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.2/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.3/install.sh | bash
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.2/install.ps1 | iex
+irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.3/install.ps1 | iex
 ```
 
 The platform sections below remain available as advanced manual fallbacks.
