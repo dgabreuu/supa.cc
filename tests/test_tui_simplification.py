@@ -4,7 +4,7 @@ import sys
 from supa_cc.ui.animations import loading
 from supa_cc.ui.screens import MAIN_MENU_CHOICES
 from supa_cc.ui.state import MenuAction
-from supa_cc.ui.theme import BANNER_COMPACT, get_banner
+from supa_cc.ui.theme import BANNER_COMPACT, OUTPUT_STYLES, get_banner
 
 
 class RecordingConsole:
@@ -55,4 +55,6 @@ def test_loading_prints_one_stable_status_line_without_spinner():
     with loading("Activating account… (up to 30s)", console=console):
         pass
 
-    assert console.lines == [("Activating account… (up to 30s)", "status")]
+    assert console.lines == [
+        ("Activating account… (up to 30s)", OUTPUT_STYLES["status"])
+    ]

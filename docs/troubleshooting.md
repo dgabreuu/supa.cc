@@ -130,4 +130,6 @@ Failure categories identify the phase that needs remediation:
 - `environment_blocked` covers sandbox, filesystem, execution, or telemetry restrictions; it is not an authentication result.
 - `network_failure` and `cli_incompatible` remain independent of local credential storage.
 
+If the TUI reports `Unexpected local failure`, run `supa.cc doctor`, record the output of `supa.cc version`, then try the same selection with `supa.cc switch <name>`. A successful CLI switch suggests that the TUI path needs investigation; a CLI failure points to the shared account service or runtime environment. Report only the sanitized failure message and diagnostic fields. Never share a complete environment, credential-store dump, state file, PAT, or other secret.
+
 Corrupt or conflicting local state is reported as `state_invalid`; it is never silently repaired. Preserve the files for diagnosis. Interrupted operations leave a token-free pending transition in `state.json`; run a mutating Supa.cc command again to trigger idempotent recovery. Do not manually edit the state document or native credentials. The lock does not coordinate external `supabase` commands, so avoid running them at the same time as an activation.

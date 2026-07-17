@@ -8,6 +8,32 @@ from helpers import FakeCredentialStore
 from supa_cc.auth import contains_pat
 
 
+NATIVE_CREDENTIAL_ACCESS = {
+    "real_keychain": ("Darwin", "SUPA_CC_RUN_KEYCHAIN_SMOKE"),
+    "real_secret_service": ("Linux", "SUPA_CC_REAL_SECRET_SERVICE"),
+    "real_windows_credential_manager": (
+        "Windows",
+        "SUPA_CC_RUN_WINDOWS_CREDENTIAL_MANAGER_SMOKE",
+    ),
+}
+
+
+def _native_credential_access_allowed(request):
+    for marker, (expected_system, opt_in) in NATIVE_CREDENTIAL_ACCESS.items():
+        if request.node.get_closest_marker(marker) is None:
+            continue
+        if platform.system() != expected_system:
+            pytest.skip(f"{marker} requires {expected_system}")
+        if os.environ.get(opt_in) != "1":
+            pytest.skip(f"{marker} requires explicit {opt_in}=1 opt-in")
+        return True
+    return False
+
+
+def _fake_credential_store(*_args, **_kwargs):
+    return FakeCredentialStore()
+
+
 def pytest_make_parametrize_id(config, val, argname):
     """Keep credential-shaped values out of collected node IDs and caches."""
     del config
@@ -19,12 +45,7 @@ def pytest_make_parametrize_id(config, val, argname):
 @pytest.fixture(autouse=True)
 def isolate_user_state(tmp_path, monkeypatch, request):
     """Route every unit-test state path to a disposable per-test home."""
-    native_markers = (
-        "real_keychain",
-        "real_secret_service",
-        "real_windows_credential_manager",
-    )
-    if any(request.node.get_closest_marker(marker) for marker in native_markers):
+    if _native_credential_access_allowed(request):
         yield
         return
     home = tmp_path / "home"
@@ -38,23 +59,15 @@ def isolate_user_state(tmp_path, monkeypatch, request):
 @pytest.fixture(autouse=True)
 def silence_security_keychain(request):
     """Prevent unit tests from reaching the host credential store."""
-    if request.node.get_closest_marker("real_keychain") is not None:
-        if (
-            platform.system() != "Darwin"
-            or os.environ.get("SUPA_CC_RUN_KEYCHAIN_SMOKE") != "1"
-        ):
-            pytest.skip(
-                "real Keychain access requires macOS and explicit opt-in"
-            )
-        yield
-        return
-
-    if request.node.get_closest_marker("real_secret_service") is not None:
+    if _native_credential_access_allowed(request):
         yield
         return
 
     with patch(
         "supa_cc.accounts.store.create_credential_store",
-        side_effect=lambda _environment, **_kwargs: FakeCredentialStore(),
+        side_effect=_fake_credential_store,
+    ), patch(
+        "supa_cc.accounts.service.create_credential_store",
+        side_effect=_fake_credential_store,
     ):
         yield

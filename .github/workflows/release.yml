@@ -8,7 +8,7 @@ on:
       release_tag:
         description: "Published immutable release tag to build and publish"
         required: true
-        default: "v0.5.2"
+        default: "v0.5.3"
 
 permissions: {}
 
@@ -89,7 +89,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/supa.cc/0.5.2/
+      url: https://pypi.org/project/supa.cc/0.5.3/
     permissions:
       id-token: write
     steps:
@@ -120,7 +120,7 @@ jobs:
         run: |
           installed=0
           for attempt in 1 2 3 4 5 6; do
-            if pipx install supa.cc==0.5.2; then
+            if pipx install supa.cc==0.5.3; then
               installed=1
               break
             fi
@@ -136,7 +136,7 @@ jobs:
           $ErrorActionPreference = "Stop"
           $installed = $false
           for ($attempt = 1; $attempt -le 6; $attempt++) {
-            pipx install supa.cc==0.5.2
+            pipx install supa.cc==0.5.3
             if ($LASTEXITCODE -eq 0) {
               $installed = $true
               break
@@ -146,7 +146,7 @@ jobs:
             }
           }
           if (-not $installed) {
-            throw "PyPI package supa.cc==0.5.2 was not visible after six attempts."
+            throw "PyPI package supa.cc==0.5.3 was not visible after six attempts."
           }
           supa.cc --version
           supa.cc version

@@ -7,7 +7,7 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-PACKAGE_VERSION = "0.5.2"
+PACKAGE_VERSION = "0.5.3"
 STABLE_FORMULA_VERSION = "0.5.2"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
@@ -483,6 +483,21 @@ def test_changelog_records_0_5_2_windows_bootstrap_fix():
     assert "PowerShell bootstrap runs now return success" in changelog
     assert (
         "[0.5.2]: https://github.com/dgabreuu/supa.cc/compare/v0.5.1...v0.5.2"
+        in changelog
+    )
+
+
+def test_changelog_records_0_5_3_tui_fix_and_unreleased_comparison():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.5.3] - 2026-07-17" in changelog
+    assert "The TUI resolves semantic loading styles" in changelog
+    assert (
+        "[0.5.3]: https://github.com/dgabreuu/supa.cc/compare/v0.5.2...v0.5.3"
+        in changelog
+    )
+    assert (
+        "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...HEAD"
         in changelog
     )
 

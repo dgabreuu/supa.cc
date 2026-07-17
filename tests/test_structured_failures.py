@@ -30,11 +30,29 @@ def test_local_infrastructure_failures_are_typed_and_sanitized(error, code, phas
 
 
 def test_unexpected_failure_exposes_only_safe_exception_type():
-    result = classify_local_failure(RuntimeError("secret contents"), operation="add")
+    operation = "private-operation-context"
+    result = classify_local_failure(
+        RuntimeError("secret contents"), operation=operation
+    )
 
     assert result.code is AuthFailureCode.UNEXPECTED_LOCAL_FAILURE
-    assert result.operation == "add"
+    assert result.operation == operation
     assert result.phase == "unexpected"
     assert result.recoverability == "retryable"
-    assert "RuntimeError" in result.message
+    assert result.message == "Unexpected local failure (RuntimeError)."
+    assert operation not in result.message
     assert "secret contents" not in result.message
+
+
+def test_unexpected_switch_failure_has_safe_operation_context():
+    result = classify_local_failure(
+        ValueError("private account detail"), operation="switch"
+    )
+
+    assert result.code is AuthFailureCode.UNEXPECTED_LOCAL_FAILURE
+    assert result.operation == "switch"
+    assert result.phase == "unexpected"
+    assert result.message == (
+        "Unexpected local failure during account switch (ValueError)."
+    )
+    assert "private account detail" not in result.message

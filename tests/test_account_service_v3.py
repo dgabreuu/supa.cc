@@ -216,6 +216,32 @@ def test_switch_without_reauth_provider_returns_credential_missing(tmp_path):
     assert "credential" in result.message.lower()
 
 
+def test_switching_to_active_account_revalidates_and_resynchronizes(tmp_path):
+    token = fake_pat("already-active")
+    credentials = FakeCredentialStore()
+    credentials.tokens["work"] = token
+    cli = Mock()
+    cli.validate_access_token.return_value = AuthResult.success("valid")
+    session = _successful_session()
+    service = _service(
+        tmp_path,
+        state=AccountState(aliases=("work",), confirmed_active="work"),
+        credentials=credentials,
+        cli=cli,
+        session=session,
+    )
+
+    result = service.set_active("work")
+
+    assert result.ok
+    cli.validate_access_token.assert_called_once_with(Account("work", token))
+    session.activate.assert_called_once()
+    assert session.activate.call_args.args == (Account("work", token),)
+    state = service.state_repository.load()
+    assert state.confirmed_active == "work"
+    assert state.pending_transition is None
+
+
 def test_failed_switch_restores_previous_confirmed_session(tmp_path):
     credentials = FakeCredentialStore()
     old = Account("old", fake_pat("old-v3"))
