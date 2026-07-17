@@ -382,7 +382,7 @@ def test_platform_lifecycle_commands_use_separately_labeled_blocks():
 
 def test_security_claims_distinguish_posix_checks_from_windows_guarantees():
     security = Path("docs/security.md").read_text(encoding="utf-8").lower()
-    skill = Path("SKILL.md").read_text(encoding="utf-8").lower()
+    skill = Path(".agents/skills/supa-cc/SKILL.md").read_text(encoding="utf-8").lower()
 
     assert "linux" in security and "open descriptor" in security
     assert "macos" in security and "executes the validated path" in security
@@ -474,7 +474,13 @@ def test_stable_installation_is_not_described_as_a_development_wheel():
 
 
 def test_skill_names_every_supported_native_credential_backend():
-    skill = Path("SKILL.md").read_text(encoding="utf-8")
+    skill = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            ".agents/skills/supa-cc/SKILL.md",
+            ".agents/skills/supa-cc/references/safety-and-errors.md",
+        )
+    )
     mappings = {
         "macOS": (r"\bmacOS\b", r"\bKeychain\b"),
         "Linux": (r"\bLinux\b", r"\bSecret Service\b"),

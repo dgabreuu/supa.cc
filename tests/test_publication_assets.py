@@ -552,7 +552,7 @@ def test_troubleshooting_doctor_language_is_credential_store_neutral():
 
 
 def test_public_docs_do_not_claim_default_doctor_probes_credential_availability():
-    skill = Path("SKILL.md").read_text(encoding="utf-8")
+    skill = Path(".agents/skills/supa-cc/SKILL.md").read_text(encoding="utf-8")
     troubleshooting = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
 
     for contents in (skill, troubleshooting):
@@ -574,7 +574,9 @@ def test_obsolete_private_implementation_documents_are_removed():
 
 def test_public_docs_cover_linux_installation_and_credential_requirements():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
-    skill = Path("SKILL.md").read_text(encoding="utf-8")
+    skill = Path(".agents/skills/supa-cc/references/safety-and-errors.md").read_text(
+        encoding="utf-8"
+    )
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
 
     for distribution in ("Debian", "Ubuntu", "Arch", "Fedora"):
@@ -588,7 +590,9 @@ def test_public_docs_cover_linux_installation_and_credential_requirements():
 
 def test_public_docs_keep_installation_routes_and_credential_flow_platform_specific():
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
-    skill = Path("SKILL.md").read_text(encoding="utf-8")
+    skill = Path(".agents/skills/supa-cc/references/safety-and-errors.md").read_text(
+        encoding="utf-8"
+    )
 
     assert "Homebrew (macOS only)" in installation
     assert "Linux (pipx only)" in installation
@@ -610,7 +614,8 @@ def test_public_authentication_contract_is_safe_and_current():
     surfaces = {
         path: Path(path).read_text(encoding="utf-8")
         for path in (
-            "SKILL.md",
+            ".agents/skills/supa-cc/SKILL.md",
+            ".agents/skills/supa-cc/references/safety-and-errors.md",
             "AGENTS.md",
             "docs/installation.md",
             "docs/usage.md",
@@ -644,7 +649,12 @@ def test_public_authentication_contract_is_safe_and_current():
             f"{path} claims default doctor opens or probes credentials"
         )
 
-    skill = surfaces["SKILL.md"]
+    skill = "\n".join(
+        (
+            surfaces[".agents/skills/supa-cc/SKILL.md"],
+            surfaces[".agents/skills/supa-cc/references/safety-and-errors.md"],
+        )
+    )
     usage = surfaces["docs/usage.md"]
     security = surfaces["docs/security.md"]
     assert "supa.cc run --" in usage and "hidden prompt" in usage.lower()

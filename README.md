@@ -51,6 +51,8 @@ irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.ps1 | iex
 
 The [installation guide](https://github.com/dgabreuu/supa.cc/blob/main/docs/installation.md) covers prerequisites, manual Homebrew and `pipx` fallbacks, verification, upgrades, uninstallation, and platform-specific remediation.
 
+To operate Supa.cc through OpenCode, Claude Code, Codex, or Cursor, install the portable [coding-agent skill](https://github.com/dgabreuu/supa.cc/blob/main/docs/agent-skill.md) separately.
+
 ## 🔐 Security
 
 PATs are accepted only through hidden prompts, stored only in the platform-native credential store, and never passed as command-line arguments. Read the [security model](https://github.com/dgabreuu/supa.cc/blob/main/docs/security.md) and [safe troubleshooting guide](https://github.com/dgabreuu/supa.cc/blob/main/docs/troubleshooting.md) before sharing diagnostics or changing an installation.

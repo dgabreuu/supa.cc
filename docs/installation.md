@@ -163,4 +163,6 @@ pipx uninstall supa.cc
 
 Continue with [first use](usage.md#first-use-with-the-tui). The default `supa.cc doctor` remains non-live and does not probe credential availability; only `--installation-check` performs the isolated local probe. It is incompatible with `--live` and `--account` and can be combined with `--json`.
 
+To manage Supa.cc through OpenCode, Claude Code, Codex, or Cursor, install the separate [portable coding-agent skill](agent-skill.md). Installing the Python package does not install agent instructions.
+
 Before changing channels, follow [safe reinstallation](troubleshooting.md#safe-reinstallation). Credential-store and blocked-environment remediation is documented in [Troubleshooting](troubleshooting.md), and state guarantees are documented in [Security](security.md).

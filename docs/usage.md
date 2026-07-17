@@ -24,6 +24,17 @@ supabase projects list
 
 Activation validates the PAT, asks the Supabase CLI to synchronize the official `supabase` profile, removes the PAT from the verification environment, and confirms that the CLI can recover its own persisted session. Only then does Supa.cc record the active account. Supa.cc treats the CLI credential format and identifiers as private implementation details. If activation fails, follow [Troubleshooting](troubleshooting.md); see [Security](security.md) for guarantees and limits.
 
+## Use through a coding agent
+
+Install the [portable Supa.cc skill](agent-skill.md) to operate the CLI through OpenCode, Claude Code, Codex, or Cursor. After discovery, ask in natural language, for example:
+
+- “List my Supa.cc accounts.”
+- “Switch Supa.cc to the work account.”
+- “Check whether Supa.cc is installed correctly.”
+- “Run `supabase projects list` with the active account.”
+
+The agent selects deterministic subcommands, checks exit status, and asks for missing account names rather than inventing them. Account creation and orphaned-alias reauthorization still require the user to enter the PAT in Supa.cc's hidden prompt. Never paste a PAT into agent chat.
+
 ## Workflows
 
 ### Manage accounts
