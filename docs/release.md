@@ -13,7 +13,8 @@ The historical `0.5.3`, `0.5.2`, and `0.5.0` publication records remain below. N
 - Release tag: `v0.5.4` (`ae6e149a326e8f3db135e6eb0643a9732ccde1a5`)
 - Verified release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29590240342
 - Source archive SHA-256: `ac98e4c7c4a39fe0ded8684fac5fca7c3c4c38314ed6c2ce66ccde30481ca47f`
-- Homebrew promotion: pending the dedicated validation workflow on the promoted `main` commit.
+- Homebrew promotion commit/tap revision: `0221d8b32e9721effe2ef11ae2a8b340db173c4a`
+- Homebrew validation workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29590864802
 
 ## 1. Validate the 0.5.4 candidate (completed)
 
@@ -100,7 +101,7 @@ The `v0.5.3` values in the candidate checklist were transient only; the stable f
 
 ## 8. Update availability documentation
 
-The GitHub Release, PyPI package, release workflow, source-archive SHA, and formula promotion are complete. Record the Homebrew workflow URL, exact tap commit, and final formula validation here after that gate passes. The `0.5.4` changelog is final and the reviewed `README.md` and `docs/installation.md` links use immutable `v0.5.4` refs. No Debian, AUR, or RPM assets are created.
+The GitHub Release, PyPI package, release workflow, source-archive SHA, formula promotion, and Homebrew validation are complete. The Homebrew run confirmed the exact tap commit, a clean `brew update-python-resources` result, strict audit, installation, supported Supabase CLI, `0.5.4` version, and formula test. The `0.5.4` changelog is final and the reviewed `README.md` and `docs/installation.md` links use immutable `v0.5.4` refs. No Debian, AUR, or RPM assets were created.
 
 ## 0.5.3 publication record (historical)
 
