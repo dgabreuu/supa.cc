@@ -94,6 +94,6 @@ To uninstall, remove only the installed `supa-cc` skill directory or symlink fro
 
 ## Compatibility sources
 
-The structure and paths follow the [Agent Skills specification](https://agentskills.io/specification), [OpenCode Agent Skills](https://opencode.ai/docs/skills/), [Claude Code skills](https://code.claude.com/docs/en/slash-commands), [Codex skills](https://learn.chatgpt.com/docs/build-skills), and [Cursor Agent Skills](https://cursor.com/docs/skills). The multi-agent repository layout was also compared with [obra/superpowers](https://github.com/obra/superpowers).
+The structure and paths follow the [Agent Skills specification](https://agentskills.io/specification), [OpenCode Agent Skills](https://opencode.ai/docs/skills/), [Claude Code skills](https://code.claude.com/docs/en/slash-commands), [Codex skills](https://learn.chatgpt.com/docs/build-skills), and [Cursor Agent Skills](https://cursor.com/docs/skills).
 
 Limitations are intentional: this repository does not publish a Claude, Codex, Cursor, or OpenCode marketplace plugin; skill installation remains local; and product policy can disable skill discovery or command execution.
