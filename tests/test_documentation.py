@@ -298,21 +298,39 @@ def test_installation_covers_each_platform_lifecycle():
             )
 
 
-def test_readme_stable_installation_uses_platform_release_channels():
+def test_readme_stable_installation_uses_platform_bootstrap_commands():
     readme = _section(Path("README.md").read_text(encoding="utf-8"), "Installation")
 
     expected = {
-        "macOS": "brew install dgabreuu/supa-cc/supa-cc",
-        "Linux": "pipx install supa.cc",
-        "Windows": "pipx install supa.cc",
+        "macOS": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.sh | bash",
+        "Linux": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.sh | bash",
+        "Windows": "irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.4/install.ps1 | iex",
     }
     for platform, command in expected.items():
         stable = _stable_content(_section(readme, platform))
         assert _has_command(stable, command), f"{platform} README install command must be exactly: {command}"
         assert not _contains_mutable_ref(stable), f"mutable ref in README {platform} stable section"
 
-    macos = _stable_content(_section(readme, "macOS"))
-    assert _has_command(macos, "brew install supabase/tap/supabase")
+    manual_homebrew = (
+        "brew tap dgabreuu/supa-cc https://github.com/dgabreuu/supa.cc.git",
+        "brew install supabase/tap/supabase",
+        "brew install dgabreuu/supa-cc/supa-cc",
+    )
+    assert not any(command in readme for command in manual_homebrew)
+
+
+def test_readme_restores_emoji_heading_hierarchy():
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    for heading in (
+        "## 📦 Installation",
+        "## 🔐 Security",
+        "## 📄 License",
+        "### 🍎 macOS",
+        "### 🐧 Linux",
+        "### 🪟 Windows",
+    ):
+        assert heading in readme
 
 
 def test_release_docs_record_all_publication_channels():

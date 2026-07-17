@@ -111,11 +111,10 @@ def test_release_formula_uses_verified_0_5_3_tag():
 
 
 def test_public_homebrew_flow_uses_formula_scoped_trust():
-    readme = Path("README.md").read_text(encoding="utf-8")
     installation = Path("docs/installation.md").read_text(encoding="utf-8")
     troubleshooting = Path("docs/troubleshooting.md").read_text(encoding="utf-8")
 
-    for document in (readme, installation):
+    for document in (installation,):
         assert HOMEBREW_TAP_COMMAND in document
         assert HOMEBREW_SUPABASE_INSTALL_COMMAND in document
         assert HOMEBREW_INSTALL_COMMAND in document
@@ -134,6 +133,19 @@ def test_public_homebrew_flow_uses_formula_scoped_trust():
     assert "brew trust dgabreuu/supa-cc" not in troubleshooting
     assert "brew trust supabase/tap" not in troubleshooting
     assert "HOMEBREW_NO_REQUIRE_TAP_TRUST" not in troubleshooting
+
+
+def test_manual_install_channels_are_explicitly_labeled_as_fallbacks():
+    installation = Path("docs/installation.md").read_text(encoding="utf-8")
+
+    macos = installation[installation.index("### Homebrew (macOS only)") :]
+    linux = installation[installation.index("### Linux (pipx only)") :]
+    windows = installation[installation.index("### Windows (pipx only)") :]
+
+    assert "advanced fallback" in macos.lower()
+    assert "manual fallback" in macos.lower()
+    assert "manual `pipx` fallback" in linux
+    assert "manual `pipx` fallback" in windows
 
 
 def test_homebrew_workflow_is_manual_read_only_macos_validation():
