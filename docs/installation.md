@@ -6,14 +6,14 @@ This guide covers the supported installation lifecycle. Supa.cc requires Python 
 
 `install.sh` and `install.ps1` make the installation self-sufficient: they inspect the environment, reject conflicting installation channels, show one plan, request at most one installation confirmation, install missing requirements, update the current session's `PATH`, and finish with `supa.cc doctor --installation-check`.
 
-The public bootstrap URL uses the reviewed immutable `v0.5.5` release tag. It must never point to `main`, `HEAD`, a branch, or an unpublished tag:
+The public bootstrap URL uses the reviewed immutable `v0.5.6` release tag. It must never point to `main`, `HEAD`, a branch, or an unpublished tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.5/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.6/install.sh | bash
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.5/install.ps1 | iex
+irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.6/install.ps1 | iex
 ```
 
 Use `--dry-run` or `-DryRun` from a downloaded script when the plan must be reviewed without changes. `--yes` and `-Yes` skip only Supa.cc's confirmation; administrator passwords and native operating-system prompts remain under system control. The POSIX installer reads confirmation from `/dev/tty`, so a piped non-interactive run must use `--yes` after review.
@@ -63,7 +63,7 @@ brew uninstall supa-cc
 
 ### Linux (pipx only)
 
-Debian 12+, Ubuntu 24.04+, Arch Linux, and Fedora are supported. These minimum Debian/Ubuntu releases guarantee a distribution Python that satisfies Python 3.11+ without introducing an unofficial runtime source. Derivatives are best-effort. The stable package channel is PyPI through `pipx`; PATs remain in Secret Service on the user-session D-Bus.
+Debian 12+, Ubuntu 24.04+, Arch Linux, and Fedora are directly supported. These minimum Debian/Ubuntu releases guarantee a distribution Python that satisfies Python 3.11+ without introducing an unofficial runtime source. Derivatives are resolved best-effort through ordered `ID_LIKE` compatibility metadata. A derivative must provide working Python 3.11+ through the resolved compatible package family; its own `VERSION_ID` is not interpreted as the base distribution's version. The stable package channel is PyPI through `pipx`; PATs remain in Secret Service on the user-session D-Bus.
 
 The immutable bootstrap above is the recommended path. The bootstrap uses a shared flow with distribution-specific package data. It installs Python, venv support where needed, `pipx`, GNOME Keyring, download tools, and CA certificates. The Python `keyring` dependency already supplies SecretStorage and Jeepney, so `libsecret-tools` and separate `libsecret` packages are not installed explicitly.
 

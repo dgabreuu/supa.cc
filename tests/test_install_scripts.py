@@ -26,8 +26,14 @@ def _bash(*arguments, input_text=None):
     )
 
 
-def _source(expression):
-    return _bash("-c", f'source "$1"; {expression}', "test", POSIX_INSTALLER)
+def _source(expression, *arguments):
+    return _bash(
+        "-c",
+        f'source "$1"; {expression}',
+        "test",
+        POSIX_INSTALLER,
+        *arguments,
+    )
 
 
 def test_posix_installer_has_valid_syntax_and_public_options():
@@ -161,6 +167,174 @@ def test_supported_debian_and_ubuntu_versions_supply_python_311_or_newer():
     assert debian_ready.returncode == 0, debian_ready.stderr
     assert ubuntu_ready.returncode == 0, ubuntu_ready.stderr
     assert "Python 3.11" in debian_old.stderr + ubuntu_old.stderr
+
+
+@pytest.mark.parametrize("distribution", ["debian", "ubuntu", "arch", "fedora"])
+def test_linux_distribution_direct_id_takes_precedence(distribution):
+    result = _source(
+        'resolve_linux_distribution "$2" "ubuntu debian"; '
+        'printf "%s:%s\\n" "$DISTRO" "$DISTRO_SOURCE"',
+        distribution,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"{distribution}:id\n"
+
+
+def test_linux_metadata_resolves_derivative_without_validating_parent_version(
+    tmp_path,
+):
+    metadata = tmp_path / "os-release"
+    metadata.write_text(
+        'ID=linuxmint\nID_LIKE="ubuntu debian"\nVERSION_ID="22"\n',
+        encoding="utf-8",
+    )
+
+    result = _source(
+        'read_linux_metadata "$2"; '
+        'resolve_linux_distribution "$DISTRO_ID" "$DISTRO_ID_LIKE"; '
+        'validate_linux_version; '
+        'printf "%s:%s:%s\\n" "$DISTRO" "$DISTRO_SOURCE" "$DISTRO_VERSION"',
+        metadata,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "ubuntu:id_like:22\n"
+
+
+def test_linux_metadata_parses_exact_last_keys_quotes_and_mixed_case(tmp_path):
+    metadata = tmp_path / "os-release"
+    metadata.write_text(
+        "ID='debian'\n"
+        'ID=" FeDoRa "\n'
+        "ID_EXTRA=arch\n"
+        "ID_LIKE=' rhel centos '\n"
+        'VERSION_ID=" 40 "\n'
+        "MISMATCHED=\"ubuntu'\n",
+        encoding="utf-8",
+    )
+
+    result = _source(
+        'read_linux_metadata "$2"; mismatched="$(read_os_release_value MISMATCHED "$2")"; '
+        'resolve_linux_distribution "$DISTRO_ID" "$DISTRO_ID_LIKE"; '
+        'printf "%s|%s|%s|%s|%s:%s\\n" "$DISTRO_ID" "$DISTRO_ID_LIKE" '
+        '"$DISTRO_VERSION" "$mismatched" "$DISTRO" "$DISTRO_SOURCE"',
+        metadata,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == " FeDoRa | rhel centos | 40 |\"ubuntu'|fedora:id\n"
+
+
+def test_linux_metadata_parsing_never_executes_file_contents(tmp_path):
+    metadata = tmp_path / "os-release"
+    marker = tmp_path / "executed"
+    metadata.write_text(
+        f"UNRELATED=$(touch {marker})\n"
+        "ID=arch\n"
+        f"VERSION_ID='$(touch {marker})'\n",
+        encoding="utf-8",
+    )
+
+    result = _source(
+        'read_linux_metadata "$2"; printf "%s\\n" "$DISTRO_VERSION"', metadata
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"$(touch {marker})\n"
+    assert not marker.exists()
+
+
+def test_linux_metadata_unavailable_input_clears_metadata(tmp_path):
+    unreadable = tmp_path / "unreadable-os-release"
+    unreadable.mkdir()
+
+    for metadata in (tmp_path / "missing-os-release", unreadable):
+        result = _source(
+            'DISTRO_ID=stale; DISTRO_ID_LIKE=stale; DISTRO_VERSION=stale; '
+            'read_linux_metadata "$2"; '
+            'printf "%s|%s|%s\\n" "$DISTRO_ID" "$DISTRO_ID_LIKE" "$DISTRO_VERSION"',
+            metadata,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == "||\n"
+
+
+def test_linux_resolver_does_not_expand_globs_and_clears_failed_state(tmp_path):
+    (tmp_path / "ubuntu").touch()
+
+    result = _source(
+        'cd "$2"; DISTRO=stale; DISTRO_SOURCE=stale; '
+        'if resolve_linux_distribution custom "*"; then exit 9; fi; '
+        'printf "%s:%s\\n" "$DISTRO" "$DISTRO_SOURCE"',
+        tmp_path,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ":\n"
+
+
+@pytest.mark.parametrize(
+    ("distribution", "distribution_like", "expected"),
+    [
+        ("", "ubuntu", "ubuntu"),
+        ("custom-linux", "unsupported ArCh fedora", "arch"),
+    ],
+)
+def test_linux_distribution_uses_first_supported_id_like_token(
+    distribution, distribution_like, expected
+):
+    result = _source(
+        'resolve_linux_distribution "$2" "$3"; '
+        'printf "%s:%s\\n" "$DISTRO" "$DISTRO_SOURCE"',
+        distribution,
+        distribution_like,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"{expected}:id_like\n"
+
+
+@pytest.mark.parametrize(
+    ("distribution", "distribution_like"),
+    [
+        ("", ""),
+        ("", "rhel opensuse"),
+        ("custom-linux", ""),
+        ("custom-linux", "rhel opensuse"),
+        ("unsupported", "unsupported"),
+    ],
+)
+def test_linux_distribution_rejects_incomplete_or_unsupported_metadata(
+    distribution, distribution_like
+):
+    result = _source(
+        'resolve_linux_distribution "$2" "$3"',
+        distribution,
+        distribution_like,
+    )
+
+    assert result.returncode != 0
+
+
+@pytest.mark.parametrize(
+    ("distribution", "expected"), [("gentoo", "gentoo"), ("", "unknown")]
+)
+def test_linux_environment_error_identifies_original_distribution(
+    distribution, expected
+):
+    result = _source(
+        'fixture_id=$2; '
+        'uname(){ case "$1" in -s) printf "Linux\\n" ;; -m) printf "x86_64\\n" ;; esac; }; '
+        'read_linux_metadata(){ DISTRO_ID="$fixture_id"; '
+        'DISTRO_ID_LIKE="unsupported"; DISTRO_VERSION=1; }; '
+        'detect_environment',
+        distribution,
+    )
+
+    assert result.returncode != 0
+    assert f"Linux distribution '{expected}' is not supported" in result.stderr
 
 
 def test_macos_reuses_homebrew_outside_path_and_still_scopes_supabase_trust():

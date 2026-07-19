@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SUPABASE_VERSION="2.109.1"
-SUPA_CC_VERSION="0.5.5"
+SUPA_CC_VERSION="0.5.6"
 HOMEBREW_INSTALL_REVISION="4b0227cf8416504142d23893368c2e1d211d5191"
 HOMEBREW_INSTALL_URL="https://raw.githubusercontent.com/Homebrew/install/${HOMEBREW_INSTALL_REVISION}/install.sh"
 SUPABASE_RELEASE_URL="https://github.com/supabase/cli/releases/download/v${SUPABASE_VERSION}"
@@ -13,7 +13,10 @@ YES=0
 DRY_RUN=0
 OS=""
 DISTRO="none"
+DISTRO_ID=""
+DISTRO_ID_LIKE=""
 DISTRO_VERSION=""
+DISTRO_SOURCE=""
 ARCH=""
 TEMP_DIR=""
 PLAN=()
@@ -67,6 +70,74 @@ parse_arguments() {
     done
 }
 
+read_os_release_value() {
+    local key="$1" file="$2"
+    [ -r "$file" ] || return 0
+    awk -v key="$key" '
+        {
+            separator = index($0, "=")
+            if (!separator) next
+            name = substr($0, 1, separator - 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+            if (name != key) next
+            value = substr($0, separator + 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            if (length(value) >= 2) {
+                first = substr(value, 1, 1)
+                last = substr(value, length(value), 1)
+                if ((first == "\"" || first == "\047") && last == first) {
+                    value = substr(value, 2, length(value) - 2)
+                }
+            }
+            result = value
+            found = 1
+        }
+        END { if (found) print result }
+    ' "$file" 2>/dev/null || true
+}
+
+read_linux_metadata() {
+    local file="${1:-/etc/os-release}"
+    DISTRO_ID="$(read_os_release_value ID "$file")"
+    DISTRO_ID_LIKE="$(read_os_release_value ID_LIKE "$file")"
+    DISTRO_VERSION="$(read_os_release_value VERSION_ID "$file")"
+}
+
+normalize_linux_identifier() {
+    printf '%s\n' "$1" | awk '{ sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print tolower($0) }'
+}
+
+is_supported_linux_distribution() {
+    case "$1" in
+        debian|ubuntu|arch|fedora) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+resolve_linux_distribution() {
+    local candidate
+    DISTRO=""
+    DISTRO_SOURCE=""
+
+    candidate="$(normalize_linux_identifier "$1")"
+    if is_supported_linux_distribution "$candidate"; then
+        DISTRO="$candidate"
+        DISTRO_SOURCE="id"
+        return 0
+    fi
+
+    while IFS= read -r candidate; do
+        candidate="$(normalize_linux_identifier "$candidate")"
+        if is_supported_linux_distribution "$candidate"; then
+            DISTRO="$candidate"
+            DISTRO_SOURCE="id_like"
+            return 0
+        fi
+    done < <(printf '%s\n' "$2" | awk '{ for (i = 1; i <= NF; i++) print $i }')
+
+    return 1
+}
+
 detect_environment() {
     case "$(uname -s)" in
         Darwin) OS="macos" ;;
@@ -81,17 +152,18 @@ detect_environment() {
     esac
 
     if [ "$OS" = "linux" ]; then
-        DISTRO="$(awk -F= '$1 == "ID" {gsub(/^\"|\"$/, "", $2); print tolower($2); exit}' /etc/os-release 2>/dev/null || true)"
-        DISTRO_VERSION="$(awk -F= '$1 == "VERSION_ID" {gsub(/^\"|\"$/, "", $2); print $2; exit}' /etc/os-release 2>/dev/null || true)"
-        case "$DISTRO" in
-            debian|ubuntu|arch|fedora) ;;
-            *) fail "Linux distribution '${DISTRO:-unknown}' is not supported. Use Debian, Ubuntu, Arch, or Fedora." ;;
-        esac
+        local reported_distribution
+        read_linux_metadata
+        if ! resolve_linux_distribution "$DISTRO_ID" "$DISTRO_ID_LIKE"; then
+            reported_distribution="$(normalize_linux_identifier "$DISTRO_ID")"
+            fail "Linux distribution '${reported_distribution:-unknown}' is not supported. Use Debian, Ubuntu, Arch, or Fedora."
+        fi
         validate_linux_version
     fi
 }
 
 validate_linux_version() {
+    [ "$DISTRO_SOURCE" = "id_like" ] && return 0
     local major="${DISTRO_VERSION%%.*}"
     case "$DISTRO" in
         debian)

@@ -7,7 +7,7 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-PACKAGE_VERSION = "0.5.5"
+PACKAGE_VERSION = "0.5.6"
 STABLE_FORMULA_VERSION = "0.5.5"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
@@ -395,6 +395,7 @@ def test_release_workflow_pins_only_reviewed_official_actions_by_sha():
 def test_release_workflow_builds_once_and_publishes_the_same_artifact():
     workflow_text = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     workflow = yaml.safe_load(workflow_text)
+    trigger = workflow.get("on", workflow.get(True))
     jobs = workflow["jobs"]
 
     assert workflow_text.count("python -m build") == 1
@@ -406,7 +407,10 @@ def test_release_workflow_builds_once_and_publishes_the_same_artifact():
         "ubuntu-latest",
         "windows-latest",
     ]
+    assert trigger["workflow_dispatch"]["inputs"]["release_tag"]["default"] == "v0.5.6"
+    assert jobs["publish"]["environment"]["url"] == "https://pypi.org/project/supa.cc/0.5.6/"
     assert f"pipx install supa.cc=={PACKAGE_VERSION}" in workflow_text
+    assert "PyPI package supa.cc==0.5.6 was not visible after six attempts." in workflow_text
 
 
 def test_pypi_metadata_has_explicit_markdown_and_public_links():
@@ -534,8 +538,18 @@ def test_changelog_records_0_5_5_agent_skill_release_candidate():
         "[0.5.5]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...v0.5.5"
         in changelog
     )
+def test_changelog_records_0_5_6_linux_derivative_fix():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.5.6] - 2026-07-19" in changelog
+    assert "### Fixed" in changelog
+    assert "ordered `ID_LIKE` compatibility metadata" in changelog
     assert (
-        "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.5...HEAD"
+        "[0.5.6]: https://github.com/dgabreuu/supa.cc/compare/v0.5.5...v0.5.6"
+        in changelog
+    )
+    assert (
+        "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.6...HEAD"
         in changelog
     )
 
