@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $SupabaseVersion = "2.109.1"
-$SupaCcVersion = "0.5.6"
+$SupaCcVersion = "0.5.7"
 $SupabaseReleaseUrl = "https://github.com/supabase/cli/releases/download/v$SupabaseVersion"
 $SupabaseArtifactAmd64 = "supabase_2.109.1_windows_amd64.zip"
 $SupabaseArtifactArm64 = "supabase_2.109.1_windows_arm64.zip"
@@ -350,14 +350,14 @@ function Test-FinalInstallation {
     if ($LASTEXITCODE -eq 0) {
         return
     }
-    Write-Warning "The software is installed, but Windows Credential Manager or the environment is still blocked."
+    Write-Warning "The software is installed, but the installation check reported a diagnostic. Resolve the diagnostic shown above before continuing."
     if ([Console]::IsInputRedirected) {
-        Stop-Installation "Resolve the reported requirement and run 'supa.cc doctor --installation-check' again."
+        Stop-Installation "Resolve the diagnostic shown above and run 'supa.cc doctor --installation-check' again."
     }
-    Read-Host "Resolve the native credential-store issue, then press Enter to retry" | Out-Null
+    Read-Host "Resolve the diagnostic shown above, then press Enter to retry" | Out-Null
     & "supa.cc" doctor --installation-check
     if ($LASTEXITCODE -ne 0) {
-        Stop-Installation "The installation check is still blocked; apply the reported remediation and retry."
+        Stop-Installation "Resolve the diagnostic shown above, then run 'supa.cc doctor --installation-check' again."
     }
 }
 

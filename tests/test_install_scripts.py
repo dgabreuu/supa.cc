@@ -48,6 +48,69 @@ def test_posix_installer_has_valid_syntax_and_public_options():
     assert "--help" in help_result.stdout
 
 
+@pytest.mark.parametrize("installer", [POSIX_INSTALLER, WINDOWS_INSTALLER])
+def test_installers_use_neutral_final_validation_guidance(installer):
+    source = installer.read_text(encoding="utf-8")
+    normalized = source.casefold()
+
+    assert "doctor --installation-check" in source
+    assert normalized.count("resolve the diagnostic shown above") >= 3
+    assert "unlock the native credential store" not in normalized
+    assert "native credential-store issue" not in normalized
+    assert "credential-store/session issue" not in normalized
+    assert "windows credential manager or the environment" not in normalized
+
+
+def test_posix_final_validation_returns_after_successful_first_check(tmp_path):
+    calls = tmp_path / "calls"
+    result = _source(
+        'CALLS="$2"; DOCTOR_STATUS=0; '
+        'supa.cc(){ printf "%s\\n" "$*" >>"$CALLS"; '
+        'case "$1" in --version) return 0 ;; doctor) return "$DOCTOR_STATUS" ;; esac; }; '
+        "verify_installation",
+        calls,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == [
+        "--version",
+        "doctor --installation-check",
+    ]
+
+
+def test_posix_final_validation_fails_without_retry_when_noninteractive(tmp_path):
+    calls = tmp_path / "calls"
+    result = _source(
+        'CALLS="$2"; '
+        'supa.cc(){ printf "%s\\n" "$*" >>"$CALLS"; '
+        'case "$1" in --version) return 0 ;; doctor) return 1 ;; esac; }; '
+        'tty_available(){ return 1; }; verify_installation',
+        calls,
+    )
+
+    assert result.returncode != 0
+    assert calls.read_text(encoding="utf-8").splitlines().count(
+        "doctor --installation-check"
+    ) == 1
+
+
+def test_posix_final_validation_retries_once_before_failure(tmp_path):
+    calls = tmp_path / "calls"
+    result = _source(
+        'CALLS="$2"; '
+        'supa.cc(){ printf "%s\\n" "$*" >>"$CALLS"; '
+        'case "$1" in --version) return 0 ;; doctor) return 1 ;; esac; }; '
+        'tty_available(){ return 0; }; prompt_installation_retry(){ return 0; }; '
+        "verify_installation",
+        calls,
+    )
+
+    assert result.returncode != 0
+    assert calls.read_text(encoding="utf-8").splitlines().count(
+        "doctor --installation-check"
+    ) == 2
+
+
 def test_posix_installer_requires_tty_or_explicit_yes():
     result = _bash(POSIX_INSTALLER, "--dry-run", input_text="")
 

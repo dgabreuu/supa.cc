@@ -8,7 +8,7 @@ import pytest
 import supa_cc
 
 from supa_cc.accounts import AccountService
-from supa_cc.accounts.state import AccountState, StateRepository
+from supa_cc.accounts.state import AccountState, StateRepository, StateTransition
 from supa_cc.auth import (
     ActiveAccountInvalidError,
     AuthFailureCode,
@@ -100,7 +100,17 @@ def test_default_doctor_is_read_only_and_never_reads_token_or_authenticates(tmp_
     manager.validate_named_account.assert_not_called()
     assert report.environment["supabase_access_token_present"] is True
     assert fake_pat("env") not in report.to_json()
-    assert report.active_account == {"selected": True, "indexed": False}
+    assert report.index == {
+        "path": "<temp>/accounts.json",
+        "state": "missing",
+        "account_count": 0,
+    }
+    assert "Index: missing (0 accounts)" in report.to_human()
+    assert report.active_account == {
+        "checked": True,
+        "selected": True,
+        "indexed": False,
+    }
     assert report.keychain_service == KEYCHAIN_SERVICE
 
     report_with_account_but_not_live = service.run(account="work", live=False)
@@ -127,7 +137,49 @@ def test_versioned_doctor_reads_state_without_opening_native_credentials(tmp_pat
     assert credentials.operations == []
     assert report.index["state"] == "valid"
     assert report.index["account_count"] == 1
-    assert report.active_account == {"selected": True, "indexed": True}
+    assert "Index: valid (1 accounts)" in report.to_human()
+    assert report.active_account == {
+        "checked": True,
+        "selected": True,
+        "indexed": True,
+    }
+    assert "Active account: selected (indexed)" in report.to_human()
+
+    report.active_account.pop("checked")
+    assert "Active account: selected (indexed)" in report.to_human()
+
+
+def test_versioned_doctor_reports_pending_transition_as_sync_pending(tmp_path):
+    repository = StateRepository(tmp_path / "state.json")
+    repository.save(
+        AccountState(
+            aliases=("work",),
+            confirmed_active="work",
+            pending_transition=StateTransition(
+                "switch", "work", "work", "prepared"
+            ),
+        )
+    )
+    credential_store = Mock(service="supa.cc.tests.credentials")
+    credential_store.status.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.macOS.Keyring",
+        available=True,
+    )
+    native_session = Mock(fallback_path=tmp_path / ".supabase" / "access-token")
+    manager = AccountService(
+        state_repository=repository,
+        credential_store=credential_store,
+        cli=SupabaseConfig(binary_resolver=lambda _: None),
+        native_session=native_session,
+    )
+
+    report = _service(tmp_path, manager=manager).run()
+
+    assert AuthFailureCode.SYNC_PENDING.value in report.diagnostic_codes
+    assert report.ok is False
+    assert report.exit_code == 1
+    assert report.active_account["checked"] is True
+    assert "Synchronization journal: pending" in report.to_human()
 
 
 def test_versioned_doctor_detects_plaintext_fallback_without_reading_it(tmp_path):
@@ -172,7 +224,11 @@ def test_doctor_output_is_shareable_without_account_name_or_private_paths(tmp_pa
     payload = service.run().to_dict()
     rendered = json.dumps(payload)
 
-    assert payload["active_account"] == {"selected": True, "indexed": False}
+    assert payload["active_account"] == {
+        "checked": True,
+        "selected": True,
+        "indexed": False,
+    }
     assert payload["index"]["path"] == "<temp>/accounts.json"
     assert payload["runtime"]["launcher"]["path_relation"] == "same"
     assert payload["runtime"]["python"]["path_relation"] == "same"
@@ -557,6 +613,7 @@ def test_doctor_classifies_invalid_index_without_overwriting_it(tmp_path):
     assert report.ok is False
     assert report.exit_code != 0
     assert report.index["state"] == "invalid"
+    assert "Index: invalid (0 accounts)" in report.to_human()
     assert AuthFailureCode.INDEX_INVALID.value in report.diagnostic_codes
     assert index.read_text(encoding="utf-8") == "not-json"
 
@@ -583,7 +640,11 @@ def test_doctor_maps_invalid_active_store_without_calling_it_missing(tmp_path):
     report = _service(tmp_path, manager=manager).run()
 
     assert report.ok is False
-    assert report.active_account == {"selected": False, "indexed": False}
+    assert report.active_account == {
+        "checked": True,
+        "selected": False,
+        "indexed": False,
+    }
     assert AuthFailureCode.ACTIVE_ACCOUNT_INVALID.value in report.diagnostic_codes
     assert AuthFailureCode.ACTIVE_ACCOUNT_MISSING.value not in report.diagnostic_codes
 
@@ -698,6 +759,9 @@ def test_linux_doctor_reports_distribution_and_unavailable_credential_store(
 def test_default_doctor_preserves_legacy_status_but_marks_availability_unverified(
     tmp_path,
 ):
+    environment = detect_environment(
+        system_name="Linux", os_release="ID=ubuntu\n"
+    )
     credential_store = Mock()
     credential_store.service = "supa.cc.tests.credentials"
     credential_store.status.return_value = CredentialStoreStatus(
@@ -708,9 +772,7 @@ def test_default_doctor_preserves_legacy_status_but_marks_availability_unverifie
 
     report = _service(
         tmp_path,
-        environment=detect_environment(
-            system_name="Linux", os_release="ID=ubuntu\n"
-        ),
+        environment=environment,
         credential_store=credential_store,
     ).run()
 
@@ -718,6 +780,9 @@ def test_default_doctor_preserves_legacy_status_but_marks_availability_unverifie
     assert report.credentials["live_probed"] is False
     assert report.credentials["configured"] is True
     assert report.credentials["availability"] == "unverified"
+    assert report.credentials["remediation"] == installation_guidance(
+        environment
+    ).remediation
     human = report.to_human().lower()
     assert "configured" in human
     assert "not verified" in human
@@ -739,9 +804,11 @@ def test_installation_check_runs_cli_and_isolated_credential_probe_once(tmp_path
     manager.active_store = Mock()
     manager.keychain.index_path = tmp_path / "accounts.json"
     manager.active_store.read.return_value = None
+    supabase = tmp_path / "supabase"
+    supabase.write_text("safe", encoding="utf-8")
     manager.config = Mock(
-        supabase_cli_invoked=None,
-        supabase_cli=None,
+        supabase_cli_invoked=str(supabase),
+        supabase_cli=str(supabase),
     )
     manager.config.inspect_compatibility.return_value = SupabaseCLICompatibility(
         state=SupabaseCLICompatibilityState.COMPATIBLE,
@@ -759,14 +826,373 @@ def test_installation_check_runs_cli_and_isolated_credential_probe_once(tmp_path
         ),
     ).run(installation_check=True)
 
+    assert report.ok is True
+    assert report.exit_code == 0
     assert report.supabase_cli["minimum_version"] == "2.109.1"
     assert report.supabase_cli["compatibility"] == "compatible"
     assert report.credentials["availability"] == "available"
+    assert report.index["state"] == "not_checked"
+    assert "account_count" not in report.index
+    assert report.active_account == {
+        "checked": False,
+        "selected": False,
+        "indexed": False,
+    }
+    assert report.activation == {
+        "mode": "not_checked",
+        "native_session": "not_checked",
+        "profile": "not_checked",
+        "journal_present": False,
+        "journal_state": "not_checked",
+        "plaintext_fallback_present": False,
+        "plaintext_fallback_state": "not_checked",
+        "parent_override_present": False,
+    }
+    human = report.to_human()
+    assert "Index: not checked" in human
+    assert "Index: not checked (" not in human
+    assert "(0 accounts)" not in human
+    assert "Active account: not checked" in human
+    assert "Synchronization journal: not checked" in human
+    assert "Plaintext fallback: not checked" in human
+    assert "Remediation:" not in human
     manager.config.inspect_compatibility.assert_called_once_with()
     credential_store.probe.assert_called_once_with()
     credential_store.status.assert_not_called()
+    manager.active_store.read.assert_not_called()
     manager.get.assert_not_called()
     manager.validate_named_account.assert_not_called()
+
+
+def test_installation_check_sanitizes_credential_store_construction_failure(
+    tmp_path, monkeypatch
+):
+    environment = detect_environment(
+        system_name="Linux", os_release="ID=ubuntu\n"
+    )
+    state_load = Mock(side_effect=AssertionError("must not load account state"))
+    monkeypatch.setattr(StateRepository, "load", state_load)
+    monkeypatch.setattr(
+        "supa_cc.accounts.service.create_credential_store",
+        Mock(side_effect=RuntimeError("private credential backend detail")),
+    )
+    service = DiagnosticService(
+        env={},
+        launcher_path=tmp_path / "supa.cc",
+        python_executable=tmp_path / "python",
+        telemetry_path=tmp_path / ".supabase",
+        environment=environment,
+    )
+
+    report = service.run(installation_check=True)
+
+    assert report.ok is False
+    assert report.exit_code == 1
+    assert report.diagnostic_codes == [
+        AuthFailureCode.KEYCHAIN_READ_FAILED.value
+    ]
+    assert report.credentials["backend"] == "unavailable"
+    assert report.credentials["configured"] is False
+    assert report.credentials["available"] is False
+    assert report.credentials["status"] == "unavailable"
+    assert report.credentials["live_probed"] is False
+    assert report.credentials["availability"] == "unverified"
+    assert report.credentials["message"]
+    assert report.credentials["remediation"] == installation_guidance(
+        environment
+    ).remediation
+    assert report.index["state"] == "not_checked"
+    assert report.active_account["checked"] is False
+    state_load.assert_not_called()
+    assert "private credential backend detail" not in report.to_json()
+    human = report.to_human().lower()
+    assert "unavailable (not verified; no probe)" in human
+    assert "credential store: unavailable (unknown)" not in human
+
+
+@pytest.mark.parametrize("appdata", [None, "relative/appdata"])
+def test_installation_check_sanitizes_windows_construction_failure_without_appdata(
+    tmp_path, monkeypatch, appdata
+):
+    if appdata is None:
+        monkeypatch.delenv("APPDATA", raising=False)
+        env = {}
+    else:
+        monkeypatch.setenv("APPDATA", appdata)
+        env = {"APPDATA": appdata}
+    monkeypatch.setattr(
+        "supa_cc.diagnostic_collectors.AccountService",
+        Mock(side_effect=RuntimeError("private credential backend detail")),
+    )
+
+    report = DiagnosticService(
+        env=env,
+        launcher_path=tmp_path / "supa.cc",
+        python_executable=tmp_path / "python",
+        telemetry_path=tmp_path / ".supabase",
+        environment=detect_environment(system_name="Windows"),
+    ).run(installation_check=True)
+
+    assert report.ok is False
+    assert report.index == {"path": None, "state": "not_checked"}
+    assert report.diagnostic_codes == [AuthFailureCode.KEYCHAIN_READ_FAILED.value]
+    assert report.credentials["configured"] is False
+    assert report.credentials["available"] is False
+    assert report.credentials["status"] == "unavailable"
+    assert report.credentials["live_probed"] is False
+    assert report.credentials["availability"] == "unverified"
+    assert "private credential backend detail" not in report.to_json()
+
+
+def test_installation_check_does_not_load_versioned_account_state(tmp_path):
+    repository = Mock()
+    repository.path = tmp_path / "state.json"
+    repository.load.side_effect = AssertionError("must not load account state")
+    credential_store = Mock(service="supa.cc.tests.credentials")
+    credential_store.probe.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.SecretService.Keyring",
+        available=True,
+        live_probed=True,
+    )
+    supabase = tmp_path / "supabase"
+    supabase.write_text("safe", encoding="utf-8")
+    cli = Mock(
+        supabase_cli_invoked=str(supabase),
+        supabase_cli=str(supabase),
+    )
+    cli.inspect_compatibility.return_value = SupabaseCLICompatibility(
+        state=SupabaseCLICompatibilityState.COMPATIBLE,
+        minimum_version=MINIMUM_VERSION_TEXT,
+        version="2.109.1",
+        result=AuthResult.success("Supabase CLI is compatible."),
+    )
+
+    class UninspectableNativeSession:
+        @property
+        def fallback_path(self):
+            raise AssertionError("must not inspect native-session fallback")
+
+    manager = AccountService(
+        state_repository=repository,
+        credential_store=credential_store,
+        cli=cli,
+        native_session=UninspectableNativeSession(),
+    )
+
+    report = _service(
+        tmp_path,
+        manager=manager,
+        env={"SUPABASE_ACCESS_TOKEN": fake_pat("parent_override")},
+        environment=detect_environment(
+            system_name="Linux", os_release="ID=ubuntu\n"
+        ),
+    ).run(installation_check=True)
+
+    assert report.ok is True
+    assert report.exit_code == 0
+    repository.load.assert_not_called()
+    assert report.index["state"] == "not_checked"
+    assert report.active_account == {
+        "checked": False,
+        "selected": False,
+        "indexed": False,
+    }
+    assert report.activation == {
+        "mode": "not_checked",
+        "native_session": "not_checked",
+        "profile": "not_checked",
+        "journal_present": False,
+        "journal_state": "not_checked",
+        "plaintext_fallback_present": False,
+        "plaintext_fallback_state": "not_checked",
+        "parent_override_present": True,
+    }
+
+
+def test_installation_check_fails_when_credential_probe_is_unavailable(tmp_path):
+    environment = detect_environment(
+        system_name="Linux", os_release="ID=ubuntu\n"
+    )
+    credential_store = Mock(service="supa.cc.tests.credentials")
+    credential_store.probe.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.SecretService.Keyring",
+        available=False,
+        message="credential store unavailable",
+        live_probed=True,
+    )
+    supabase = tmp_path / "supabase"
+    supabase.write_text("safe", encoding="utf-8")
+    manager = Mock()
+    manager.keychain = Mock(index_path=tmp_path / "accounts.json")
+    manager.active_store = Mock()
+    manager.config = Mock(
+        supabase_cli_invoked=str(supabase),
+        supabase_cli=str(supabase),
+    )
+    manager.config.inspect_compatibility.return_value = SupabaseCLICompatibility(
+        state=SupabaseCLICompatibilityState.COMPATIBLE,
+        minimum_version=MINIMUM_VERSION_TEXT,
+        version="2.109.1",
+        result=AuthResult.success("Supabase CLI is compatible."),
+    )
+
+    report = _service(
+        tmp_path,
+        manager=manager,
+        credential_store=credential_store,
+        environment=environment,
+    ).run(installation_check=True)
+
+    assert report.ok is False
+    assert report.exit_code == 1
+    assert report.diagnostic_codes.count(
+        AuthFailureCode.KEYCHAIN_READ_FAILED.value
+    ) == 1
+    remediation = installation_guidance(environment).remediation
+    assert report.credentials["remediation"] == remediation
+    assert f"Remediation: {remediation}" in report.to_human()
+    assert "unavailable (verified)" in report.to_human().lower()
+
+
+def test_installation_check_fails_once_for_unwritable_operational_directory(
+    tmp_path, monkeypatch
+):
+    credential_store = Mock(service="supa.cc.tests.credentials")
+    credential_store.probe.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.SecretService.Keyring",
+        available=True,
+        live_probed=True,
+    )
+    supabase = tmp_path / "supabase"
+    supabase.write_text("safe", encoding="utf-8")
+    manager = Mock()
+    manager.keychain = Mock(index_path=tmp_path / "accounts.json")
+    manager.config = Mock(
+        supabase_cli_invoked=str(supabase),
+        supabase_cli=str(supabase),
+    )
+    manager.config.inspect_compatibility.return_value = SupabaseCLICompatibility(
+        state=SupabaseCLICompatibilityState.BLOCKED,
+        minimum_version=MINIMUM_VERSION_TEXT,
+        version=None,
+        result=AuthResult.failure(
+            AuthFailureCode.ENVIRONMENT_BLOCKED,
+            "The operational directory is not writable.",
+        ),
+    )
+    operational_directory = tmp_path / "supabase-home"
+    checked_paths = []
+
+    def path_writable(path):
+        checked_paths.append(path)
+        return path != operational_directory
+
+    monkeypatch.setattr(diagnostic_collectors, "_path_writable", path_writable)
+
+    report = DiagnosticService(
+        manager=manager,
+        env={"SUPABASE_HOME": str(operational_directory)},
+        launcher_path=tmp_path / "bin" / "supa.cc",
+        python_executable=tmp_path / "venv" / "bin" / "python",
+        backend_resolver=lambda: "keyring.backends.SecretService.Keyring",
+        credential_store=credential_store,
+        environment=detect_environment(
+            system_name="Linux", os_release="ID=ubuntu\n"
+        ),
+    ).run(installation_check=True)
+
+    assert report.ok is False
+    assert report.exit_code == 1
+    assert report.environment["telemetry_directory_writable"] is False
+    assert checked_paths == [operational_directory]
+    assert report.diagnostic_codes == [AuthFailureCode.ENVIRONMENT_BLOCKED.value]
+    assert len(report.diagnostic_codes) == len(set(report.diagnostic_codes))
+
+
+def test_installation_check_does_not_trust_backend_name_without_probe_status(
+    tmp_path,
+):
+    environment = detect_environment(
+        system_name="Linux", os_release="ID=ubuntu\n"
+    )
+    credential_store = Mock(service="supa.cc.tests.credentials")
+    credential_store.probe.return_value = None
+    supabase = tmp_path / "supabase"
+    supabase.write_text("safe", encoding="utf-8")
+    manager = Mock()
+    manager.keychain = Mock(index_path=tmp_path / "accounts.json")
+    manager.config = Mock(
+        supabase_cli_invoked=str(supabase),
+        supabase_cli=str(supabase),
+    )
+    manager.config.inspect_compatibility.return_value = SupabaseCLICompatibility(
+        state=SupabaseCLICompatibilityState.COMPATIBLE,
+        minimum_version=MINIMUM_VERSION_TEXT,
+        version="2.109.1",
+        result=AuthResult.success("Supabase CLI is compatible."),
+    )
+
+    report = _service(
+        tmp_path,
+        manager=manager,
+        credential_store=credential_store,
+        environment=environment,
+    ).run(installation_check=True)
+
+    assert report.ok is False
+    assert report.exit_code == 1
+    assert report.credentials["available"] is False
+    assert report.diagnostic_codes.count(
+        AuthFailureCode.KEYCHAIN_READ_FAILED.value
+    ) == 1
+    assert report.credentials["remediation"] == installation_guidance(
+        environment
+    ).remediation
+
+
+def test_installation_check_rejects_typed_but_unprobed_credential_status(
+    tmp_path,
+):
+    environment = detect_environment(
+        system_name="Linux", os_release="ID=ubuntu\n"
+    )
+    credential_store = Mock(service="supa.cc.tests.credentials")
+    credential_store.probe.return_value = CredentialStoreStatus(
+        backend_name="keyring.backends.SecretService.Keyring",
+        available=True,
+        live_probed=False,
+    )
+    supabase = tmp_path / "supabase"
+    supabase.write_text("safe", encoding="utf-8")
+    manager = Mock()
+    manager.keychain = Mock(index_path=tmp_path / "accounts.json")
+    manager.config = Mock(
+        supabase_cli_invoked=str(supabase),
+        supabase_cli=str(supabase),
+    )
+    manager.config.inspect_compatibility.return_value = SupabaseCLICompatibility(
+        state=SupabaseCLICompatibilityState.COMPATIBLE,
+        minimum_version=MINIMUM_VERSION_TEXT,
+        version="2.109.1",
+        result=AuthResult.success("Supabase CLI is compatible."),
+    )
+
+    report = _service(
+        tmp_path,
+        manager=manager,
+        credential_store=credential_store,
+        environment=environment,
+    ).run(installation_check=True)
+
+    assert report.ok is False
+    assert report.exit_code == 1
+    assert report.credentials["available"] is False
+    assert report.diagnostic_codes.count(
+        AuthFailureCode.KEYCHAIN_READ_FAILED.value
+    ) == 1
+    assert report.credentials["remediation"] == installation_guidance(
+        environment
+    ).remediation
 
 
 def test_default_doctor_marks_cli_compatibility_not_checked(tmp_path):

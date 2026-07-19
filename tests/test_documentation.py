@@ -264,6 +264,19 @@ def test_canonical_documents_own_technical_and_diagnostic_contracts():
         assert command in usage, f"usage guide must own command: {command}"
 
 
+def test_installation_check_documents_operational_directory_writability():
+    documents = (*CANONICAL_DOCS, Path(".agents/skills/supa-cc/references/commands.md"))
+
+    for path in documents:
+        contents = path.read_text(encoding="utf-8").lower()
+        assert "operational directory" in contents, (
+            f"{path} must name the Supabase CLI operational directory"
+        )
+        assert "writ" in contents, (
+            f"{path} must require the operational directory to be writable"
+        )
+
+
 def test_retired_documentation_is_absent_and_unlinked():
     public_docs = _public_markdown()
     violations = []
@@ -302,9 +315,9 @@ def test_readme_stable_installation_uses_platform_bootstrap_commands():
     readme = _section(Path("README.md").read_text(encoding="utf-8"), "Installation")
 
     expected = {
-        "macOS": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.6/install.sh | bash",
-        "Linux": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.6/install.sh | bash",
-        "Windows": "irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.6/install.ps1 | iex",
+        "macOS": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.7/install.sh | bash",
+        "Linux": "curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.7/install.sh | bash",
+        "Windows": "irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.7/install.ps1 | iex",
     }
     for platform, command in expected.items():
         stable = _stable_content(_section(readme, platform))

@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 SUPABASE_VERSION="2.109.1"
-SUPA_CC_VERSION="0.5.6"
+SUPA_CC_VERSION="0.5.7"
 HOMEBREW_INSTALL_REVISION="4b0227cf8416504142d23893368c2e1d211d5191"
 HOMEBREW_INSTALL_URL="https://raw.githubusercontent.com/Homebrew/install/${HOMEBREW_INSTALL_REVISION}/install.sh"
 SUPABASE_RELEASE_URL="https://github.com/supabase/cli/releases/download/v${SUPABASE_VERSION}"
@@ -466,19 +466,23 @@ execute_linux() {
     fi
 }
 
+prompt_installation_retry() {
+    printf 'Resolve the diagnostic shown above, then press Enter to retry. ' >/dev/tty
+    IFS= read -r _ </dev/tty || true
+}
+
 verify_installation() {
     PHASE="final validation"
     supa.cc --version
     if supa.cc doctor --installation-check; then
         return 0
     fi
-    warn "The software is installed, but the native credential store or environment is still blocked."
+    warn "The software is installed, but the installation check reported a diagnostic. Resolve the diagnostic shown above before continuing."
     if ! tty_available; then
-        fail "Resolve the reported credential-store/session issue and run 'supa.cc doctor --installation-check' again."
+        fail "Resolve the diagnostic shown above and run 'supa.cc doctor --installation-check' again."
     fi
-    printf 'Resolve or unlock the native credential store, then press Enter to retry. ' >/dev/tty
-    IFS= read -r _ </dev/tty || true
-    supa.cc doctor --installation-check || fail "The installation check is still blocked; apply the reported remediation and retry."
+    prompt_installation_retry
+    supa.cc doctor --installation-check || fail "Resolve the diagnostic shown above, then run 'supa.cc doctor --installation-check' again."
 }
 
 main() {

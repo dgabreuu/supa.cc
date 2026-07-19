@@ -16,19 +16,19 @@ supa.cc doctor --installation-check
 supa.cc doctor --installation-check --json
 ```
 
-This mode runs `supabase --version`, compares it with the minimum supported version, and probes an isolated native credential-store entry without reading any account or PAT. It cannot be combined with `--live` or `--account`.
+This mode validates only installation dependencies: the supported environment, Supabase CLI compatibility, a writable Supabase CLI operational directory (`SUPABASE_HOME` or its default), and one isolated native credential-store probe. The probe uses random identifiers and does not read an account or PAT. The mode does not load, create, migrate, validate, or recover account state; account, index, and activation fields outside its scope are reported as `not_checked` or **not checked**. It cannot be combined with `--live` or `--account`.
 
 ## Installer bootstrap
 
 Start with the installer's dry-run and review its complete plan. The POSIX script requires `/dev/tty` for its one confirmation; when execution is intentionally non-interactive, review the tagged script first and pass `--yes`. PowerShell uses the equivalent `-DryRun` and `-Yes` options.
 
-A checksum error is final. Do not bypass it, substitute an unofficial mirror, or extract the archive manually. Retry only after confirming the tagged installer still points to the expected official release. A download, system-package, Python, Homebrew, `pipx`, or final-validation failure identifies its phase and stops without trying an unverified alternative.
+A checksum error is final. Do not bypass it, substitute an unofficial mirror, or extract the archive manually. Retry only after confirming the tagged installer still points to the expected official release. A download, system-package, Python, Homebrew, `pipx`, or final-validation failure identifies its phase and stops without trying an unverified alternative. A failed final validation means the installation-check diagnostic shown above identified a blocked requirement; it does not necessarily indicate a credential-store failure. Resolve the identified requirement using the diagnostic output together with the documented installation and platform guidance, then retry.
 
 If the installer reports a conflicting channel, inspect `supa.cc doctor` and remove the Homebrew, `pipx`, editable, VCS, wheel, or package-manager installation that is not the platform's stable channel. The bootstrap never migrates or overwrites a different channel automatically.
 
 The installers update `PATH` in the current process whenever technically possible. If the final executable is still not found, run `pipx ensurepath` through the selected Python on Linux or Windows, or load `brew shellenv` on macOS, then retry from a normal user session. Do not add an unknown executable directory merely to silence the check.
 
-“Installed, but environment still blocked” means the packages and executables passed installation but the native credential store could not complete its isolated probe. Unlock Keychain through macOS, restore a real user D-Bus and unlocked Secret Service collection on Linux, or use Windows Credential Manager from the same interactive user session, then rerun `supa.cc doctor --installation-check`. The installer does not unlock stores, create Secret Service collections, alter ACLs, or change system policy.
+“Installed, but environment still blocked” means the packages and executables passed installation but another installation requirement remains blocked. Follow the diagnostic shown above: resolve the supported-environment or Supabase CLI issue it reports, or, for a failed native credential-store probe, unlock Keychain through macOS, restore a real user D-Bus and unlocked Secret Service collection on Linux, or use Windows Credential Manager from the same interactive user session. Then rerun `supa.cc doctor --installation-check`. The installer does not unlock stores, create Secret Service collections, alter ACLs, or change system policy.
 
 ## Safe reinstallation
 
@@ -132,4 +132,4 @@ Failure categories identify the phase that needs remediation:
 
 If the TUI reports `Unexpected local failure`, run `supa.cc doctor`, record the output of `supa.cc version`, then try the same selection with `supa.cc switch <name>`. A successful CLI switch suggests that the TUI path needs investigation; a CLI failure points to the shared account service or runtime environment. Report only the sanitized failure message and diagnostic fields. Never share a complete environment, credential-store dump, state file, PAT, or other secret.
 
-Corrupt or conflicting local state is reported as `state_invalid`; it is never silently repaired. Preserve the files for diagnosis. Interrupted operations leave a token-free pending transition in `state.json`; run a mutating Supa.cc command again to trigger idempotent recovery. Do not manually edit the state document or native credentials. The lock does not coordinate external `supabase` commands, so avoid running them at the same time as an activation.
+Corrupt or conflicting local state is reported as `state_invalid`; it is never silently repaired. Preserve the files for diagnosis. `sync_pending` is a normal `doctor` consistency diagnostic for a token-free pending transition in `state.json`; it is outside installation-check scope. Rerun the appropriate mutating Supa.cc account command, such as `switch` or `remove`, to trigger idempotent recovery. Never edit the state document or native credentials manually. The lock does not coordinate external `supabase` commands, so avoid running them at the same time as an activation.

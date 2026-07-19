@@ -76,7 +76,9 @@ supa.cc doctor --installation-check --json
 supa.cc doctor --account <name> --live
 ```
 
-The first two commands are non-live and do not open a token or native credential store. Their standard human and JSON output omits the account name and sanitizes local paths. The explicit installation check runs `supabase --version` once and performs one isolated credential-store probe without reading an account or PAT; its `supabase_cli` object adds `minimum_version` and `compatibility` (`compatible`, `missing`, `incompatible`, `blocked`, or `not_checked`). It cannot be combined with `--live` or `--account`. `--live` requires `--account` and authorizes reading and online validation of the selected credential. See [platform remediation](troubleshooting.md#macos) before manually inspecting any storage.
+The first two commands are non-live and do not open a token or native credential store. Their standard human and JSON output omits the account name and sanitizes local paths. The explicit installation check validates only installation dependencies: the supported environment, Supabase CLI compatibility, a writable Supabase CLI operational directory (`SUPABASE_HOME` or its default), and one isolated native credential-store probe. The probe uses random identifiers and does not read an account or PAT. This mode does not load, create, migrate, validate, or recover account state; account, index, and activation fields outside its scope are reported as `not_checked` or **not checked**. Its `supabase_cli` object adds `minimum_version` and `compatibility` (`compatible`, `missing`, `incompatible`, `blocked`, or `not_checked`). It cannot be combined with `--live` or `--account`. `--live` requires `--account` and authorizes reading and online validation of the selected credential.
+
+`sync_pending` belongs to the normal `doctor` consistency diagnostics, not the installation check. Recover it by rerunning the appropriate mutating Supa.cc account command, such as `switch` or `remove`; never edit the state document or native credentials manually. Follow the exact [platform remediation](troubleshooting.md) reported for other failures.
 
 ## Commands
 
@@ -90,7 +92,7 @@ The first two commands are non-live and do not open a token or native credential
 | `supa.cc reset --all [--yes]` | Intentionally clear all Supa.cc accounts, PATs, and local state |
 | `supa.cc run -- <arguments>` | Run the Supabase CLI with the active account |
 | `supa.cc doctor [--json]` | Generate a local non-live diagnostic |
-| `supa.cc doctor --installation-check [--json]` | Validate the CLI and native credential-store availability without reading an account |
+| `supa.cc doctor --installation-check [--json]` | Validate supported-environment, CLI-compatibility, and native credential-store installation dependencies without reading account state |
 | `supa.cc doctor --account <name> --live` | Authorize an authenticated diagnostic |
 | `supa.cc --version` | Show the version and sanitized installation channel |
 | `supa.cc version` | Show the installed version, installation channel, and deterministic official update guidance, without network access |

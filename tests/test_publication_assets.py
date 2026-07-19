@@ -7,7 +7,7 @@ import tomllib
 
 
 REPO_URL = "https://github.com/dgabreuu/supa.cc.git"
-PACKAGE_VERSION = "0.5.6"
+PACKAGE_VERSION = "0.5.7"
 STABLE_FORMULA_VERSION = "0.5.6"
 TARBALL_URL = (
     "https://github.com/dgabreuu/supa.cc/archive/refs/tags/"
@@ -407,10 +407,10 @@ def test_release_workflow_builds_once_and_publishes_the_same_artifact():
         "ubuntu-latest",
         "windows-latest",
     ]
-    assert trigger["workflow_dispatch"]["inputs"]["release_tag"]["default"] == "v0.5.6"
-    assert jobs["publish"]["environment"]["url"] == "https://pypi.org/project/supa.cc/0.5.6/"
+    assert trigger["workflow_dispatch"]["inputs"]["release_tag"]["default"] == "v0.5.7"
+    assert jobs["publish"]["environment"]["url"] == "https://pypi.org/project/supa.cc/0.5.7/"
     assert f"pipx install supa.cc=={PACKAGE_VERSION}" in workflow_text
-    assert "PyPI package supa.cc==0.5.6 was not visible after six attempts." in workflow_text
+    assert "PyPI package supa.cc==0.5.7 was not visible after six attempts." in workflow_text
 
 
 def test_pypi_metadata_has_explicit_markdown_and_public_links():
@@ -548,8 +548,20 @@ def test_changelog_records_0_5_6_linux_derivative_fix():
         "[0.5.6]: https://github.com/dgabreuu/supa.cc/compare/v0.5.5...v0.5.6"
         in changelog
     )
+
+
+def test_changelog_records_0_5_7_installation_check_scope():
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## [0.5.7] - 2026-07-19" in changelog
+    assert "### Fixed" in changelog
+    assert "installation check" in changelog.lower()
     assert (
-        "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.6...HEAD"
+        "[0.5.7]: https://github.com/dgabreuu/supa.cc/compare/v0.5.6...v0.5.7"
+        in changelog
+    )
+    assert (
+        "[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.7...HEAD"
         in changelog
     )
 
