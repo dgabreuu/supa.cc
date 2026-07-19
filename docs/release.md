@@ -1,12 +1,29 @@
 # Release record and checklist
 
+## 0.5.7 publication record (2026-07-19)
+
+The GitHub Release, PyPI publication, Linux/Windows `pipx` verification, and
+Homebrew promotion for `v0.5.7` completed successfully. The formula was
+promoted only after the immutable source archive checksum was measured and the
+manual Homebrew workflow passed.
+
+### Publication details
+
+- GitHub Release: https://github.com/dgabreuu/supa.cc/releases/tag/v0.5.7
+- PyPI package: https://pypi.org/project/supa.cc/0.5.7/
+- Release tag: `v0.5.7` (`c6abab04c93c71819233d2916a82637169d57b55`)
+- Verified release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29706392459
+- Source archive SHA-256: `fb4ed11013c0f533a81c07a27968b3b5d8ce0c33c9ae133a6d7d950488d38acf`
+- Homebrew promotion commit/tap revision: `b46009393f9a378e4a2178b595622842009c4685` (PR #23)
+- Homebrew validation workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29706586959
+
 ## 0.5.7 candidate checklist
 
 `v0.5.7` is the patch release that scopes `supa.cc doctor --installation-check`
 to installation dependencies only. The package and bootstrap candidate metadata
-use `0.5.7`, while `Formula/supa-cc.rb`, `.github/workflows/homebrew.yml`, and
-formula assertions remain on the verified `v0.5.6` URL and SHA-256 until
-publication. Do not infer or prefill the `v0.5.7` source archive checksum.
+used `0.5.7`, while the formula and its assertions remained on the verified
+`v0.5.6` URL and SHA-256 until publication. The formula now uses the measured
+`v0.5.7` source archive checksum recorded above.
 
 ## 1. Validate the 0.5.7 candidate
 
