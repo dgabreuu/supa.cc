@@ -1,12 +1,29 @@
 # Release record and checklist
 
+## 0.5.6 publication record (2026-07-19)
+
+The GitHub Release, PyPI publication, Linux/Windows `pipx` verification, and
+Homebrew promotion for `v0.5.6` completed successfully. The formula was
+promoted only after the immutable source archive checksum was measured and the
+manual Homebrew workflow passed.
+
+### Publication details
+
+- GitHub Release: https://github.com/dgabreuu/supa.cc/releases/tag/v0.5.6
+- PyPI package: https://pypi.org/project/supa.cc/0.5.6/
+- Release tag: `v0.5.6` (`c31e3b0a2a17f2d2d3f18d3af3dddac9944956c1`)
+- Verified release workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29703183305
+- Source archive SHA-256: `36974301065a3e402c3f69d387b0e172792b88704b0efb75e903c0a4177c942a`
+- Homebrew promotion commit/tap revision: `b57153a5df0ea042d3b294485cda0dd107069313` (PR #20)
+- Homebrew validation workflow: https://github.com/dgabreuu/supa.cc/actions/runs/29703431226
+
 ## 0.5.6 candidate checklist
 
 `v0.5.6` is the patch release for Linux derivative detection in the POSIX
-bootstrap. The package and bootstrap candidate metadata use `0.5.6`, while
-`Formula/supa-cc.rb`, `.github/workflows/homebrew.yml`, and formula assertions
-remain on the verified `v0.5.5` URL and SHA-256 until publication. Do not infer
-or prefill the `v0.5.6` source archive checksum.
+bootstrap. The package and bootstrap candidate metadata used `0.5.6`, while
+the formula and its assertions remained on the verified `v0.5.5` URL and
+SHA-256 until publication. The formula now uses the measured `v0.5.6` source
+archive checksum recorded above.
 
 ## 1. Validate the 0.5.6 candidate
 
