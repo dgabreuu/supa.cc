@@ -10,10 +10,12 @@ Use these exact public forms. Run `supa.cc <command> --help` when a future insta
 | `supa.cc version` | No input. Prints version, channel, and deterministic official update guidance. | Exit code `0`; output includes `Update:`. |
 | `supa.cc list` | No input. Lists aliases without opening the native credential store. | Exit code `0`; aliases or `No accounts registered.` appear on stdout. |
 | `supa.cc doctor [--json]` | Local, non-live diagnostics. It does not read a PAT or prove credential-store availability. | Exit code `0` only when the report is healthy. With `--json`, parse the JSON report. |
-| `supa.cc doctor --installation-check [--json]` | Checks the Supabase CLI version and performs one isolated native credential-store availability probe without reading an account. | Exit code `0` when requirements are available and compatible. |
+| `supa.cc doctor --installation-check [--json]` | Validates installation dependencies only: the supported environment, Supabase CLI compatibility, a writable Supabase CLI operational directory (`SUPABASE_HOME` or its default), and one isolated native credential-store probe with random identifiers. It does not read an account or PAT. | Exit code `0` when requirements are available and compatible. |
 | `supa.cc doctor --account <name> --live` | Requires an exact registered alias and explicit authorization for online credential validation. | Exit code `0` when the selected credential validates. |
 
-`--installation-check` cannot be combined with `--account` or `--live`. Live mode requires `--account <name>`.
+`--installation-check` cannot be combined with `--account` or `--live`. It does not load, create, migrate, validate, or recover account state; account, index, and activation fields outside its scope are `not_checked` or **not checked**. Live mode requires `--account <name>`.
+
+`sync_pending` belongs to normal `doctor` consistency diagnostics. Recover it by rerunning the appropriate mutating Supa.cc account command, such as `switch` or `remove`; never edit the state document or native credentials manually.
 
 ## Account mutations
 

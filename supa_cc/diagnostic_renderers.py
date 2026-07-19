@@ -60,14 +60,30 @@ def render_human(report) -> str:
         "invoked": report.runtime.get("python_executable"),
         "realpath": report.runtime.get("python_realpath"),
     }
-    states = {"present": "present", "absent": "absent", "inaccessible": "inaccessible"}
+    states = {
+        "present": "present",
+        "absent": "absent",
+        "inaccessible": "inaccessible",
+        "pending": "pending",
+        "not_checked": "not checked",
+    }
     diagnostics = ", ".join(code.replace("keychain", "credential_store") for code in report.diagnostic_codes) or "none"
     availability = report.credentials.get("availability")
     credential_state = {
         "available": "available (verified)",
         "unavailable": "unavailable (verified)",
-        "unverified": "configured (not verified; no probe)",
+        "unverified": (
+            "unavailable (not verified; no probe)"
+            if report.credentials.get("status") == "unavailable"
+            else "configured (not verified; no probe)"
+        ),
     }.get(availability, "unknown")
+    index_state = report.index.get("state")
+    index_summary = (
+        "not checked"
+        if index_state == "not_checked"
+        else f"{index_state} ({report.index.get('account_count', 0)} accounts)"
+    )
     lines = [
         "Supa.cc doctor",
         f"Supa.cc version: {report.runtime.get('supa_cc_version') or 'unknown'}",
@@ -81,10 +97,12 @@ def render_human(report) -> str:
         f"Supabase CLI compatibility: {report.supabase_cli.get('compatibility') or 'not_checked'}",
         f"Provenance: {report.supabase_cli.get('provenance') or 'unknown'}",
         f"Credential store: {report.credentials.get('backend', report.keychain_backend)} ({credential_state})",
-        f"Index: {report.index.get('state')} ({report.index.get('account_count', 0)} accounts)",
+        f"Index: {index_summary}",
         "Active account: "
         + (
-            "selected (indexed)"
+            "not checked"
+            if report.active_account.get("checked") is False
+            else "selected (indexed)"
             if report.active_account.get("selected") and report.active_account.get("indexed")
             else "selected (not indexed)"
             if report.active_account.get("selected")

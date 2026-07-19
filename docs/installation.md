@@ -4,7 +4,7 @@ This guide covers the supported installation lifecycle. Supa.cc requires Python 
 
 ## Official bootstrap rollout
 
-`install.sh` and `install.ps1` make the installation self-sufficient: they inspect the environment, reject conflicting installation channels, show one plan, request at most one installation confirmation, install missing requirements, update the current session's `PATH`, and finish with `supa.cc doctor --installation-check`.
+`install.sh` and `install.ps1` make the installation self-sufficient: they inspect the environment, reject conflicting installation channels, show one plan, request at most one installation confirmation, install missing requirements, update the current session's `PATH`, and finish with `supa.cc doctor --installation-check`. That final command validates installation dependencies only: the supported environment, Supabase CLI compatibility, a writable Supabase CLI operational directory (`SUPABASE_HOME` or its default), and one isolated native credential-store probe. A failure means the diagnostic shown above identified a blocked requirement; it does not necessarily mean the credential store failed.
 
 The public bootstrap URL uses the reviewed immutable `v0.5.6` release tag. It must never point to `main`, `HEAD`, a branch, or an unpublished tag:
 
@@ -161,7 +161,7 @@ pipx uninstall supa.cc
 
 ## After installation
 
-Continue with [first use](usage.md#first-use-with-the-tui). The default `supa.cc doctor` remains non-live and does not probe credential availability; only `--installation-check` performs the isolated local probe. It is incompatible with `--live` and `--account` and can be combined with `--json`.
+Continue with [first use](usage.md#first-use-with-the-tui). The default `supa.cc doctor` remains non-live and does not probe credential availability; only `--installation-check` performs one isolated local probe with random identifiers. The installation check does not read an account or PAT and does not load, create, migrate, validate, or recover account state. Account, index, and activation fields outside this scope are reported as `not_checked` or **not checked**. It is incompatible with `--live` and `--account` and can be combined with `--json`.
 
 To manage Supa.cc through OpenCode, Claude Code, Codex, or Cursor, install the separate [portable coding-agent skill](agent-skill.md). Installing the Python package does not install agent instructions.
 

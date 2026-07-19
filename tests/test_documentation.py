@@ -264,6 +264,19 @@ def test_canonical_documents_own_technical_and_diagnostic_contracts():
         assert command in usage, f"usage guide must own command: {command}"
 
 
+def test_installation_check_documents_operational_directory_writability():
+    documents = (*CANONICAL_DOCS, Path(".agents/skills/supa-cc/references/commands.md"))
+
+    for path in documents:
+        contents = path.read_text(encoding="utf-8").lower()
+        assert "operational directory" in contents, (
+            f"{path} must name the Supabase CLI operational directory"
+        )
+        assert "writ" in contents, (
+            f"{path} must require the operational directory to be writable"
+        )
+
+
 def test_retired_documentation_is_absent_and_unlinked():
     public_docs = _public_markdown()
     violations = []
