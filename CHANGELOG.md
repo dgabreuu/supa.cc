@@ -5,6 +5,12 @@ The format follows Keep a Changelog in a simplified form.
 
 ## [Unreleased]
 
+## [0.5.7] - 2026-07-19
+
+### Fixed
+
+- `supa.cc doctor --installation-check` now validates only installation dependencies and reports account, index, and activation fields outside that scope as not checked, so installers no longer treat unrelated local-state diagnostics as installation failures.
+
 ## [0.5.6] - 2026-07-19
 
 ### Fixed
@@ -71,7 +77,8 @@ The format follows Keep a Changelog in a simplified form.
 [0.5.4]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...v0.5.4
 [0.5.5]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...v0.5.5
 [0.5.6]: https://github.com/dgabreuu/supa.cc/compare/v0.5.5...v0.5.6
-[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.6...HEAD
+[0.5.7]: https://github.com/dgabreuu/supa.cc/compare/v0.5.6...v0.5.7
+[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.7...HEAD
 
 ## [0.4.2] - 2026-07-14
 

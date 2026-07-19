@@ -6,14 +6,14 @@ This guide covers the supported installation lifecycle. Supa.cc requires Python 
 
 `install.sh` and `install.ps1` make the installation self-sufficient: they inspect the environment, reject conflicting installation channels, show one plan, request at most one installation confirmation, install missing requirements, update the current session's `PATH`, and finish with `supa.cc doctor --installation-check`. That final command validates installation dependencies only: the supported environment, Supabase CLI compatibility, a writable Supabase CLI operational directory (`SUPABASE_HOME` or its default), and one isolated native credential-store probe. A failure means the diagnostic shown above identified a blocked requirement; it does not necessarily mean the credential store failed.
 
-The public bootstrap URL uses the reviewed immutable `v0.5.6` release tag. It must never point to `main`, `HEAD`, a branch, or an unpublished tag:
+The public bootstrap URL uses the reviewed immutable `v0.5.7` release tag. It must never point to `main`, `HEAD`, a branch, or an unpublished tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.6/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.7/install.sh | bash
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.6/install.ps1 | iex
+irm https://raw.githubusercontent.com/dgabreuu/supa.cc/v0.5.7/install.ps1 | iex
 ```
 
 Use `--dry-run` or `-DryRun` from a downloaded script when the plan must be reviewed without changes. `--yes` and `-Yes` skip only Supa.cc's confirmation; administrator passwords and native operating-system prompts remain under system control. The POSIX installer reads confirmation from `/dev/tty`, so a piped non-interactive run must use `--yes` after review.
