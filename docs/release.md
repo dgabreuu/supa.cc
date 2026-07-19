@@ -1,5 +1,58 @@
 # Release record and checklist
 
+## 0.5.6 candidate checklist
+
+`v0.5.6` is the patch release for Linux derivative detection in the POSIX
+bootstrap. The package and bootstrap candidate metadata use `0.5.6`, while
+`Formula/supa-cc.rb`, `.github/workflows/homebrew.yml`, and formula assertions
+remain on the verified `v0.5.5` URL and SHA-256 until publication. Do not infer
+or prefill the `v0.5.6` source archive checksum.
+
+## 1. Validate the 0.5.6 candidate
+
+Review the exact candidate diff and run the focused release tests, full CI,
+dependency audits, security scans, artifact build and inspection, installer
+syntax and dry runs, and `git diff --check`. Confirm the wheel, sdist, bootstrap
+scripts, release workflow, README, installation guide, and changelog consistently
+identify `0.5.6` without credentials, local paths, caches, or build artifacts.
+
+## 2. Confirm the 0.5.6 publication contract
+
+Preserve the stable release workflow, one inspected artifact set, protected
+`pypi` environment, OIDC Trusted Publishing with `id-token: write`, native
+credential stores, and Supabase CLI >= 2.109.1. Do not create a PyPI token.
+
+## 3. Publish the stable GitHub Release for 0.5.6
+
+After the candidate is merged and CI passes, create `v0.5.6` on the exact
+candidate commit and publish a stable, non-draft, non-prerelease GitHub Release
+using the `0.5.6` changelog entry. Do not attach local build artifacts.
+
+## 4. Publish 0.5.6 to PyPI with OIDC
+
+Allow the release workflow to build once, inspect one wheel and one sdist, and
+publish that artifact set through OIDC Trusted Publishing. Verify the public
+PyPI project page before promoting any downstream channel.
+
+## 5. Verify pipx for 0.5.6 on Linux and Windows
+
+Require the release workflow's Linux and Windows jobs to install
+`supa.cc==0.5.6` from PyPI and pass both `supa.cc --version` and
+`supa.cc version` after bounded index-propagation retries.
+
+## 6. Promote the Homebrew formula after publication
+
+Only after `v0.5.6` and PyPI are public, download the immutable GitHub source
+archive, measure its SHA-256 independently, and update the formula, Homebrew
+workflow, and formula assertions together. Run formula-scoped trust, resource,
+strict audit, install, version, Supabase compatibility, and formula test gates.
+
+## 7. Update final availability documentation
+
+Record the actual tag SHA, stable GitHub Release and PyPI URLs, workflow results,
+measured source SHA-256, Homebrew promotion commit, and final Linux, Windows, and
+Homebrew availability. Keep the changelog comparison at `v0.5.5...v0.5.6`.
+
 ## 0.5.5 publication record (2026-07-17)
 
 The GitHub Release, PyPI publication, Linux/Windows `pipx` verification, and

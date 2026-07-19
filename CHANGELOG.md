@@ -5,6 +5,12 @@ The format follows Keep a Changelog in a simplified form.
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-07-19
+
+### Fixed
+
+- The POSIX bootstrap now recognizes supported Linux derivative families through ordered `ID_LIKE` compatibility metadata without interpreting a derivative's version as its parent distribution's version.
+
 ## [0.5.5] - 2026-07-17
 
 ### Added
@@ -64,7 +70,8 @@ The format follows Keep a Changelog in a simplified form.
 [0.5.3]: https://github.com/dgabreuu/supa.cc/compare/v0.5.2...v0.5.3
 [0.5.4]: https://github.com/dgabreuu/supa.cc/compare/v0.5.3...v0.5.4
 [0.5.5]: https://github.com/dgabreuu/supa.cc/compare/v0.5.4...v0.5.5
-[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.5...HEAD
+[0.5.6]: https://github.com/dgabreuu/supa.cc/compare/v0.5.5...v0.5.6
+[Unreleased]: https://github.com/dgabreuu/supa.cc/compare/v0.5.6...HEAD
 
 ## [0.4.2] - 2026-07-14
 
