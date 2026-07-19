@@ -49,11 +49,11 @@ def test_source_uses_release_version_and_verified_stable_formula():
     assert project["version"] == "0.5.7"
     assert __version__ == "0.5.7"
     assert (
-        'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.5.6.tar.gz"'
+        'url "https://github.com/dgabreuu/supa.cc/archive/refs/tags/v0.5.7.tar.gz"'
         in formula
     )
     assert (
-        'sha256 "36974301065a3e402c3f69d387b0e172792b88704b0efb75e903c0a4177c942a"'
+        'sha256 "fb4ed11013c0f533a81c07a27968b3b5d8ce0c33c9ae133a6d7d950488d38acf"'
         in formula
     )
 
